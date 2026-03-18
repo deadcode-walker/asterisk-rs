@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-agi-v0.2.0...asterisk-rs-agi-v0.2.1) - 2026-03-18
+
+### Other
+
+- rewrote all documentation to match established pattern
+- rewrote all documentation for production quality
+
 ## [0.2.0](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-agi-v0.1.2...asterisk-rs-agi-v0.2.0) - 2026-03-18
 
 ### Fixed
