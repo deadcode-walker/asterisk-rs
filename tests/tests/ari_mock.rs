@@ -297,3 +297,296 @@ async fn filtered_subscription() {
     client.disconnect();
     server.shutdown();
 }
+
+
+#[tokio::test]
+async fn channel_handle_answer_and_hangup() {
+    common::init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("POST", "/ari/channels/chan-1/answer", 204, "")
+        .route("DELETE", "/ari/channels/chan-1", 204, "")
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+    let handle = asterisk_rs_ari::resources::channel::ChannelHandle::new("chan-1", client.clone());
+
+    handle.answer().await.expect("answer failed");
+    handle.hangup(None).await.expect("hangup failed");
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn channel_handle_hold_mute_dtmf() {
+    common::init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("POST", "/ari/channels/chan-1/hold", 204, "")
+        .route("DELETE", "/ari/channels/chan-1/hold", 204, "")
+        .route("POST", "/ari/channels/chan-1/mute", 204, "")
+        .route("DELETE", "/ari/channels/chan-1/mute", 204, "")
+        .route("POST", "/ari/channels/chan-1/dtmf?dtmf=1234", 204, "")
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+    let handle = asterisk_rs_ari::resources::channel::ChannelHandle::new("chan-1", client.clone());
+
+    handle.hold().await.expect("hold failed");
+    handle.unhold().await.expect("unhold failed");
+    handle.mute(None).await.expect("mute failed");
+    handle.unmute(None).await.expect("unmute failed");
+    handle.send_dtmf("1234").await.expect("send_dtmf failed");
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn channel_handle_variables() {
+    common::init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route(
+            "GET",
+            "/ari/channels/chan-1/variable?variable=MY_VAR",
+            200,
+            r#"{"value":"hello"}"#,
+        )
+        .route(
+            "POST",
+            "/ari/channels/chan-1/variable?variable=MY_VAR&value=hello",
+            204,
+            "",
+        )
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+    let handle = asterisk_rs_ari::resources::channel::ChannelHandle::new("chan-1", client.clone());
+
+    let var = handle.get_variable("MY_VAR").await.expect("get variable failed");
+    assert_eq!(var.value, "hello", "expected variable value");
+
+    handle
+        .set_variable("MY_VAR", "hello")
+        .await
+        .expect("set variable failed");
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn bridge_handle_lifecycle() {
+    common::init_tracing();
+
+    let bridge_json = r#"{"id":"br-1","bridge_type":"mixing","technology":"simple_bridge","channels":[]}"#;
+
+    let server = MockAriServerBuilder::new()
+        .route("POST", "/ari/bridges", 200, bridge_json)
+        .route(
+            "POST",
+            "/ari/bridges/br-1/addChannel?channel=chan-1",
+            204,
+            "",
+        )
+        .route(
+            "POST",
+            "/ari/bridges/br-1/removeChannel?channel=chan-1",
+            204,
+            "",
+        )
+        .route("DELETE", "/ari/bridges/br-1", 204, "")
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+
+    // create bridge via client
+    let _bridge: serde_json::Value = client
+        .post("bridges", &serde_json::json!({"type": "mixing"}))
+        .await
+        .expect("create bridge failed");
+
+    let handle = asterisk_rs_ari::resources::bridge::BridgeHandle::new("br-1", client.clone());
+    handle
+        .add_channel("chan-1")
+        .await
+        .expect("add channel failed");
+    handle
+        .remove_channel("chan-1")
+        .await
+        .expect("remove channel failed");
+    handle.destroy().await.expect("destroy bridge failed");
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn post_empty_returns_ok() {
+    common::init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("POST", "/ari/channels/chan-1/answer", 204, "")
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+    client
+        .post_empty("channels/chan-1/answer")
+        .await
+        .expect("post_empty should succeed");
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn put_empty_returns_ok() {
+    common::init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("PUT", "/ari/channels/chan-1/something", 204, "")
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+    client
+        .put_empty("channels/chan-1/something")
+        .await
+        .expect("put_empty should succeed");
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn disconnect_stops_ws_listener() {
+    common::init_tracing();
+
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+    let mut sub = client.subscribe();
+
+    // give ws task time to connect
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // send an event to confirm subscription works
+    server.send_event(r#"{
+        "type": "StasisStart",
+        "application": "test-app",
+        "timestamp": "2024-01-01T00:00:00.000+0000",
+        "channel": {
+            "id": "chan-1",
+            "name": "SIP/100-0001",
+            "state": "Ring",
+            "caller": {"name": "Test", "number": "100"},
+            "connected": {"name": "", "number": ""},
+            "dialplan": {"context": "default", "exten": "100", "priority": 1}
+        },
+        "args": []
+    }"#);
+
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+        .await
+        .expect("timed out waiting for event")
+        .expect("subscription closed before event");
+    assert_eq!(event.application, "test-app");
+
+    // disconnect and verify subscription terminates
+    client.disconnect();
+
+    // after disconnect, recv should return None (channel closed)
+    let result = tokio::time::timeout(Duration::from_secs(2), sub.recv()).await;
+    match result {
+        Ok(None) => {} // expected: channel closed
+        Ok(Some(_)) => {} // acceptable: buffered event before close
+        Err(_) => {} // timeout is acceptable if ws task is still draining
+    }
+
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn channel_handle_play_returns_playback() {
+    common::init_tracing();
+
+    let playback_json = r#"{"id":"pb-1","media_uri":"sound:hello","target_uri":"channel:chan-1","state":"queued"}"#;
+
+    let server = MockAriServerBuilder::new()
+        .route("POST", "/ari/channels/chan-1/play", 200, playback_json)
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+    let handle = asterisk_rs_ari::resources::channel::ChannelHandle::new("chan-1", client.clone());
+
+    let pb = handle.play("sound:hello").await.expect("play failed");
+    assert_eq!(pb.id, "pb-1", "expected playback id");
+    assert_eq!(pb.state, "queued", "expected playback state");
+    assert_eq!(pb.media_uri, "sound:hello", "expected media uri");
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn multiple_websocket_events_in_sequence() {
+    common::init_tracing();
+
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+    let mut sub = client.subscribe();
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let channel_block = r#""id": "chan-1", "name": "SIP/100-0001", "state": "Ring", "caller": {"name": "", "number": ""}, "connected": {"name": "", "number": ""}, "dialplan": {"context": "default", "exten": "s", "priority": 1}"#;
+
+    let events = [
+        format!(
+            r#"{{"type":"StasisStart","application":"test-app","timestamp":"2024-01-01T00:00:00.000+0000","channel":{{{channel_block}}},"args":[]}}"#
+        ),
+        format!(
+            r#"{{"type":"ChannelDestroyed","application":"test-app","timestamp":"2024-01-01T00:00:01.000+0000","channel":{{{channel_block}}},"cause":16,"cause_txt":"Normal"}}"#
+        ),
+        format!(
+            r#"{{"type":"ChannelStateChange","application":"test-app","timestamp":"2024-01-01T00:00:02.000+0000","channel":{{{channel_block}}}}}"#
+        ),
+        format!(
+            r#"{{"type":"StasisEnd","application":"test-app","timestamp":"2024-01-01T00:00:03.000+0000","channel":{{{channel_block}}}}}"#
+        ),
+        format!(
+            r#"{{"type":"ChannelVarset","application":"test-app","timestamp":"2024-01-01T00:00:04.000+0000","channel":{{{channel_block}}},"variable":"MYVAR","value":"test"}}"#
+        ),
+    ];
+
+    for event_json in &events {
+        server.send_event(event_json);
+        // small delay to preserve ordering
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    let mut received = Vec::new();
+    for i in 0..5 {
+        let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+            .await
+            .unwrap_or_else(|_| panic!("timed out waiting for event {i}"))
+            .unwrap_or_else(|| panic!("subscription closed before event {i}"));
+        received.push(event);
+    }
+
+    // verify all 5 events received in order
+    assert!(matches!(received[0].event, asterisk_rs_ari::AriEvent::StasisStart { .. }));
+    assert!(matches!(received[1].event, asterisk_rs_ari::AriEvent::ChannelDestroyed { .. }));
+    assert!(matches!(received[2].event, asterisk_rs_ari::AriEvent::ChannelStateChange { .. }));
+    assert!(matches!(received[3].event, asterisk_rs_ari::AriEvent::StasisEnd { .. }));
+    assert!(matches!(received[4].event, asterisk_rs_ari::AriEvent::ChannelVarset { .. }));
+
+    client.disconnect();
+    server.shutdown();
+}

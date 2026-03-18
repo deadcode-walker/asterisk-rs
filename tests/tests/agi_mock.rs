@@ -493,3 +493,451 @@ async fn commands_with_arguments() {
     let result = handle.await.expect("task should not panic");
     result.expect("server should exit cleanly");
 }
+
+
+#[tokio::test]
+async fn all_say_commands() {
+    common::init_tracing();
+
+    struct SayHandler;
+
+    impl AgiHandler for SayHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            mut channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            channel.say_number(42, "").await?;
+            channel.say_alpha("hello", "").await?;
+            channel.say_date(1700000000, "").await?;
+            channel.say_datetime(1700000000, "", None, None).await?;
+            channel.say_phonetic("world", "").await?;
+            channel.say_time(1700000000, "").await?;
+            Ok(())
+        }
+    }
+
+    let (handle, shutdown, addr) = spawn_server(SayHandler, None).await;
+    let env = standard_env();
+    let mut client = MockAgiClient::connect(addr, &env).await;
+
+    let expected_prefixes = [
+        "SAY NUMBER",
+        "SAY ALPHA",
+        "SAY DATE",
+        "SAY DATETIME",
+        "SAY PHONETIC",
+        "SAY TIME",
+    ];
+
+    for prefix in &expected_prefixes {
+        let cmd = client
+            .read_command()
+            .await
+            .unwrap_or_else(|| panic!("should read {prefix} command"));
+        assert!(
+            cmd.starts_with(prefix),
+            "expected command starting with {prefix}, got: {cmd}"
+        );
+        client.send_success(0).await;
+    }
+
+    // handler done, connection closes
+    assert!(client.read_command().await.is_none(), "stream should close");
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly");
+}
+
+#[tokio::test]
+async fn database_operations() {
+    common::init_tracing();
+
+    struct DbHandler;
+
+    impl AgiHandler for DbHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            mut channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            channel.database_get("cidname", "100").await?;
+            channel.database_put("cidname", "100", "Alice").await?;
+            channel.database_del("cidname", "100").await?;
+            channel.database_deltree("cidname", None).await?;
+            Ok(())
+        }
+    }
+
+    let (handle, shutdown, addr) = spawn_server(DbHandler, None).await;
+    let env = standard_env();
+    let mut client = MockAgiClient::connect(addr, &env).await;
+
+    let cmd = client.read_command().await.expect("DATABASE GET");
+    assert_eq!(cmd, "DATABASE GET cidname 100");
+    client.send_response("200 result=1 (Alice)").await;
+
+    let cmd = client.read_command().await.expect("DATABASE PUT");
+    assert_eq!(cmd, "DATABASE PUT cidname 100 Alice");
+    client.send_success(1).await;
+
+    let cmd = client.read_command().await.expect("DATABASE DEL");
+    assert_eq!(cmd, "DATABASE DEL cidname 100");
+    client.send_success(1).await;
+
+    let cmd = client.read_command().await.expect("DATABASE DELTREE");
+    assert_eq!(cmd, "DATABASE DELTREE cidname");
+    client.send_success(1).await;
+
+    assert!(client.read_command().await.is_none(), "stream should close");
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly");
+}
+
+#[tokio::test]
+async fn channel_info_commands() {
+    common::init_tracing();
+
+    struct ChannelInfoHandler;
+
+    impl AgiHandler for ChannelInfoHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            mut channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            channel.channel_status(None).await?;
+            channel.channel_status(Some("SIP/100")).await?;
+            channel.wait_for_digit(5000).await?;
+            channel.receive_char(3000).await?;
+            channel.receive_text(3000).await?;
+            Ok(())
+        }
+    }
+
+    let (handle, shutdown, addr) = spawn_server(ChannelInfoHandler, None).await;
+    let env = standard_env();
+    let mut client = MockAgiClient::connect(addr, &env).await;
+
+    let cmd = client.read_command().await.expect("CHANNEL STATUS no arg");
+    assert_eq!(cmd, "CHANNEL STATUS");
+    client.send_success(6).await;
+
+    let cmd = client.read_command().await.expect("CHANNEL STATUS with arg");
+    assert_eq!(cmd, "CHANNEL STATUS SIP/100");
+    client.send_success(6).await;
+
+    let cmd = client.read_command().await.expect("WAIT FOR DIGIT");
+    assert_eq!(cmd, "WAIT FOR DIGIT 5000");
+    client.send_success(0).await;
+
+    let cmd = client.read_command().await.expect("RECEIVE CHAR");
+    assert_eq!(cmd, "RECEIVE CHAR 3000");
+    client.send_success(0).await;
+
+    let cmd = client.read_command().await.expect("RECEIVE TEXT");
+    assert_eq!(cmd, "RECEIVE TEXT 3000");
+    client.send_success(0).await;
+
+    assert!(client.read_command().await.is_none(), "stream should close");
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly");
+}
+
+#[tokio::test]
+async fn variable_and_expression_commands() {
+    common::init_tracing();
+
+    struct VarHandler {
+        tx: mpsc::Sender<String>,
+    }
+
+    impl AgiHandler for VarHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            mut channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            let resp = channel.get_variable("CHANNEL").await?;
+            // capture the data from the response
+            if let Some(data) = resp.data {
+                let _ = self.tx.send(data).await;
+            }
+            channel.set_variable("FOO", "bar").await?;
+            channel.get_full_variable("${CHANNEL}", None).await?;
+            channel.get_full_variable("${EXTEN}", Some("SIP/100")).await?;
+            Ok(())
+        }
+    }
+
+    let (tx, mut rx) = mpsc::channel::<String>(1);
+    let (handle, shutdown, addr) = spawn_server(VarHandler { tx }, None).await;
+    let env = standard_env();
+    let mut client = MockAgiClient::connect(addr, &env).await;
+
+    // GET VARIABLE CHANNEL
+    let cmd = client.read_command().await.expect("GET VARIABLE");
+    assert_eq!(cmd, "GET VARIABLE CHANNEL");
+    client.send_response("200 result=1 (SIP/100-0001)").await;
+
+    // verify handler captured the response data
+    let data = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for captured data")
+        .expect("channel closed");
+    assert_eq!(data, "SIP/100-0001");
+
+    // SET VARIABLE FOO bar
+    let cmd = client.read_command().await.expect("SET VARIABLE");
+    assert_eq!(cmd, "SET VARIABLE FOO bar");
+    client.send_success(1).await;
+
+    // GET FULL VARIABLE ${CHANNEL} — expression contains special chars
+    let cmd = client.read_command().await.expect("GET FULL VARIABLE no channel");
+    assert_eq!(cmd, "GET FULL VARIABLE ${CHANNEL}");
+    client.send_response("200 result=1 (SIP/100-0001)").await;
+
+    // GET FULL VARIABLE ${EXTEN} SIP/100
+    let cmd = client.read_command().await.expect("GET FULL VARIABLE with channel");
+    assert_eq!(cmd, "GET FULL VARIABLE ${EXTEN} SIP/100");
+    client.send_response("200 result=1 (200)").await;
+
+    assert!(client.read_command().await.is_none(), "stream should close");
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly");
+}
+
+#[tokio::test]
+async fn error_response_510_invalid_command() {
+    common::init_tracing();
+
+    struct RawCommandHandler {
+        tx: mpsc::Sender<u16>,
+    }
+
+    impl AgiHandler for RawCommandHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            mut channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            let resp = channel.send_command("INVALID_CMD\n").await?;
+            let _ = self.tx.send(resp.code).await;
+            Ok(())
+        }
+    }
+
+    let (tx, mut rx) = mpsc::channel::<u16>(1);
+    let (handle, shutdown, addr) = spawn_server(RawCommandHandler { tx }, None).await;
+    let env = standard_env();
+    let mut client = MockAgiClient::connect(addr, &env).await;
+
+    let cmd = client.read_command().await.expect("should read raw command");
+    assert_eq!(cmd, "INVALID_CMD");
+    client.send_response("510 Invalid or unknown command").await;
+
+    let code = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for response code")
+        .expect("channel closed");
+    assert_eq!(code, 510, "handler should receive 510 response code");
+
+    // handler returns Ok, so connection closes normally
+    assert!(client.read_command().await.is_none(), "stream should close");
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly");
+}
+
+#[tokio::test]
+async fn error_response_520_usage() {
+    common::init_tracing();
+
+    struct UsageErrorHandler {
+        tx: mpsc::Sender<u16>,
+    }
+
+    impl AgiHandler for UsageErrorHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            mut channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            let resp = channel.send_command("EXEC\n").await?;
+            let _ = self.tx.send(resp.code).await;
+            Ok(())
+        }
+    }
+
+    let (tx, mut rx) = mpsc::channel::<u16>(1);
+    let (handle, shutdown, addr) = spawn_server(UsageErrorHandler { tx }, None).await;
+    let env = standard_env();
+    let mut client = MockAgiClient::connect(addr, &env).await;
+
+    let cmd = client.read_command().await.expect("should read EXEC");
+    assert_eq!(cmd, "EXEC");
+    client.send_response("520 result=-1 Usage: EXEC <app> [<args>]").await;
+
+    let code = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for response code")
+        .expect("channel closed");
+    assert_eq!(code, 520, "handler should receive 520 response code");
+
+    assert!(client.read_command().await.is_none(), "stream should close");
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly");
+}
+
+#[tokio::test]
+async fn speech_commands() {
+    common::init_tracing();
+
+    struct SpeechHandler;
+
+    impl AgiHandler for SpeechHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            mut channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            channel.send_text("hello").await?;
+            channel.send_image("test.png").await?;
+            channel.set_autohangup(30).await?;
+            channel.set_context("default").await?;
+            channel.set_extension("100").await?;
+            channel.set_priority("1").await?;
+            channel.set_music(true, None).await?;
+            channel.set_music(false, Some("jazz")).await?;
+            Ok(())
+        }
+    }
+
+    let (handle, shutdown, addr) = spawn_server(SpeechHandler, None).await;
+    let env = standard_env();
+    let mut client = MockAgiClient::connect(addr, &env).await;
+
+    let cmd = client.read_command().await.expect("SEND TEXT");
+    assert_eq!(cmd, "SEND TEXT hello");
+    client.send_success(0).await;
+
+    let cmd = client.read_command().await.expect("SEND IMAGE");
+    assert_eq!(cmd, "SEND IMAGE test.png");
+    client.send_success(0).await;
+
+    let cmd = client.read_command().await.expect("SET AUTOHANGUP");
+    assert_eq!(cmd, "SET AUTOHANGUP 30");
+    client.send_success(0).await;
+
+    let cmd = client.read_command().await.expect("SET CONTEXT");
+    assert_eq!(cmd, "SET CONTEXT default");
+    client.send_success(0).await;
+
+    let cmd = client.read_command().await.expect("SET EXTENSION");
+    assert_eq!(cmd, "SET EXTENSION 100");
+    client.send_success(0).await;
+
+    let cmd = client.read_command().await.expect("SET PRIORITY");
+    assert_eq!(cmd, "SET PRIORITY 1");
+    client.send_success(0).await;
+
+    let cmd = client.read_command().await.expect("SET MUSIC on");
+    assert_eq!(cmd, "SET MUSIC on");
+    client.send_success(0).await;
+
+    let cmd = client.read_command().await.expect("SET MUSIC off jazz");
+    assert_eq!(cmd, "SET MUSIC off jazz");
+    client.send_success(0).await;
+
+    assert!(client.read_command().await.is_none(), "stream should close");
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly");
+}
+
+#[tokio::test]
+async fn gosub_with_and_without_args() {
+    common::init_tracing();
+
+    struct GosubHandler;
+
+    impl AgiHandler for GosubHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            mut channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            channel.gosub("sub", "s", "1", None).await?;
+            channel.gosub("sub", "s", "1", Some("arg1,arg2")).await?;
+            Ok(())
+        }
+    }
+
+    let (handle, shutdown, addr) = spawn_server(GosubHandler, None).await;
+    let env = standard_env();
+    let mut client = MockAgiClient::connect(addr, &env).await;
+
+    let cmd = client.read_command().await.expect("GOSUB without args");
+    assert_eq!(cmd, "GOSUB sub s 1");
+    client.send_success(0).await;
+
+    let cmd = client.read_command().await.expect("GOSUB with args");
+    assert_eq!(cmd, "GOSUB sub s 1 arg1,arg2");
+    client.send_success(0).await;
+
+    assert!(client.read_command().await.is_none(), "stream should close");
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly");
+}
+
+#[tokio::test]
+async fn record_file_with_options() {
+    common::init_tracing();
+
+    struct RecordHandler;
+
+    impl AgiHandler for RecordHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            mut channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            channel.record_file("test", "wav", "#", 5000, true, Some(3)).await?;
+            channel.record_file("minimal", "gsm", "", 3000, false, None).await?;
+            Ok(())
+        }
+    }
+
+    let (handle, shutdown, addr) = spawn_server(RecordHandler, None).await;
+    let env = standard_env();
+    let mut client = MockAgiClient::connect(addr, &env).await;
+
+    // full options: beep + silence
+    let cmd = client.read_command().await.expect("RECORD FILE full");
+    assert_eq!(cmd, "RECORD FILE test wav # 5000 beep s=3");
+    client.send_response("200 result=0 (dtmf) endpos=5000").await;
+
+    // minimal: no beep, no silence
+    let cmd = client.read_command().await.expect("RECORD FILE minimal");
+    assert_eq!(cmd, "RECORD FILE minimal gsm  3000");
+    client.send_response("200 result=0 (timeout) endpos=3000").await;
+
+    assert!(client.read_command().await.is_none(), "stream should close");
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly");
+}

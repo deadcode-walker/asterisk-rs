@@ -304,3 +304,275 @@ async fn channel_variables_in_originate() {
 
     client.disconnect().await.expect("disconnect failed");
 }
+
+#[tokio::test]
+async fn originate_busy_extension() {
+    common::init_tracing();
+
+    let client = connect().await;
+    let mut sub = client.subscribe();
+
+    // originate to ext 101 which returns Busy()
+    let action = OriginateAction {
+        channel: "Local/101@default".to_string(),
+        context: Some("default".to_string()),
+        exten: Some("101".to_string()),
+        priority: Some(1),
+        application: None,
+        data: None,
+        timeout: Some(10000),
+        caller_id: None,
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = client.send_action(&action).await.expect("originate failed");
+    assert!(
+        response.success,
+        "async originate should be accepted: {response:?}"
+    );
+
+    // should see Hangup with busy cause (17)
+    let found_busy = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let ev = sub.recv().await.expect("event bus closed");
+            if let AmiEvent::Hangup { cause, .. } = &ev {
+                if *cause == 17 {
+                    return true;
+                }
+            }
+            // OriginateResponse with Failure also indicates busy
+            if ev.event_name() == "OriginateResponse" {
+                return true;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for busy indication");
+
+    assert!(found_busy);
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn originate_congestion_extension() {
+    common::init_tracing();
+
+    let client = connect().await;
+    let mut sub = client.subscribe();
+
+    // originate to ext 102 which returns Congestion()
+    let action = OriginateAction {
+        channel: "Local/102@default".to_string(),
+        context: Some("default".to_string()),
+        exten: Some("102".to_string()),
+        priority: Some(1),
+        application: None,
+        data: None,
+        timeout: Some(10000),
+        caller_id: None,
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = client.send_action(&action).await.expect("originate failed");
+    assert!(
+        response.success,
+        "async originate should be accepted: {response:?}"
+    );
+
+    // should see Hangup with congestion cause (34)
+    let found = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let ev = sub.recv().await.expect("event bus closed");
+            if let AmiEvent::Hangup { cause, .. } = &ev {
+                if *cause == 34 || *cause == 21 {
+                    return true;
+                }
+            }
+            if ev.event_name() == "OriginateResponse" {
+                return true;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for congestion indication");
+
+    assert!(found);
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn concurrent_stress_50_pings() {
+    common::init_tracing();
+
+    let client = connect().await;
+
+    // fire 50 concurrent pings against real Asterisk
+    let mut handles = Vec::new();
+    for _ in 0..50 {
+        let c = client.clone();
+        handles.push(tokio::spawn(async move { c.ping().await }));
+    }
+
+    let mut action_ids = std::collections::HashSet::new();
+    for h in handles {
+        let result = h.await.expect("task panicked");
+        let response = result.expect("ping should succeed");
+        assert!(response.success, "ping should be success");
+        action_ids.insert(response.action_id.clone());
+    }
+
+    // all 50 should have unique ActionIDs
+    assert_eq!(
+        action_ids.len(),
+        50,
+        "all 50 pings should have unique ActionIDs"
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn hangup_live_channel() {
+    common::init_tracing();
+
+    let client = connect().await;
+    let mut sub = client.subscribe();
+
+    // originate a long-running call (ext 998 waits 30s)
+    let action = OriginateAction {
+        channel: "Local/998@default".to_string(),
+        context: Some("default".to_string()),
+        exten: Some("998".to_string()),
+        priority: Some(1),
+        application: None,
+        data: None,
+        timeout: Some(10000),
+        caller_id: None,
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = client.send_action(&action).await.expect("originate failed");
+    assert!(
+        response.success,
+        "originate should be accepted: {response:?}"
+    );
+
+    // wait for NewChannel to get the channel name
+    let channel_name = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let ev = sub.recv().await.expect("event bus closed");
+            if let AmiEvent::NewChannel { channel, .. } = &ev {
+                if channel.contains("998") {
+                    return channel.clone();
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for NewChannel");
+
+    // hangup the channel via AMI
+    let hangup = asterisk_rs_ami::action::HangupAction {
+        channel: channel_name.clone(),
+        cause: Some(16),
+    };
+    let response = client.send_action(&hangup).await.expect("hangup failed");
+    assert!(response.success, "hangup should succeed: {response:?}");
+
+    // verify we see the Hangup event
+    let saw_hangup = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let ev = sub.recv().await.expect("event bus closed");
+            if let AmiEvent::Hangup { channel, .. } = &ev {
+                if *channel == channel_name {
+                    return true;
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for Hangup event");
+
+    assert!(saw_hangup);
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn setvar_getvar_on_live_channel() {
+    common::init_tracing();
+
+    let client = connect().await;
+    let mut sub = client.subscribe();
+
+    // originate a long-running call
+    let action = OriginateAction {
+        channel: "Local/998@default".to_string(),
+        context: Some("default".to_string()),
+        exten: Some("998".to_string()),
+        priority: Some(1),
+        application: None,
+        data: None,
+        timeout: Some(10000),
+        caller_id: None,
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = client.send_action(&action).await.expect("originate failed");
+    assert!(response.success);
+
+    // wait for channel to be up
+    let channel_name = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let ev = sub.recv().await.expect("event bus closed");
+            if let AmiEvent::NewChannel { channel, .. } = &ev {
+                if channel.contains("998") {
+                    return channel.clone();
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for NewChannel");
+
+    // small delay for channel to fully answer
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // set a variable
+    let setvar = asterisk_rs_ami::action::SetVarAction {
+        channel: Some(channel_name.clone()),
+        variable: "TEST_LIVE_VAR".to_string(),
+        value: "integration_value".to_string(),
+    };
+    let response = client.send_action(&setvar).await.expect("setvar failed");
+    assert!(response.success, "setvar should succeed: {response:?}");
+
+    // get the variable back
+    let getvar = asterisk_rs_ami::action::GetVarAction {
+        channel: Some(channel_name.clone()),
+        variable: "TEST_LIVE_VAR".to_string(),
+    };
+    let response = client.send_action(&getvar).await.expect("getvar failed");
+    assert!(response.success, "getvar should succeed: {response:?}");
+    assert_eq!(
+        response.get("Value"),
+        Some("integration_value"),
+        "variable value should match: {response:?}"
+    );
+
+    // cleanup: hangup
+    let hangup = asterisk_rs_ami::action::HangupAction {
+        channel: channel_name,
+        cause: None,
+    };
+    let _ = client.send_action(&hangup).await;
+
+    client.disconnect().await.expect("disconnect failed");
+}

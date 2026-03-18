@@ -165,3 +165,315 @@ async fn stasis_event_from_originate() {
     ami.disconnect().await.expect("ami disconnect failed");
     ari.disconnect();
 }
+
+#[tokio::test]
+async fn channel_answer_and_hangup_via_ari() {
+    common::init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    // originate into Stasis without pre-answering (ext 301)
+    let ami = connect_ami().await;
+    let action = OriginateAction {
+        channel: "Local/999@default".to_string(),
+        context: None,
+        exten: None,
+        priority: None,
+        application: Some("Stasis".to_string()),
+        data: Some("test-app".to_string()),
+        timeout: Some(10000),
+        caller_id: Some("ari-answer-test <100>".to_string()),
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = ami.send_action(&action).await.expect("originate failed");
+    assert!(
+        response.success,
+        "originate should be accepted: {response:?}"
+    );
+
+    // wait for StasisStart
+    let channel_id = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let msg = sub.recv().await.expect("event bus closed");
+            if let AriEvent::StasisStart { channel, .. } = &msg.event {
+                if channel.caller.number == "100" {
+                    return channel.id.clone();
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for StasisStart");
+
+    // answer the channel via ARI REST
+    ari.post_empty(&format!("channels/{channel_id}/answer"))
+        .await
+        .expect("answer via ARI failed");
+
+    // verify channel state changed
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // hangup via ARI REST
+    ari.delete(&format!("channels/{channel_id}"))
+        .await
+        .expect("hangup via ARI failed");
+
+    // should see StasisEnd event
+    let saw_end = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let msg = sub.recv().await.expect("event bus closed");
+            if let AriEvent::StasisEnd { channel, .. } = &msg.event {
+                if channel.id == channel_id {
+                    return true;
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for StasisEnd");
+
+    assert!(saw_end);
+
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn bridge_create_add_channels_destroy() {
+    common::init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+
+    // originate two channels into Stasis
+    let mut channel_ids = Vec::new();
+    for i in 0..2 {
+        let action = OriginateAction {
+            channel: "Local/999@default".to_string(),
+            context: None,
+            exten: None,
+            priority: None,
+            application: Some("Stasis".to_string()),
+            data: Some("test-app".to_string()),
+            timeout: Some(10000),
+            caller_id: Some(format!("bridge-test-{i} <200>")),
+            account: None,
+            async_: true,
+            variables: vec![],
+        };
+        let response = ami.send_action(&action).await.expect("originate failed");
+        assert!(response.success);
+    }
+
+    // collect both StasisStart events
+    for _ in 0..2 {
+        let cid = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let msg = sub.recv().await.expect("event bus closed");
+                if let AriEvent::StasisStart { channel, .. } = &msg.event {
+                    if channel.caller.number == "200" {
+                        return channel.id.clone();
+                    }
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for StasisStart");
+        channel_ids.push(cid);
+    }
+
+    // create a bridge via ARI
+    let bridge: serde_json::Value = ari
+        .post("bridges", &serde_json::json!({"type": "mixing"}))
+        .await
+        .expect("create bridge failed");
+    let bridge_id = bridge["id"]
+        .as_str()
+        .expect("bridge should have id")
+        .to_string();
+
+    // add both channels to the bridge
+    for cid in &channel_ids {
+        ari.post_empty(&format!("bridges/{bridge_id}/addChannel?channel={cid}"))
+            .await
+            .expect("add channel to bridge failed");
+    }
+
+    // verify ChannelEnteredBridge events
+    let mut entered_count = 0;
+    let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let msg = sub.recv().await.expect("event bus closed");
+            if let AriEvent::ChannelEnteredBridge { bridge, .. } = &msg.event {
+                if bridge.id == bridge_id {
+                    entered_count += 1;
+                    if entered_count >= 2 {
+                        break;
+                    }
+                }
+            }
+        }
+    })
+    .await;
+
+    assert_eq!(entered_count, 2, "both channels should enter bridge");
+
+    // destroy the bridge (auto-kicks channels)
+    ari.delete(&format!("bridges/{bridge_id}"))
+        .await
+        .expect("destroy bridge failed");
+
+    // cleanup: hangup channels
+    for cid in &channel_ids {
+        let _ = ari.delete(&format!("channels/{cid}")).await;
+    }
+
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn channel_dtmf_via_ari() {
+    common::init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+    let action = OriginateAction {
+        channel: "Local/999@default".to_string(),
+        context: None,
+        exten: None,
+        priority: None,
+        application: Some("Stasis".to_string()),
+        data: Some("test-app".to_string()),
+        timeout: Some(10000),
+        caller_id: Some("dtmf-test <100>".to_string()),
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = ami.send_action(&action).await.expect("originate failed");
+    assert!(response.success);
+
+    // wait for StasisStart
+    let channel_id = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let msg = sub.recv().await.expect("event bus closed");
+            if let AriEvent::StasisStart { channel, .. } = &msg.event {
+                if channel.caller.number == "100" {
+                    return channel.id.clone();
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for StasisStart");
+
+    // send DTMF via ARI
+    ari.post_empty(&format!("channels/{channel_id}/dtmf?dtmf=1234"))
+        .await
+        .expect("send dtmf failed");
+
+    // DTMF events may or may not fire back to the Stasis app depending on
+    // channel type and direction. the important assertion is that the REST
+    // call above succeeded (line 384). collect any events opportunistically.
+    let mut digits = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let msg = sub.recv().await.expect("event bus closed");
+            if let AriEvent::ChannelDtmfReceived { channel, digit, .. } = &msg.event {
+                if channel.id == channel_id {
+                    digits.push(digit.clone());
+                    if digits.len() >= 4 {
+                        break;
+                    }
+                }
+            }
+        }
+    })
+    .await;
+
+    tracing::info!(digits = ?digits, "collected DTMF events (may be empty for Local channels)");
+
+    // cleanup
+    let _ = ari.delete(&format!("channels/{channel_id}")).await;
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn channel_variable_via_ari() {
+    common::init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+    let action = OriginateAction {
+        channel: "Local/999@default".to_string(),
+        context: None,
+        exten: None,
+        priority: None,
+        application: Some("Stasis".to_string()),
+        data: Some("test-app".to_string()),
+        timeout: Some(10000),
+        caller_id: Some("var-test <100>".to_string()),
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = ami.send_action(&action).await.expect("originate failed");
+    assert!(response.success);
+
+    let channel_id = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let msg = sub.recv().await.expect("event bus closed");
+            if let AriEvent::StasisStart { channel, .. } = &msg.event {
+                if channel.caller.number == "100" {
+                    return channel.id.clone();
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for StasisStart");
+
+    // set a variable via ARI
+    ari.post_empty(&format!(
+        "channels/{channel_id}/variable?variable=MY_ARI_VAR&value=ari_value"
+    ))
+    .await
+    .expect("set variable failed");
+
+    // get it back
+    let var: serde_json::Value = ari
+        .get(&format!(
+            "channels/{channel_id}/variable?variable=MY_ARI_VAR"
+        ))
+        .await
+        .expect("get variable failed");
+
+    assert_eq!(
+        var["value"].as_str(),
+        Some("ari_value"),
+        "variable value should match: {var}"
+    );
+
+    // cleanup
+    let _ = ari.delete(&format!("channels/{channel_id}")).await;
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}

@@ -945,3 +945,352 @@ async fn reconnect_on_disconnect() {
     client.disconnect().await.expect("disconnect");
     let _ = mock_handle.await;
 }
+
+
+#[tokio::test]
+async fn builder_missing_credentials() {
+    common::init_tracing();
+
+    let result = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(9999)
+        .build()
+        .await;
+
+    assert!(
+        result.is_err(),
+        "builder without credentials should fail"
+    );
+}
+
+#[tokio::test]
+async fn connection_state_transitions() {
+    common::init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    assert_eq!(
+        client.connection_state(),
+        asterisk_rs_core::config::ConnectionState::Connected,
+        "should be connected after build"
+    );
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert_eq!(
+        client.connection_state(),
+        asterisk_rs_core::config::ConnectionState::Disconnected,
+        "should be disconnected after disconnect"
+    );
+
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn concurrent_stress_50_actions() {
+    common::init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // read and respond to 50 actions
+        for _ in 0..50 {
+            let msg = conn.read_message().await.expect("should receive action");
+            let aid = get_header(&msg, "ActionID")
+                .expect("should have ActionID")
+                .to_string();
+            conn.send_message(&[("Response", "Success"), ("ActionID", &aid), ("Ping", "Pong")])
+                .await;
+        }
+
+        // drain remaining (logoff)
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(10))
+        .build()
+        .await
+        .expect("client should connect");
+
+    // spawn 50 concurrent pings
+    let mut handles = Vec::new();
+    for _ in 0..50 {
+        let c = client.clone();
+        handles.push(tokio::spawn(async move { c.ping().await }));
+    }
+
+    let mut action_ids = std::collections::HashSet::new();
+    for (i, h) in handles.into_iter().enumerate() {
+        let resp = h
+            .await
+            .expect("task should not panic")
+            .unwrap_or_else(|e| panic!("ping {i} should succeed: {e}"));
+        assert!(resp.success, "ping {i} response should be success");
+        action_ids.insert(resp.action_id.clone());
+    }
+
+    assert_eq!(
+        action_ids.len(),
+        50,
+        "all 50 action IDs should be distinct"
+    );
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn connection_drop_cancels_pending_actions() {
+    common::init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // read the ping but drop connection immediately without responding
+        let _msg = conn.read_message().await;
+        // connection drops here when conn is dropped
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let result = client.ping().await;
+    assert!(
+        result.is_err(),
+        "ping should fail when connection is dropped"
+    );
+
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn multiple_subscribers_all_receive() {
+    common::init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // small delay so subscribers are registered before the event arrives
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        conn.send_message(&[
+            ("Event", "FullyBooted"),
+            ("Privilege", "system,all"),
+            ("Status", "Fully Booted"),
+        ])
+        .await;
+
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let mut sub1 = client.subscribe();
+    let mut sub2 = client.subscribe();
+    let mut sub3 = client.subscribe();
+
+    let timeout = Duration::from_secs(3);
+    let e1 = tokio::time::timeout(timeout, sub1.recv())
+        .await
+        .expect("sub1 should receive event within timeout")
+        .expect("sub1 should not be closed");
+    let e2 = tokio::time::timeout(timeout, sub2.recv())
+        .await
+        .expect("sub2 should receive event within timeout")
+        .expect("sub2 should not be closed");
+    let e3 = tokio::time::timeout(timeout, sub3.recv())
+        .await
+        .expect("sub3 should receive event within timeout")
+        .expect("sub3 should not be closed");
+
+    assert_eq!(e1.event_name(), "FullyBooted");
+    assert_eq!(e2.event_name(), "FullyBooted");
+    assert_eq!(e3.event_name(), "FullyBooted");
+
+    drop(client);
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn ping_interval_sends_periodic_pings() {
+    common::init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<u32>(1);
+
+    let handle = server.accept_one(move |mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let mut ping_count: u32 = 0;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+
+        // read messages for 1 second, counting pings
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match tokio::time::timeout(remaining, conn.read_message()).await {
+                Ok(Some(msg)) => {
+                    if get_header(&msg, "Action") == Some("Ping") {
+                        let aid = get_header(&msg, "ActionID")
+                            .expect("ping should have ActionID")
+                            .to_string();
+                        conn.send_message(&[
+                            ("Response", "Success"),
+                            ("ActionID", &aid),
+                            ("Ping", "Pong"),
+                        ])
+                        .await;
+                        ping_count += 1;
+                    }
+                }
+                Ok(None) => break, // eof
+                Err(_) => break,   // timeout
+            }
+        }
+
+        tx.send(ping_count).await.expect("should send count");
+
+        // drain until client disconnects
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .ping_interval(Duration::from_millis(200))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let count = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("should receive count within timeout")
+        .expect("channel should not be closed");
+
+    assert!(
+        count >= 3,
+        "expected at least 3 periodic pings in 1s at 200ms interval, got {count}"
+    );
+
+    drop(client);
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn send_on_disconnected_client_returns_error() {
+    common::init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+        // read logoff then drain
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let result = client.ping().await;
+    assert!(
+        result.is_err(),
+        "ping on disconnected client should fail"
+    );
+
+    let _ = handle.await;
+}
