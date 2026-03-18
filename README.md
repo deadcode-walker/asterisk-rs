@@ -1,29 +1,28 @@
 # asterisk-rs
 
-Production Rust client for Asterisk AMI, AGI, and ARI.
-
 ![crates.io](https://img.shields.io/crates/v/asterisk-rs.svg)
 ![docs.rs](https://img.shields.io/docsrs/asterisk-rs)
 ![CI](https://github.com/deadcode-walker/asterisk-rs/actions/workflows/ci.yml/badge.svg)
 ![MSRV](https://img.shields.io/badge/MSRV-1.75-blue)
 ![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)
 
+Async Rust clients for Asterisk AMI, AGI, and ARI.
+
 ## Overview
 
 asterisk-rs is a Rust workspace providing typed, async clients for the three
-Asterisk integration interfaces: AMI (management), AGI (dialplan gateway), and
-ARI (REST + WebSocket). Each protocol lives in its own crate with shared types
-and error handling in `asterisk-rs-core`.
+Asterisk integration interfaces. Each protocol lives in its own crate with
+shared types and error handling in `asterisk-rs-core`.
 
 ## Crates
 
-| Crate | Description | Status |
-|---|---|---|
-| `asterisk-rs-core` | Shared error types, event bus, configuration | In progress |
-| `asterisk-ami` | AMI TCP client with MD5 auth and typed events | Planned |
-| `asterisk-agi` | FastAGI server for dialplan scripting | Planned |
-| `asterisk-ari` | ARI REST + WebSocket client | Planned |
-| `asterisk-rs` | Umbrella crate re-exporting all sub-crates | Planned |
+| Crate | Description |
+|---|---|
+| `asterisk-rs` | Umbrella crate, re-exports all protocols under feature flags |
+| `asterisk-rs-core` | Shared error types, event bus, reconnection policy |
+| `asterisk-ami` | AMI client: typed actions, events, codec, reconnection |
+| `asterisk-agi` | FastAGI server: handler trait, typed commands |
+| `asterisk-ari` | ARI client: REST + WebSocket, typed events, resource handles |
 
 ## Quick Start
 
@@ -32,15 +31,16 @@ cargo add asterisk-rs
 ```
 
 ```rust,no_run
-use asterisk_rs::ami;
+use asterisk_rs::ami::{AmiClient, AmiClientBuilder};
 
-// AMI example — requires running Asterisk
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = ami::Client::connect("127.0.0.1:5038").await?;
-    client.login("admin", "secret").await?;
+    let client = AmiClientBuilder::new("127.0.0.1:5038")
+        .credentials("admin", "secret")
+        .build()
+        .await?;
 
-    let response = client.action("CoreShowChannels", &[]).await?;
+    let response = client.action("Command", &[("Command", "core show channels")]).await?;
     println!("{response:?}");
 
     client.logoff().await?;
@@ -50,11 +50,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Features
 
-- Typed AMI events and actions with serde deserialization
-- Automatic reconnection with configurable backoff
-- Structured logging via `tracing`
-- TLS support through rustls
-- AGI handle pattern for stateful dialplan sessions
+- Async/await with tokio
+- Typed actions, commands, and events for all three protocols
+- Automatic reconnection with exponential backoff and jitter
+- MD5 challenge-response authentication (AMI)
+- Handle pattern for ARI resources (ChannelHandle, BridgeHandle, etc.)
+- Event bus with typed pub/sub
+- Structured logging via tracing
+- Feature flags for granular dependency control
+
+## Protocols
+
+| Protocol | Port | Transport | Crate |
+|---|---|---|---|
+| AMI | 5038 | TCP | `asterisk-ami` |
+| AGI | 4573 | TCP (FastAGI) | `asterisk-agi` |
+| ARI | 8088 | HTTP + WebSocket | `asterisk-ari` |
 
 ## MSRV
 

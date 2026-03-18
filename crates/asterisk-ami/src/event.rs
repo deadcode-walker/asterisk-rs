@@ -69,9 +69,7 @@ pub enum AmiEvent {
     },
 
     /// asterisk has finished booting
-    FullyBooted {
-        status: String,
-    },
+    FullyBooted { status: String },
 
     /// peer registration/status change
     PeerStatus {
@@ -87,9 +85,7 @@ pub enum AmiEvent {
     },
 
     /// bridge destroyed
-    BridgeDestroy {
-        bridge_unique_id: String,
-    },
+    BridgeDestroy { bridge_unique_id: String },
 
     /// channel entered bridge
     BridgeEnter {
@@ -132,10 +128,7 @@ impl AmiEvent {
             "Hangup" => Self::Hangup {
                 channel: get(raw, "Channel"),
                 unique_id: get(raw, "Uniqueid"),
-                cause: raw
-                    .get("Cause")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                cause: raw.get("Cause").and_then(|s| s.parse().ok()).unwrap_or(0),
                 cause_txt: get(raw, "Cause-txt"),
             },
             "Newstate" => Self::Newstate {

@@ -35,15 +35,11 @@ impl PlaybackHandle {
 
     /// stop the playback
     pub async fn stop(&self) -> Result<()> {
-        self.client
-            .delete(&format!("/playbacks/{}", self.id))
-            .await
+        self.client.delete(&format!("/playbacks/{}", self.id)).await
     }
 
     /// get current playback state
     pub async fn get(&self) -> Result<Playback> {
-        self.client
-            .get(&format!("/playbacks/{}", self.id))
-            .await
+        self.client.get(&format!("/playbacks/{}", self.id)).await
     }
 }

@@ -1,0 +1,5 @@
+[default.extend-words]
+# Domain-specific terms
+agi = "agi"
+ami = "ami"
+ari = "ari"

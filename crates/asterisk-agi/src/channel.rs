@@ -92,21 +92,13 @@ impl AgiChannel {
     }
 
     /// say a digit string with escape digits
-    pub async fn say_digits(
-        &mut self,
-        digits: &str,
-        escape_digits: &str,
-    ) -> Result<AgiResponse> {
+    pub async fn say_digits(&mut self, digits: &str, escape_digits: &str) -> Result<AgiResponse> {
         let cmd = command::format_command(command::SAY_DIGITS, &[digits, escape_digits]);
         self.send_command(&cmd).await
     }
 
     /// say a number with escape digits
-    pub async fn say_number(
-        &mut self,
-        number: i64,
-        escape_digits: &str,
-    ) -> Result<AgiResponse> {
+    pub async fn say_number(&mut self, number: i64, escape_digits: &str) -> Result<AgiResponse> {
         let num = number.to_string();
         let cmd = command::format_command(command::SAY_NUMBER, &[&num, escape_digits]);
         self.send_command(&cmd).await

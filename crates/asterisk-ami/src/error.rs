@@ -21,10 +21,7 @@ pub enum AmiError {
     Io(#[from] std::io::Error),
 
     #[error("action failed: {message}")]
-    ActionFailed {
-        action_id: String,
-        message: String,
-    },
+    ActionFailed { action_id: String, message: String },
 
     #[error("client is disconnected")]
     Disconnected,

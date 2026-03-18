@@ -26,7 +26,5 @@ pub async fn list_by_tech(client: &AriClient, tech: &str) -> Result<Vec<Endpoint
 
 /// get a specific endpoint
 pub async fn get(client: &AriClient, tech: &str, resource: &str) -> Result<Endpoint> {
-    client
-        .get(&format!("/endpoints/{tech}/{resource}"))
-        .await
+    client.get(&format!("/endpoints/{tech}/{resource}")).await
 }

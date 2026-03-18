@@ -130,10 +130,14 @@ impl Decoder for AmiCodec {
 
             // split on first ':'
             if let Some(colon_pos) = line.iter().position(|&b| b == b':') {
-                let key = String::from_utf8_lossy(&line[..colon_pos]).trim().to_string();
+                let key = String::from_utf8_lossy(&line[..colon_pos])
+                    .trim()
+                    .to_string();
                 let value_start = colon_pos + 1;
                 let value = if value_start < line.len() {
-                    String::from_utf8_lossy(&line[value_start..]).trim().to_string()
+                    String::from_utf8_lossy(&line[value_start..])
+                        .trim()
+                        .to_string()
                 } else {
                     String::new()
                 };

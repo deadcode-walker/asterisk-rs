@@ -80,23 +80,24 @@ impl AriConfigBuilder {
     /// fails if app_name is empty or URLs cannot be parsed
     pub fn build(self) -> Result<AriConfig> {
         if self.app_name.is_empty() {
-            return Err(AriError::InvalidUrl("app_name must not be empty".to_owned()));
+            return Err(AriError::InvalidUrl(
+                "app_name must not be empty".to_owned(),
+            ));
         }
 
         let http_scheme = if self.secure { "https" } else { "http" };
         let ws_scheme = if self.secure { "wss" } else { "ws" };
 
         let base_url_str = format!("{http_scheme}://{}:{}/ari", self.host, self.port);
-        let base_url = Url::parse(&base_url_str)
-            .map_err(|e| AriError::InvalidUrl(e.to_string()))?;
+        let base_url =
+            Url::parse(&base_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
 
         // ws url includes api_key for authentication
         let ws_url_str = format!(
             "{ws_scheme}://{}:{}/ari/events?app={}&api_key={}:{}",
             self.host, self.port, self.app_name, self.username, self.password,
         );
-        let ws_url = Url::parse(&ws_url_str)
-            .map_err(|e| AriError::InvalidUrl(e.to_string()))?;
+        let ws_url = Url::parse(&ws_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
 
         Ok(AriConfig {
             base_url,

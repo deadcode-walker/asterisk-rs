@@ -153,11 +153,14 @@ mod tests {
             "args": ["arg1", "arg2"]
         }"#;
 
-        let event: AriEvent = serde_json::from_str(json)
-            .expect("stasis start should deserialize");
+        let event: AriEvent = serde_json::from_str(json).expect("stasis start should deserialize");
 
         match event {
-            AriEvent::StasisStart { channel, args, replace_channel } => {
+            AriEvent::StasisStart {
+                channel,
+                args,
+                replace_channel,
+            } => {
                 assert_eq!(channel.id, "1234.5");
                 assert_eq!(channel.name, "PJSIP/alice-00000001");
                 assert_eq!(channel.state, "Ring");
@@ -183,11 +186,14 @@ mod tests {
             "duration_ms": 120
         }"#;
 
-        let event: AriEvent = serde_json::from_str(json)
-            .expect("dtmf received should deserialize");
+        let event: AriEvent = serde_json::from_str(json).expect("dtmf received should deserialize");
 
         match event {
-            AriEvent::ChannelDtmfReceived { channel, digit, duration_ms } => {
+            AriEvent::ChannelDtmfReceived {
+                channel,
+                digit,
+                duration_ms,
+            } => {
                 assert_eq!(channel.id, "chan-1");
                 assert_eq!(digit, "5");
                 assert_eq!(duration_ms, 120);
@@ -221,11 +227,15 @@ mod tests {
             }
         }"#;
 
-        let event: AriEvent = serde_json::from_str(json)
-            .expect("minimal stasis start should deserialize");
+        let event: AriEvent =
+            serde_json::from_str(json).expect("minimal stasis start should deserialize");
 
         match event {
-            AriEvent::StasisStart { channel, args, replace_channel } => {
+            AriEvent::StasisStart {
+                channel,
+                args,
+                replace_channel,
+            } => {
                 assert_eq!(channel.id, "abc");
                 assert!(args.is_empty());
                 assert!(replace_channel.is_none());

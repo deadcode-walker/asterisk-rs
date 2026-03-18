@@ -2,7 +2,7 @@
 
 use crate::client::AriClient;
 use crate::error::Result;
-use crate::event::{Bridge, Playback, LiveRecording};
+use crate::event::{Bridge, LiveRecording, Playback};
 
 /// handle to an ari bridge
 #[derive(Debug, Clone)]
@@ -65,9 +65,7 @@ impl BridgeHandle {
 
     /// destroy this bridge
     pub async fn destroy(&self) -> Result<()> {
-        self.client
-            .delete(&format!("/bridges/{}", self.id))
-            .await
+        self.client.delete(&format!("/bridges/{}", self.id)).await
     }
 }
 
