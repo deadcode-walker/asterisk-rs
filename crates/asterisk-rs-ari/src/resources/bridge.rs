@@ -1,6 +1,6 @@
 //! bridge operations — create, destroy, add/remove channels, play, record.
 
-use crate::client::AriClient;
+use crate::client::{url_encode, AriClient};
 use crate::error::Result;
 use crate::event::{Bridge, LiveRecording, Playback};
 
@@ -28,7 +28,8 @@ impl BridgeHandle {
         self.client
             .post_empty(&format!(
                 "/bridges/{}/addChannel?channel={}",
-                self.id, channel_id
+                self.id,
+                url_encode(channel_id)
             ))
             .await
     }
@@ -38,7 +39,8 @@ impl BridgeHandle {
         self.client
             .post_empty(&format!(
                 "/bridges/{}/removeChannel?channel={}",
-                self.id, channel_id
+                self.id,
+                url_encode(channel_id)
             ))
             .await
     }
@@ -71,7 +73,7 @@ impl BridgeHandle {
     /// start music on hold for the bridge
     pub async fn start_moh(&self, moh_class: Option<&str>) -> Result<()> {
         let path = match moh_class {
-            Some(c) => format!("/bridges/{}/moh?mohClass={}", self.id, c),
+            Some(c) => format!("/bridges/{}/moh?mohClass={}", self.id, url_encode(c)),
             None => format!("/bridges/{}/moh", self.id),
         };
         self.client.post_empty(&path).await

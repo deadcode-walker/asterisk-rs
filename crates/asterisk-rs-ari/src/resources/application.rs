@@ -1,6 +1,6 @@
 //! stasis application management.
 
-use crate::client::AriClient;
+use crate::client::{url_encode, AriClient};
 use crate::error::Result;
 
 /// ari stasis application representation
@@ -35,7 +35,10 @@ pub async fn subscribe(
 ) -> Result<Application> {
     client
         .post(
-            &format!("/applications/{application_name}/subscription?eventSource={event_source}"),
+            &format!(
+                "/applications/{application_name}/subscription?eventSource={}",
+                url_encode(event_source)
+            ),
             &serde_json::json!({}),
         )
         .await
@@ -49,7 +52,8 @@ pub async fn unsubscribe(
 ) -> Result<Application> {
     client
         .delete_with_response(&format!(
-            "/applications/{application_name}/subscription?eventSource={event_source}"
+            "/applications/{application_name}/subscription?eventSource={}",
+            url_encode(event_source)
         ))
         .await
 }

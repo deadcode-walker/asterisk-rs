@@ -13,8 +13,6 @@ use crate::event::AriEvent;
 /// deserializes events, and publishes them to an event bus
 pub(crate) struct WsEventListener {
     shutdown_tx: watch::Sender<bool>,
-    // kept for future graceful join on shutdown
-    #[allow(dead_code)]
     task_handle: tokio::task::JoinHandle<()>,
 }
 
@@ -37,8 +35,8 @@ impl WsEventListener {
 
     /// signal the background task to shut down
     pub(crate) fn shutdown(&self) {
-        // receiver side will see the change and exit
         let _ = self.shutdown_tx.send(true);
+        self.task_handle.abort();
     }
 }
 

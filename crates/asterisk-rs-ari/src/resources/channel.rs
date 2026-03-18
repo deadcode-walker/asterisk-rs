@@ -1,6 +1,6 @@
 //! channel operations — originate, answer, hangup, dtmf, hold, mute, etc.
 
-use crate::client::AriClient;
+use crate::client::{url_encode, AriClient};
 use crate::error::Result;
 use crate::event::{Channel, LiveRecording, Playback};
 
@@ -59,7 +59,7 @@ impl ChannelHandle {
     /// hang up the channel with an optional reason
     pub async fn hangup(&self, reason: Option<&str>) -> Result<()> {
         let path = match reason {
-            Some(r) => format!("/channels/{}?reason={}", self.id, r),
+            Some(r) => format!("/channels/{}?reason={}", self.id, url_encode(r)),
             None => format!("/channels/{}", self.id),
         };
         self.client.delete(&path).await
@@ -88,7 +88,7 @@ impl ChannelHandle {
     /// mute the channel, optionally specifying direction (both, in, out)
     pub async fn mute(&self, direction: Option<&str>) -> Result<()> {
         let path = match direction {
-            Some(d) => format!("/channels/{}/mute?direction={}", self.id, d),
+            Some(d) => format!("/channels/{}/mute?direction={}", self.id, url_encode(d)),
             None => format!("/channels/{}/mute", self.id),
         };
         self.client.post_empty(&path).await
@@ -97,7 +97,7 @@ impl ChannelHandle {
     /// unmute the channel, optionally specifying direction
     pub async fn unmute(&self, direction: Option<&str>) -> Result<()> {
         let path = match direction {
-            Some(d) => format!("/channels/{}/mute?direction={}", self.id, d),
+            Some(d) => format!("/channels/{}/mute?direction={}", self.id, url_encode(d)),
             None => format!("/channels/{}/mute", self.id),
         };
         self.client.delete(&path).await
@@ -120,14 +120,22 @@ impl ChannelHandle {
     /// send dtmf digits to the channel
     pub async fn send_dtmf(&self, dtmf: &str) -> Result<()> {
         self.client
-            .post_empty(&format!("/channels/{}/dtmf?dtmf={}", self.id, dtmf))
+            .post_empty(&format!(
+                "/channels/{}/dtmf?dtmf={}",
+                self.id,
+                url_encode(dtmf)
+            ))
             .await
     }
 
     /// get a channel variable
     pub async fn get_variable(&self, name: &str) -> Result<Variable> {
         self.client
-            .get(&format!("/channels/{}/variable?variable={}", self.id, name))
+            .get(&format!(
+                "/channels/{}/variable?variable={}",
+                self.id,
+                url_encode(name)
+            ))
             .await
     }
 
@@ -136,7 +144,9 @@ impl ChannelHandle {
         self.client
             .post_empty(&format!(
                 "/channels/{}/variable?variable={}&value={}",
-                self.id, name, value
+                self.id,
+                url_encode(name),
+                url_encode(value)
             ))
             .await
     }
@@ -151,10 +161,10 @@ impl ChannelHandle {
         let mut path = format!("/channels/{}/continue", self.id);
         let mut params = Vec::new();
         if let Some(c) = context {
-            params.push(format!("context={c}"));
+            params.push(format!("context={}", url_encode(c)));
         }
         if let Some(e) = extension {
-            params.push(format!("extension={e}"));
+            params.push(format!("extension={}", url_encode(e)));
         }
         if let Some(p) = priority {
             params.push(format!("priority={p}"));
@@ -173,12 +183,12 @@ impl ChannelHandle {
         whisper: Option<&str>,
         app: &str,
     ) -> Result<Channel> {
-        let mut params = vec![format!("app={app}")];
+        let mut params = vec![format!("app={}", url_encode(app))];
         if let Some(s) = spy {
-            params.push(format!("spy={s}"));
+            params.push(format!("spy={}", url_encode(s)));
         }
         if let Some(w) = whisper {
-            params.push(format!("whisper={w}"));
+            params.push(format!("whisper={}", url_encode(w)));
         }
         let query = params.join("&");
         self.client
@@ -194,7 +204,10 @@ impl ChannelHandle {
         self.client
             .post_empty(&format!(
                 "/channels/{}/redirect?context={}&extension={}&priority={}",
-                self.id, context, extension, priority
+                self.id,
+                url_encode(context),
+                url_encode(extension),
+                priority
             ))
             .await
     }
@@ -241,7 +254,7 @@ impl ChannelHandle {
     pub async fn dial(&self, caller: Option<&str>, timeout: Option<i32>) -> Result<()> {
         let mut params = Vec::new();
         if let Some(c) = caller {
-            params.push(format!("caller={c}"));
+            params.push(format!("caller={}", url_encode(c)));
         }
         if let Some(t) = timeout {
             params.push(format!("timeout={t}"));

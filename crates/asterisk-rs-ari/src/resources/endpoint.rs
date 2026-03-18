@@ -1,6 +1,6 @@
 //! endpoint query operations (read-only).
 
-use crate::client::AriClient;
+use crate::client::{url_encode, AriClient};
 use crate::error::Result;
 
 /// ari endpoint representation
@@ -33,7 +33,10 @@ pub async fn get(client: &AriClient, tech: &str, resource: &str) -> Result<Endpo
 pub async fn send_message(client: &AriClient, to: &str, from: &str, body: &str) -> Result<()> {
     client
         .put_empty(&format!(
-            "/endpoints/sendMessage?to={to}&from={from}&body={body}"
+            "/endpoints/sendMessage?to={}&from={}&body={}",
+            url_encode(to),
+            url_encode(from),
+            url_encode(body)
         ))
         .await
 }
@@ -42,7 +45,10 @@ pub async fn send_message(client: &AriClient, to: &str, from: &str, body: &str) 
 pub async fn refer(client: &AriClient, to: &str, from: &str, refer_to: &str) -> Result<()> {
     client
         .post_empty(&format!(
-            "/endpoints/refer?to={to}&from={from}&refer_to={refer_to}"
+            "/endpoints/refer?to={}&from={}&refer_to={}",
+            url_encode(to),
+            url_encode(from),
+            url_encode(refer_to)
         ))
         .await
 }
@@ -57,7 +63,9 @@ pub async fn send_message_to_endpoint(
 ) -> Result<()> {
     client
         .put_empty(&format!(
-            "/endpoints/{tech}/{resource}/sendMessage?from={from}&body={body}"
+            "/endpoints/{tech}/{resource}/sendMessage?from={}&body={}",
+            url_encode(from),
+            url_encode(body)
         ))
         .await
 }
@@ -72,7 +80,9 @@ pub async fn refer_to_endpoint(
 ) -> Result<()> {
     client
         .post_empty(&format!(
-            "/endpoints/{tech}/{resource}/refer?from={from}&refer_to={refer_to}"
+            "/endpoints/{tech}/{resource}/refer?from={}&refer_to={}",
+            url_encode(from),
+            url_encode(refer_to)
         ))
         .await
 }

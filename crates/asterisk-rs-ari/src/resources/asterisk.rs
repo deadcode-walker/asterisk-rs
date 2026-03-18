@@ -1,6 +1,6 @@
 //! asterisk system operations.
 
-use crate::client::AriClient;
+use crate::client::{url_encode, AriClient};
 use crate::error::Result;
 use serde::Deserialize;
 
@@ -62,7 +62,7 @@ pub struct Variable {
 /// get asterisk system information
 pub async fn info(client: &AriClient, only: Option<&str>) -> Result<AsteriskInfo> {
     let path = match only {
-        Some(filter) => format!("/asterisk/info?only={filter}"),
+        Some(filter) => format!("/asterisk/info?only={}", url_encode(filter)),
         None => "/asterisk/info".to_string(),
     };
     client.get(&path).await
@@ -119,7 +119,8 @@ pub async fn add_log_channel(
 ) -> Result<()> {
     client
         .post_empty(&format!(
-            "/asterisk/logging/{log_channel_name}?configuration={configuration}"
+            "/asterisk/logging/{log_channel_name}?configuration={}",
+            url_encode(configuration)
         ))
         .await
 }
@@ -141,7 +142,10 @@ pub async fn rotate_log_channel(client: &AriClient, log_channel_name: &str) -> R
 /// get a global variable
 pub async fn get_variable(client: &AriClient, variable: &str) -> Result<Variable> {
     client
-        .get(&format!("/asterisk/variable?variable={variable}"))
+        .get(&format!(
+            "/asterisk/variable?variable={}",
+            url_encode(variable)
+        ))
         .await
 }
 
@@ -149,7 +153,9 @@ pub async fn get_variable(client: &AriClient, variable: &str) -> Result<Variable
 pub async fn set_variable(client: &AriClient, variable: &str, value: &str) -> Result<()> {
     client
         .post_empty(&format!(
-            "/asterisk/variable?variable={variable}&value={value}"
+            "/asterisk/variable?variable={}&value={}",
+            url_encode(variable),
+            url_encode(value)
         ))
         .await
 }

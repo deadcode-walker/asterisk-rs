@@ -36,7 +36,11 @@ impl AriClient {
     ///
     /// builds the HTTP client and spawns the websocket event listener
     pub async fn connect(config: AriConfig) -> Result<Self> {
-        let http = reqwest::Client::builder().build().map_err(AriError::Http)?;
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(AriError::Http)?;
 
         let event_bus = EventBus::new(256);
 
@@ -206,4 +210,20 @@ impl AriClient {
         }
         Ok(response)
     }
+}
+
+/// percent-encode a string for use in URL path segments or query values
+pub fn url_encode(input: &str) -> String {
+    let mut encoded = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push_str(&format!("%{byte:02X}"));
+            }
+        }
+    }
+    encoded
 }
