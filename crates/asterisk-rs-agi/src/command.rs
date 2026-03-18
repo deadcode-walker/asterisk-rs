@@ -15,6 +15,37 @@ pub const SET_CALLERID: &str = "SET CALLERID";
 pub const DATABASE_GET: &str = "DATABASE GET";
 pub const DATABASE_PUT: &str = "DATABASE PUT";
 pub const DATABASE_DEL: &str = "DATABASE DEL";
+pub const CONTROL_STREAM_FILE: &str = "CONTROL STREAM FILE";
+pub const DATABASE_DELTREE: &str = "DATABASE DELTREE";
+pub const GET_FULL_VARIABLE: &str = "GET FULL VARIABLE";
+pub const GET_OPTION: &str = "GET OPTION";
+pub const GOSUB: &str = "GOSUB";
+pub const NOOP: &str = "NOOP";
+pub const RECEIVE_CHAR: &str = "RECEIVE CHAR";
+pub const RECEIVE_TEXT: &str = "RECEIVE TEXT";
+pub const RECORD_FILE: &str = "RECORD FILE";
+pub const SAY_ALPHA: &str = "SAY ALPHA";
+pub const SAY_DATE: &str = "SAY DATE";
+pub const SAY_DATETIME: &str = "SAY DATETIME";
+pub const SAY_PHONETIC: &str = "SAY PHONETIC";
+pub const SAY_TIME: &str = "SAY TIME";
+pub const SEND_IMAGE: &str = "SEND IMAGE";
+pub const SEND_TEXT: &str = "SEND TEXT";
+pub const SET_AUTOHANGUP: &str = "SET AUTOHANGUP";
+pub const SET_CONTEXT: &str = "SET CONTEXT";
+pub const SET_EXTENSION: &str = "SET EXTENSION";
+pub const SET_MUSIC: &str = "SET MUSIC";
+pub const SET_PRIORITY: &str = "SET PRIORITY";
+pub const SPEECH_ACTIVATE_GRAMMAR: &str = "SPEECH ACTIVATE GRAMMAR";
+pub const SPEECH_CREATE: &str = "SPEECH CREATE";
+pub const SPEECH_DEACTIVATE_GRAMMAR: &str = "SPEECH DEACTIVATE GRAMMAR";
+pub const SPEECH_DESTROY: &str = "SPEECH DESTROY";
+pub const SPEECH_LOAD_GRAMMAR: &str = "SPEECH LOAD GRAMMAR";
+pub const SPEECH_RECOGNIZE: &str = "SPEECH RECOGNIZE";
+pub const SPEECH_SET: &str = "SPEECH SET";
+pub const SPEECH_UNLOAD_GRAMMAR: &str = "SPEECH UNLOAD GRAMMAR";
+pub const TDD_MODE: &str = "TDD MODE";
+pub const ASYNCAGI_BREAK: &str = "ASYNCAGI BREAK";
 
 /// format an AGI command string with proper quoting
 ///
@@ -82,5 +113,47 @@ mod tests {
             format_command(HANGUP, &["SIP/100-00000001"]),
             "HANGUP SIP/100-00000001\n"
         );
+    }
+
+    #[test]
+    fn format_record_file_command() {
+        let cmd = format_command(RECORD_FILE, &["myfile", "wav", "#", "5000"]);
+        assert_eq!(cmd, "RECORD FILE myfile wav # 5000\n");
+    }
+
+    #[test]
+    fn format_database_get_command() {
+        let cmd = format_command(DATABASE_GET, &["cidname", "12125551234"]);
+        assert_eq!(cmd, "DATABASE GET cidname 12125551234\n");
+    }
+
+    #[test]
+    fn format_gosub_command() {
+        let cmd = format_command(GOSUB, &["default", "s", "1"]);
+        assert_eq!(cmd, "GOSUB default s 1\n");
+    }
+
+    #[test]
+    fn format_say_alpha_command() {
+        let cmd = format_command(SAY_ALPHA, &["hello", "#"]);
+        assert_eq!(cmd, "SAY ALPHA hello #\n");
+    }
+
+    #[test]
+    fn format_speech_create_command() {
+        let cmd = format_command(SPEECH_CREATE, &["lumenvox"]);
+        assert_eq!(cmd, "SPEECH CREATE lumenvox\n");
+    }
+
+    #[test]
+    fn format_set_callerid_command() {
+        let cmd = format_command(SET_CALLERID, &["\"John\" <1234>"]);
+        assert_eq!(cmd, "SET CALLERID \"\\\"John\\\" <1234>\"\n");
+    }
+
+    #[test]
+    fn format_set_music_command() {
+        let cmd = format_command(SET_MUSIC, &["on", "default"]);
+        assert_eq!(cmd, "SET MUSIC on default\n");
     }
 }
