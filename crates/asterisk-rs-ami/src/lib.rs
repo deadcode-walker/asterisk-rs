@@ -35,3 +35,4 @@ pub mod response;
 pub use client::{AmiClient, AmiClientBuilder};
 pub use error::AmiError;
 pub use event::AmiEvent;
+pub use response::EventListResponse;

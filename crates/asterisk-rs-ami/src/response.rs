@@ -48,15 +48,36 @@ impl AmiResponse {
     }
 }
 
+/// response from an event-generating action (e.g., Status, QueueStatus)
+///
+/// contains the initial response plus all events received until the
+/// completion marker event
+#[derive(Debug, Clone)]
+pub struct EventListResponse {
+    /// the initial response to the action
+    pub response: AmiResponse,
+    /// events received as part of this action's result
+    pub events: Vec<crate::event::AmiEvent>,
+}
+
+/// tracks a pending event-generating action
+struct PendingEventList {
+    response: Option<AmiResponse>,
+    events: Vec<crate::event::AmiEvent>,
+    tx: tokio::sync::oneshot::Sender<EventListResponse>,
+}
+
 /// pending action tracker — correlates ActionIDs with response channels
 pub struct PendingActions {
     pending: HashMap<String, tokio::sync::oneshot::Sender<AmiResponse>>,
+    pending_event_lists: HashMap<String, PendingEventList>,
 }
 
 impl PendingActions {
     pub fn new() -> Self {
         Self {
             pending: HashMap::new(),
+            pending_event_lists: HashMap::new(),
         }
     }
 
@@ -81,7 +102,7 @@ impl PendingActions {
 
     /// number of actions waiting for responses
     pub fn pending_count(&self) -> usize {
-        self.pending.len()
+        self.pending.len() + self.pending_event_lists.len()
     }
 
     /// cancel all pending actions (e.g., on disconnect)
@@ -89,6 +110,7 @@ impl PendingActions {
     /// drops all senders, causing receivers to get `RecvError::Closed`
     pub fn cancel_all(&mut self) {
         self.pending.clear();
+        self.pending_event_lists.clear();
     }
 
     /// register with a pre-existing sender (used by connection manager)
@@ -98,6 +120,73 @@ impl PendingActions {
         tx: tokio::sync::oneshot::Sender<AmiResponse>,
     ) {
         self.pending.insert(action_id, tx);
+    }
+
+    /// register a pending event-generating action
+    pub fn register_event_list(
+        &mut self,
+        action_id: String,
+        tx: tokio::sync::oneshot::Sender<EventListResponse>,
+    ) {
+        self.pending_event_lists.insert(
+            action_id,
+            PendingEventList {
+                response: None,
+                events: Vec::new(),
+                tx,
+            },
+        );
+    }
+
+    /// deliver the initial response for an event-generating action
+    ///
+    /// returns true if this action_id has a pending event list
+    pub fn deliver_event_list_response(&mut self, response: AmiResponse) -> bool {
+        if let Some(pending) = self.pending_event_lists.get_mut(&response.action_id) {
+            pending.response = Some(response);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// deliver an event for an event-generating action
+    ///
+    /// returns true if this event was consumed by a pending event list
+    pub fn deliver_event_list_event(
+        &mut self,
+        action_id: &str,
+        event: crate::event::AmiEvent,
+    ) -> bool {
+        let is_complete = event.event_name().ends_with("Complete");
+
+        if let Some(mut pending) = if is_complete {
+            self.pending_event_lists.remove(action_id)
+        } else {
+            None
+        } {
+            pending.events.push(event);
+            let response = pending.response.unwrap_or_else(|| AmiResponse {
+                action_id: action_id.to_string(),
+                success: true,
+                response_type: String::new(),
+                message: None,
+                headers: HashMap::new(),
+                output: vec![],
+            });
+            let _ = pending.tx.send(EventListResponse {
+                response,
+                events: pending.events,
+            });
+            return true;
+        }
+
+        if let Some(pending) = self.pending_event_lists.get_mut(action_id) {
+            pending.events.push(event);
+            return true;
+        }
+
+        false
     }
 }
 
@@ -200,5 +289,56 @@ mod tests {
 
         pending.cancel_all();
         assert_eq!(pending.pending_count(), 0);
+    }
+
+    #[test]
+    fn event_list_lifecycle() {
+        let mut pending = PendingActions::new();
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        pending.register_event_list("100".into(), tx);
+
+        // deliver initial response
+        let response = AmiResponse {
+            action_id: "100".into(),
+            success: true,
+            response_type: "Success".into(),
+            message: None,
+            headers: HashMap::new(),
+            output: vec![],
+        };
+        assert!(pending.deliver_event_list_response(response));
+
+        // deliver intermediate event
+        let event = crate::event::AmiEvent::Unknown {
+            event_name: "Status".into(),
+            headers: HashMap::new(),
+        };
+        assert!(pending.deliver_event_list_event("100", event));
+
+        // deliver completion event
+        let complete = crate::event::AmiEvent::Unknown {
+            event_name: "StatusComplete".into(),
+            headers: HashMap::new(),
+        };
+        assert!(pending.deliver_event_list_event("100", complete));
+
+        // should have received the result
+        let result = rx.try_recv().expect("should have result");
+        assert!(result.response.success);
+        assert_eq!(result.events.len(), 2);
+    }
+
+    #[test]
+    fn event_list_does_not_steal_unrelated_events() {
+        let mut pending = PendingActions::new();
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        pending.register_event_list("200".into(), tx);
+
+        let event = crate::event::AmiEvent::Unknown {
+            event_name: "Hangup".into(),
+            headers: HashMap::new(),
+        };
+        // action_id doesn't match
+        assert!(!pending.deliver_event_list_event("999", event));
     }
 }

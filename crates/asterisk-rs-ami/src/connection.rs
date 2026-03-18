@@ -26,6 +26,12 @@ pub(crate) enum ConnectionCommand {
     },
     /// graceful shutdown
     Shutdown,
+    /// send an action that returns events as its response
+    SendEventGeneratingAction {
+        message: RawAmiMessage,
+        action_id: String,
+        response_tx: tokio::sync::oneshot::Sender<crate::response::EventListResponse>,
+    },
 }
 
 /// manages the AMI TCP connection in a background task
@@ -144,6 +150,13 @@ async fn connection_task(
                             match cmd {
                                 Some(ConnectionCommand::SendAction { message, action_id, response_tx }) => {
                                     pending.lock().await.register_with_sender(action_id, response_tx);
+                                    if let Err(e) = writer.send(message).await {
+                                        tracing::error!(error = %e, "failed to send AMI action");
+                                        break;
+                                    }
+                                }
+                                Some(ConnectionCommand::SendEventGeneratingAction { message, action_id, response_tx }) => {
+                                    pending.lock().await.register_event_list(action_id, response_tx);
                                     if let Err(e) = writer.send(message).await {
                                         tracing::error!(error = %e, "failed to send AMI action");
                                         break;
@@ -281,8 +294,16 @@ async fn dispatch_message(
 ) {
     // try as response first
     if let Some(response) = AmiResponse::from_raw(&raw) {
+        let mut guard = pending.lock().await;
+
+        // check if this is for an event-generating action
+        if guard.deliver_event_list_response(response.clone()) {
+            return;
+        }
+
+        // regular action response
         let action_id = response.action_id.clone();
-        if !pending.lock().await.deliver(response) {
+        if !guard.deliver(response) {
             tracing::debug!(action_id, "received response for unknown action");
         }
         return;
@@ -290,6 +311,16 @@ async fn dispatch_message(
 
     // try as event
     if let Some(event) = AmiEvent::from_raw(&raw) {
+        // check if event has an ActionID matching a pending event list
+        if let Some(aid) = raw.get("ActionID") {
+            let mut guard = pending.lock().await;
+            if guard.deliver_event_list_event(aid, event.clone()) {
+                // also publish to event bus so subscribers see it
+                event_bus.publish(event);
+                return;
+            }
+        }
+
         tracing::trace!(event = event.event_name(), "AMI event received");
         event_bus.publish(event);
         return;
