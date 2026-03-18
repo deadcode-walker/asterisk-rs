@@ -1,0 +1,250 @@
+//! AMI client with builder pattern.
+
+use crate::action::{
+    self, AmiAction, ChallengeAction, ChallengeLoginAction, LoginAction, LogoffAction, PingAction,
+};
+use crate::connection::{ConnectionCommand, ConnectionManager};
+use crate::error::{AmiError, Result};
+use crate::event::AmiEvent;
+use crate::response::AmiResponse;
+use asterisk_rs_core::auth::Credentials;
+use asterisk_rs_core::config::{ConnectionState, ReconnectPolicy};
+use asterisk_rs_core::event::{EventBus, EventSubscription};
+
+use std::sync::Arc;
+use std::time::Duration;
+
+/// default AMI port
+const DEFAULT_PORT: u16 = 5038;
+/// default action timeout
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// async client for the Asterisk Manager Interface
+#[derive(Clone)]
+pub struct AmiClient {
+    connection: Arc<ConnectionManager>,
+    event_bus: EventBus<AmiEvent>,
+    credentials: Credentials,
+    timeout: Duration,
+}
+
+impl AmiClient {
+    /// create a new builder
+    pub fn builder() -> AmiClientBuilder {
+        AmiClientBuilder::default()
+    }
+
+    /// send a typed action and wait for the response
+    pub async fn send_action<A: AmiAction>(&self, action: &A) -> Result<AmiResponse> {
+        let (action_id, message) = action.to_message();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+
+        self.connection
+            .send(ConnectionCommand::SendAction {
+                message,
+                action_id: action_id.clone(),
+                response_tx,
+            })
+            .await?;
+
+        let response = tokio::time::timeout(self.timeout, response_rx)
+            .await
+            .map_err(|_| {
+                AmiError::Timeout(asterisk_rs_core::error::TimeoutError::Action {
+                    elapsed: self.timeout,
+                })
+            })?
+            .map_err(|_| AmiError::ResponseChannelClosed)?;
+
+        Ok(response)
+    }
+
+    /// send a ping (keep-alive)
+    pub async fn ping(&self) -> Result<AmiResponse> {
+        self.send_action(&PingAction).await
+    }
+
+    /// originate a call
+    pub async fn originate(&self, action: action::OriginateAction) -> Result<AmiResponse> {
+        self.send_action(&action).await
+    }
+
+    /// hangup a channel
+    pub async fn hangup(&self, action: action::HangupAction) -> Result<AmiResponse> {
+        self.send_action(&action).await
+    }
+
+    /// execute a CLI command
+    pub async fn command(&self, command: impl Into<String>) -> Result<AmiResponse> {
+        self.send_action(&action::CommandAction::new(command)).await
+    }
+
+    /// subscribe to all AMI events
+    pub fn subscribe(&self) -> EventSubscription<AmiEvent> {
+        self.event_bus.subscribe()
+    }
+
+    /// get current connection state
+    pub fn connection_state(&self) -> ConnectionState {
+        self.connection.state()
+    }
+
+    /// gracefully disconnect
+    pub async fn disconnect(&self) -> Result<()> {
+        // best-effort logoff before closing the connection
+        let _ = self.send_action(&LogoffAction).await;
+        self.connection.shutdown().await;
+        Ok(())
+    }
+
+    /// perform login sequence (plaintext or MD5 based on server support)
+    async fn login(&self) -> Result<()> {
+        // try MD5 challenge first for stronger auth
+        let challenge_result = self.send_action(&ChallengeAction).await;
+
+        match challenge_result {
+            Ok(resp) if resp.success => {
+                let challenge = resp.get("Challenge").ok_or(AmiError::Auth(
+                    asterisk_rs_core::error::AuthError::ChallengeFailed,
+                ))?;
+
+                let key = compute_md5_key(challenge, self.credentials.secret());
+                let login = ChallengeLoginAction {
+                    username: self.credentials.username().to_string(),
+                    key,
+                };
+                let resp = self.send_action(&login).await?;
+                if !resp.success {
+                    return Err(AmiError::Auth(
+                        asterisk_rs_core::error::AuthError::Rejected {
+                            reason: resp.message.unwrap_or_default(),
+                        },
+                    ));
+                }
+            }
+            _ => {
+                // fall back to plaintext login
+                let login = LoginAction {
+                    username: self.credentials.username().to_string(),
+                    secret: self.credentials.secret().to_string(),
+                };
+                let resp = self.send_action(&login).await?;
+                if !resp.success {
+                    return Err(AmiError::Auth(
+                        asterisk_rs_core::error::AuthError::Rejected {
+                            reason: resp.message.unwrap_or_default(),
+                        },
+                    ));
+                }
+            }
+        }
+
+        tracing::info!("AMI login successful");
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for AmiClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AmiClient")
+            .field("state", &self.connection.state())
+            .field("credentials", &self.credentials)
+            .finish()
+    }
+}
+
+/// compute MD5 key for challenge-response auth: md5(challenge + secret)
+fn compute_md5_key(challenge: &str, secret: &str) -> String {
+    use md5::{Digest, Md5};
+    let mut hasher = Md5::new();
+    hasher.update(challenge.as_bytes());
+    hasher.update(secret.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// builder for [`AmiClient`]
+pub struct AmiClientBuilder {
+    host: String,
+    port: u16,
+    credentials: Option<Credentials>,
+    reconnect_policy: ReconnectPolicy,
+    timeout: Duration,
+    event_capacity: usize,
+}
+
+impl Default for AmiClientBuilder {
+    fn default() -> Self {
+        Self {
+            host: "127.0.0.1".to_string(),
+            port: DEFAULT_PORT,
+            credentials: None,
+            reconnect_policy: ReconnectPolicy::default(),
+            timeout: DEFAULT_TIMEOUT,
+            event_capacity: 1024,
+        }
+    }
+}
+
+impl AmiClientBuilder {
+    pub fn host(mut self, host: impl Into<String>) -> Self {
+        self.host = host.into();
+        self
+    }
+
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = port;
+        self
+    }
+
+    pub fn credentials(mut self, username: impl Into<String>, secret: impl Into<String>) -> Self {
+        self.credentials = Some(Credentials::new(username, secret));
+        self
+    }
+
+    pub fn reconnect(mut self, policy: ReconnectPolicy) -> Self {
+        self.reconnect_policy = policy;
+        self
+    }
+
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn event_capacity(mut self, capacity: usize) -> Self {
+        self.event_capacity = capacity;
+        self
+    }
+
+    /// build and connect the client
+    ///
+    /// waits for TCP connection then performs login before returning
+    pub async fn build(self) -> Result<AmiClient> {
+        let credentials = self.credentials.ok_or(AmiError::Auth(
+            asterisk_rs_core::error::AuthError::InvalidCredentials,
+        ))?;
+
+        let event_bus = EventBus::new(self.event_capacity);
+        let address = format!("{}:{}", self.host, self.port);
+
+        let connection =
+            ConnectionManager::spawn(address, event_bus.clone(), self.reconnect_policy);
+
+        // wait for connection to be established
+        connection
+            .wait_for_state(ConnectionState::Connected)
+            .await?;
+
+        let client = AmiClient {
+            connection: Arc::new(connection),
+            event_bus,
+            credentials,
+            timeout: self.timeout,
+        };
+
+        // perform login
+        client.login().await?;
+
+        Ok(client)
+    }
+}
