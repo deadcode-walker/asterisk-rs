@@ -33,6 +33,7 @@ dependencies = [
  "futures-util",
  "md-5",
  "pin-project-lite",
+ "serde",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
