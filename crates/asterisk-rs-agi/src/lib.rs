@@ -16,4 +16,4 @@ pub use channel::AgiChannel;
 pub use error::AgiError;
 pub use handler::AgiHandler;
 pub use request::AgiRequest;
-pub use server::AgiServer;
+pub use server::{AgiServer, ShutdownHandle};

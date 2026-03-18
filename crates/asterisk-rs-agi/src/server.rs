@@ -2,21 +2,36 @@ use std::sync::Arc;
 
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
-use tokio::sync::Semaphore;
+use tokio::sync::{watch, Semaphore};
 
 use crate::channel::AgiChannel;
 use crate::error::{AgiError, Result};
 use crate::handler::AgiHandler;
 use crate::request::AgiRequest;
 
+/// handle for signaling an [`AgiServer`] to shut down
+#[derive(Clone)]
+pub struct ShutdownHandle {
+    tx: watch::Sender<bool>,
+}
+
+impl ShutdownHandle {
+    /// signal the server to stop accepting connections
+    pub fn shutdown(&self) {
+        let _ = self.tx.send(true);
+    }
+}
+
 /// FastAGI TCP server that dispatches connections to a handler
 pub struct AgiServer<H: AgiHandler> {
     listener: TcpListener,
     handler: Arc<H>,
     max_connections: Option<usize>,
+    shutdown_rx: watch::Receiver<bool>,
 }
 
 /// builder for configuring and constructing an [`AgiServer`]
+#[must_use]
 pub struct AgiServerBuilder<H> {
     bind_addr: String,
     handler: Option<H>,
@@ -35,44 +50,54 @@ impl<H: AgiHandler> AgiServer<H> {
 
     /// accept connections and dispatch them to the handler
     ///
-    /// runs indefinitely until an unrecoverable error occurs
-    pub async fn run(self) -> Result<()> {
+    /// runs until shutdown is signaled or an unrecoverable error occurs
+    pub async fn run(mut self) -> Result<()> {
         let semaphore = self.max_connections.map(|n| Arc::new(Semaphore::new(n)));
 
         loop {
-            let (stream, peer) = match self.listener.accept().await {
-                Ok(conn) => conn,
-                Err(err) => {
-                    tracing::warn!(%err, "failed to accept connection");
-                    continue;
+            tokio::select! {
+                result = self.listener.accept() => {
+                    let (stream, peer) = match result {
+                        Ok(conn) => conn,
+                        Err(err) => {
+                            tracing::warn!(%err, "failed to accept connection");
+                            continue;
+                        }
+                    };
+
+                    tracing::debug!(%peer, "new AGI connection");
+
+                    let handler = Arc::clone(&self.handler);
+                    let permit = match &semaphore {
+                        Some(sem) => match sem.clone().acquire_owned().await {
+                            Ok(p) => Some(p),
+                            Err(_) => {
+                                // semaphore closed — should not happen during normal operation
+                                tracing::error!("connection semaphore closed unexpectedly");
+                                return Err(AgiError::Io(std::io::Error::other(
+                                    "connection semaphore closed",
+                                )));
+                            }
+                        },
+                        None => None,
+                    };
+
+                    tokio::spawn(async move {
+                        // permit is held until the task completes, then dropped automatically
+                        let _permit = permit;
+
+                        if let Err(err) = handle_connection(handler, stream).await {
+                            tracing::warn!(%peer, %err, "AGI session error");
+                        }
+                    });
                 }
-            };
-
-            tracing::debug!(%peer, "new AGI connection");
-
-            let handler = Arc::clone(&self.handler);
-            let permit = match &semaphore {
-                Some(sem) => match sem.clone().acquire_owned().await {
-                    Ok(p) => Some(p),
-                    Err(_) => {
-                        // semaphore closed — should not happen during normal operation
-                        tracing::error!("connection semaphore closed unexpectedly");
-                        return Err(AgiError::Io(std::io::Error::other(
-                            "connection semaphore closed",
-                        )));
+                _ = self.shutdown_rx.changed() => {
+                    if *self.shutdown_rx.borrow() {
+                        tracing::info!("AGI server shutting down");
+                        return Ok(());
                     }
-                },
-                None => None,
-            };
-
-            tokio::spawn(async move {
-                // permit is held until the task completes, then dropped automatically
-                let _permit = permit;
-
-                if let Err(err) = handle_connection(handler, stream).await {
-                    tracing::warn!(%peer, %err, "AGI session error");
                 }
-            });
+            }
         }
     }
 }
@@ -112,19 +137,30 @@ impl<H: AgiHandler> AgiServerBuilder<H> {
     }
 
     /// build the server, binding the TCP listener
-    pub async fn build(self) -> Result<AgiServer<H>> {
-        let handler = self
-            .handler
-            .expect("handler is required — call .handler() before .build()");
+    ///
+    /// returns the server and a handle that can signal graceful shutdown
+    pub async fn build(self) -> Result<(AgiServer<H>, ShutdownHandle)> {
+        let handler = self.handler.ok_or_else(|| {
+            AgiError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "handler is required",
+            ))
+        })?;
 
         let listener = TcpListener::bind(&self.bind_addr).await?;
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         tracing::info!(addr = %self.bind_addr, "FastAGI server bound");
 
-        Ok(AgiServer {
+        let server = AgiServer {
             listener,
             handler: Arc::new(handler),
             max_connections: self.max_connections,
-        })
+            shutdown_rx,
+        };
+
+        let handle = ShutdownHandle { tx: shutdown_tx };
+
+        Ok((server, handle))
     }
 }

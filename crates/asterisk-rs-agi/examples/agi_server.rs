@@ -21,7 +21,7 @@ impl AgiHandler for MyHandler {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let server = AgiServer::builder()
+    let (server, _shutdown) = AgiServer::builder()
         .bind("0.0.0.0:4573")
         .handler(MyHandler)
         .max_connections(100)
