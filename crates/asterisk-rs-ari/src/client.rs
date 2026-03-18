@@ -235,3 +235,77 @@ pub fn url_encode(input: &str) -> String {
     }
     encoded
 }
+
+#[cfg(test)]
+mod tests {
+    use super::url_encode;
+
+    #[test]
+    fn url_encode_preserves_unreserved() {
+        assert_eq!(url_encode("abcXYZ019"), "abcXYZ019");
+        assert_eq!(url_encode("-_."), "-_.");
+        assert_eq!(url_encode("~"), "~");
+    }
+
+    #[test]
+    fn url_encode_encodes_spaces() {
+        assert_eq!(url_encode("hello world"), "hello%20world");
+    }
+
+    #[test]
+    fn url_encode_encodes_special_chars() {
+        assert_eq!(url_encode("/"), "%2F");
+        assert_eq!(url_encode("?"), "%3F");
+        assert_eq!(url_encode("&"), "%26");
+        assert_eq!(url_encode("="), "%3D");
+        assert_eq!(url_encode("#"), "%23");
+        assert_eq!(url_encode("@"), "%40");
+        assert_eq!(url_encode(":"), "%3A");
+        assert_eq!(url_encode("+"), "%2B");
+        assert_eq!(url_encode("!"), "%21");
+        assert_eq!(url_encode("$"), "%24");
+        assert_eq!(url_encode(","), "%2C");
+    }
+
+    #[test]
+    fn url_encode_empty_string() {
+        assert_eq!(url_encode(""), "");
+    }
+
+    #[test]
+    fn url_encode_unicode() {
+        // é is U+00E9, encoded as 0xC3 0xA9 in UTF-8
+        assert_eq!(url_encode("é"), "%C3%A9");
+        // 日 is U+65E5, encoded as 0xE6 0x97 0xA5 in UTF-8
+        assert_eq!(url_encode("日"), "%E6%97%A5");
+    }
+
+    #[test]
+    fn url_encode_already_encoded() {
+        // % itself must be encoded, so %20 in input becomes %2520
+        assert_eq!(url_encode("%20"), "%2520");
+    }
+
+    #[test]
+    fn url_encode_slash() {
+        assert_eq!(url_encode("a/b"), "a%2Fb");
+    }
+
+    #[test]
+    fn url_encode_all_unreserved_chars() {
+        let unreserved = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~";
+        assert_eq!(url_encode(unreserved), unreserved);
+    }
+
+    #[test]
+    fn url_encode_mixed_content() {
+        assert_eq!(url_encode("hello world/foo"), "hello%20world%2Ffoo");
+    }
+
+    #[test]
+    fn url_encode_parentheses() {
+        assert_eq!(url_encode("("), "%28");
+        assert_eq!(url_encode(")"), "%29");
+        assert_eq!(url_encode("f(x)"), "f%28x%29");
+    }
+}

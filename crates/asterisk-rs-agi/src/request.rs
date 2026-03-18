@@ -108,3 +108,128 @@ impl AgiRequest {
         self.variables.get(key).map(String::as_str)
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    use tokio::io::BufReader;
+
+    async fn parse(input: &str) -> AgiRequest {
+        let mut reader = BufReader::new(Cursor::new(input.as_bytes().to_vec()));
+        AgiRequest::parse_from_reader(&mut reader)
+            .await
+            .expect("parse should succeed")
+    }
+
+    #[tokio::test]
+    async fn parse_standard_agi_request() {
+        let input = "agi_network: yes\n\
+            agi_network_script: test.agi\n\
+            agi_request: agi://127.0.0.1/test\n\
+            agi_channel: SIP/200-00000001\n\
+            agi_language: en\n\
+            agi_type: SIP\n\
+            agi_uniqueid: 1234567890.42\n\
+            agi_callerid: 2125551234\n\
+            agi_calleridname: John Doe\n\
+            agi_context: default\n\
+            agi_extension: 100\n\
+            agi_priority: 1\n\
+            \n";
+        let req = parse(input).await;
+        assert_eq!(req.network(), Some("yes"));
+        assert_eq!(req.network_script(), Some("test.agi"));
+        assert_eq!(req.request(), Some("agi://127.0.0.1/test"));
+        assert_eq!(req.channel(), Some("SIP/200-00000001"));
+        assert_eq!(req.language(), Some("en"));
+        assert_eq!(req.channel_type(), Some("SIP"));
+        assert_eq!(req.unique_id(), Some("1234567890.42"));
+        assert_eq!(req.caller_id(), Some("2125551234"));
+        assert_eq!(req.caller_id_name(), Some("John Doe"));
+        assert_eq!(req.context(), Some("default"));
+        assert_eq!(req.extension(), Some("100"));
+        assert_eq!(req.priority(), Some("1"));
+    }
+
+    #[tokio::test]
+    async fn parse_strips_agi_prefix() {
+        let req = parse("agi_language: en\n\n").await;
+        // stored without prefix
+        assert_eq!(req.get("language"), Some("en"));
+        // original key with prefix is not stored
+        assert_eq!(req.get("agi_language"), None);
+    }
+
+    #[tokio::test]
+    async fn parse_preserves_non_agi_keys() {
+        let req = parse("custom_var: hello\n\n").await;
+        assert_eq!(req.get("custom_var"), Some("hello"));
+    }
+
+    #[tokio::test]
+    async fn parse_empty_input() {
+        let req = parse("").await;
+        assert_eq!(req.network(), None);
+        assert_eq!(req.channel(), None);
+    }
+
+    #[tokio::test]
+    async fn parse_eof_without_blank_line() {
+        // no trailing blank line — parser reads until eof
+        let req = parse("agi_language: en\nagi_type: SIP").await;
+        assert_eq!(req.language(), Some("en"));
+        assert_eq!(req.channel_type(), Some("SIP"));
+    }
+
+    #[tokio::test]
+    async fn parse_ignores_lines_without_colon() {
+        let input = "agi_language: en\ngarbage line\nagi_type: SIP\n\n";
+        let req = parse(input).await;
+        assert_eq!(req.language(), Some("en"));
+        assert_eq!(req.channel_type(), Some("SIP"));
+    }
+
+    #[tokio::test]
+    async fn parse_value_with_colons() {
+        // value contains colons — only split on first
+        let req = parse("agi_request: agi://host:4573/script\n\n").await;
+        assert_eq!(req.request(), Some("agi://host:4573/script"));
+    }
+
+    #[tokio::test]
+    async fn parse_whitespace_trimming() {
+        let req = parse("  agi_language  :  en  \n\n").await;
+        assert_eq!(req.language(), Some("en"));
+    }
+
+    #[tokio::test]
+    async fn get_returns_none_for_missing_key() {
+        let req = parse("agi_language: en\n\n").await;
+        assert_eq!(req.get("nonexistent"), None);
+    }
+
+    #[tokio::test]
+    async fn get_arbitrary_variable() {
+        let req = parse("custom_var: world\n\n").await;
+        assert_eq!(req.get("custom_var"), Some("world"));
+    }
+
+    #[tokio::test]
+    async fn all_accessors_return_none_on_empty() {
+        let req = parse("\n").await;
+        assert_eq!(req.network(), None);
+        assert_eq!(req.network_script(), None);
+        assert_eq!(req.request(), None);
+        assert_eq!(req.channel(), None);
+        assert_eq!(req.language(), None);
+        assert_eq!(req.channel_type(), None);
+        assert_eq!(req.unique_id(), None);
+        assert_eq!(req.caller_id(), None);
+        assert_eq!(req.caller_id_name(), None);
+        assert_eq!(req.context(), None);
+        assert_eq!(req.extension(), None);
+        assert_eq!(req.priority(), None);
+    }
+}

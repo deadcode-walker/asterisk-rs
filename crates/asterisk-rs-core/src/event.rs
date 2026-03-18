@@ -212,4 +212,121 @@ mod tests {
         let event = filtered.recv().await.expect("should get target");
         assert_eq!(event.0, "target");
     }
+
+    #[tokio::test]
+    async fn capacity_one_bus_works() {
+        let bus = EventBus::new(1);
+        let mut sub = bus.subscribe();
+
+        bus.publish(TestEvent("single".into()));
+        let event = sub
+            .recv()
+            .await
+            .expect("should receive from capacity-1 bus");
+        assert_eq!(event.0, "single");
+    }
+
+    #[tokio::test]
+    async fn multiple_subscribers_receive_same_event() {
+        let bus = EventBus::new(16);
+        let mut sub1 = bus.subscribe();
+        let mut sub2 = bus.subscribe();
+
+        bus.publish(TestEvent("broadcast".into()));
+
+        let e1 = sub1.recv().await.expect("sub1 should receive");
+        let e2 = sub2.recv().await.expect("sub2 should receive");
+        assert_eq!(e1.0, "broadcast");
+        assert_eq!(e2.0, "broadcast");
+    }
+
+    #[tokio::test]
+    async fn bus_dropped_recv_returns_none() {
+        let bus: EventBus<TestEvent> = EventBus::new(16);
+        let mut sub = bus.subscribe();
+
+        drop(bus);
+        assert!(
+            sub.recv().await.is_none(),
+            "recv should return None after bus dropped"
+        );
+    }
+
+    #[test]
+    fn publish_returns_receiver_count() {
+        let bus = EventBus::new(16);
+        let _sub1 = bus.subscribe();
+        let _sub2 = bus.subscribe();
+        let _sub3 = bus.subscribe();
+
+        let count = bus.publish(TestEvent("counted".into()));
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn event_subscription_debug_format() {
+        let bus: EventBus<TestEvent> = EventBus::new(16);
+        let sub = bus.subscribe();
+        let debug = format!("{sub:?}");
+        assert!(
+            debug.contains("EventSubscription"),
+            "unexpected debug: {debug}"
+        );
+    }
+
+    #[test]
+    fn filtered_subscription_debug_format() {
+        let bus: EventBus<TestEvent> = EventBus::new(16);
+        let filtered = bus.subscribe_filtered(|_| true);
+        let debug = format!("{filtered:?}");
+        assert!(
+            debug.contains("FilteredSubscription"),
+            "unexpected debug: {debug}"
+        );
+    }
+
+    #[test]
+    fn clone_shares_underlying_channel() {
+        let bus: EventBus<TestEvent> = EventBus::new(16);
+        let bus_clone = bus.clone();
+
+        // subscriber on original receives event published on clone
+        let _sub = bus.subscribe();
+        let count = bus_clone.publish(TestEvent("from_clone".into()));
+        assert_eq!(count, 1, "cloned bus should share the channel");
+    }
+
+    #[tokio::test]
+    async fn subscribe_filtered_always_false_never_delivers() {
+        let bus = EventBus::new(16);
+        let mut filtered = bus.subscribe_filtered(|_: &TestEvent| false);
+
+        bus.publish(TestEvent("a".into()));
+        bus.publish(TestEvent("b".into()));
+
+        // drop bus so recv will eventually return None instead of hanging
+        drop(bus);
+        assert!(
+            filtered.recv().await.is_none(),
+            "always-false filter should never deliver"
+        );
+    }
+
+    #[tokio::test]
+    async fn with_filter_on_existing_subscription() {
+        let bus = EventBus::new(16);
+        let sub = bus.subscribe();
+        let mut filtered = sub.with_filter(|e: &TestEvent| e.0.len() > 3);
+
+        bus.publish(TestEvent("ab".into()));
+        bus.publish(TestEvent("abcd".into()));
+        bus.publish(TestEvent("xy".into()));
+        bus.publish(TestEvent("wxyz".into()));
+
+        let e1 = filtered.recv().await.expect("should get first long event");
+        assert_eq!(e1.0, "abcd");
+
+        let e2 = filtered.recv().await.expect("should get second long event");
+        assert_eq!(e2.0, "wxyz");
+    }
 }

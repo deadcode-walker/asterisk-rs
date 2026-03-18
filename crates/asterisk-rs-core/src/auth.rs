@@ -61,4 +61,47 @@ mod tests {
         assert_eq!(cloned.username(), "admin");
         assert_eq!(cloned.secret(), "secret");
     }
+
+    #[test]
+    fn credentials_empty_username_and_secret() {
+        let creds = Credentials::new("", "");
+        assert_eq!(creds.username(), "");
+        assert_eq!(creds.secret(), "");
+    }
+
+    #[test]
+    fn credentials_unicode_values() {
+        let creds = Credentials::new("администратор", "密码🔑");
+        assert_eq!(creds.username(), "администратор");
+        assert_eq!(creds.secret(), "密码🔑");
+    }
+
+    #[test]
+    fn credentials_special_characters_in_secret() {
+        let secret = "line1\nline2:colon spaces\ttab";
+        let creds = Credentials::new("user", secret);
+        assert_eq!(creds.secret(), secret);
+    }
+
+    #[test]
+    fn credentials_very_long_strings() {
+        let long_user = "u".repeat(10_000);
+        let long_secret = "s".repeat(10_000);
+        let creds = Credentials::new(long_user.clone(), long_secret.clone());
+        assert_eq!(creds.username(), long_user);
+        assert_eq!(creds.secret(), long_secret);
+    }
+
+    #[test]
+    fn credentials_debug_format_structure() {
+        let creds = Credentials::new("testuser", "hunter2");
+        let debug = format!("{creds:?}");
+        // verify the debug output uses debug_struct format
+        assert!(debug.starts_with("Credentials {"));
+        assert!(debug.contains("username: \"testuser\""));
+        assert!(debug.contains("secret: \"[redacted]\""));
+        assert!(debug.ends_with("}"));
+        // secret value must never appear
+        assert!(!debug.contains("hunter2"));
+    }
 }

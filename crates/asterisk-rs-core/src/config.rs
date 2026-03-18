@@ -179,4 +179,142 @@ mod tests {
         assert_eq!(ConnectionState::Disconnected.to_string(), "disconnected");
         assert_eq!(ConnectionState::Reconnecting.to_string(), "reconnecting");
     }
+
+    #[test]
+    fn default_matches_exponential_1s_60s() {
+        let default = ReconnectPolicy::default();
+        assert_eq!(default.initial_delay, Duration::from_secs(1));
+        assert_eq!(default.max_delay, Duration::from_secs(60));
+        assert_eq!(default.backoff_factor, 2.0);
+        assert!(default.jitter);
+        assert!(default.max_retries.is_none());
+    }
+
+    #[test]
+    fn exponential_custom_backoff_factor() {
+        let mut policy =
+            ReconnectPolicy::exponential(Duration::from_secs(1), Duration::from_secs(100));
+        policy.jitter = false;
+        policy.backoff_factor = 3.0;
+
+        // 1 * 3^0 = 1, 1 * 3^1 = 3, 1 * 3^2 = 9, 1 * 3^3 = 27
+        assert_eq!(policy.delay_for_attempt(0), Duration::from_secs(1));
+        assert_eq!(policy.delay_for_attempt(1), Duration::from_secs(3));
+        assert_eq!(policy.delay_for_attempt(2), Duration::from_secs(9));
+        assert_eq!(policy.delay_for_attempt(3), Duration::from_secs(27));
+    }
+
+    #[test]
+    fn delay_for_attempt_zero_always_returns_initial() {
+        let mut policy =
+            ReconnectPolicy::exponential(Duration::from_millis(500), Duration::from_secs(30));
+        policy.jitter = false;
+
+        // any base^0 = 1, so delay = initial_delay * 1
+        assert_eq!(policy.delay_for_attempt(0), Duration::from_millis(500));
+    }
+
+    #[test]
+    fn delay_for_very_large_attempt_no_panic() {
+        let mut policy =
+            ReconnectPolicy::exponential(Duration::from_secs(1), Duration::from_secs(60));
+        policy.jitter = false;
+
+        // large attempt wraps as i32, but must not panic
+        let delay = policy.delay_for_attempt(u32::MAX - 1);
+        assert!(
+            delay <= Duration::from_secs(60),
+            "delay should not exceed max: {delay:?}"
+        );
+    }
+
+    #[test]
+    fn fixed_policy_constant_for_large_attempts() {
+        let policy = ReconnectPolicy::fixed(Duration::from_secs(7));
+        assert_eq!(policy.delay_for_attempt(0), Duration::from_secs(7));
+        assert_eq!(policy.delay_for_attempt(1000), Duration::from_secs(7));
+        assert_eq!(
+            policy.delay_for_attempt(u32::MAX - 1),
+            Duration::from_secs(7)
+        );
+    }
+
+    #[test]
+    fn with_max_retries_zero_first_attempt_returns_zero() {
+        let policy = ReconnectPolicy::exponential(Duration::from_secs(1), Duration::from_secs(60))
+            .with_max_retries(0);
+        assert_eq!(policy.delay_for_attempt(0), Duration::ZERO);
+    }
+
+    #[test]
+    fn with_max_retries_one_allows_single_attempt() {
+        let mut policy =
+            ReconnectPolicy::exponential(Duration::from_secs(1), Duration::from_secs(60))
+                .with_max_retries(1);
+        policy.jitter = false;
+
+        assert_eq!(policy.delay_for_attempt(0), Duration::from_secs(1));
+        assert_eq!(policy.delay_for_attempt(1), Duration::ZERO);
+    }
+
+    #[test]
+    fn connection_state_display_connecting() {
+        assert_eq!(ConnectionState::Connecting.to_string(), "connecting");
+    }
+
+    #[test]
+    fn connection_state_partial_eq() {
+        // each variant equals itself
+        assert_eq!(ConnectionState::Disconnected, ConnectionState::Disconnected);
+        assert_eq!(ConnectionState::Connecting, ConnectionState::Connecting);
+        assert_eq!(ConnectionState::Connected, ConnectionState::Connected);
+        assert_eq!(ConnectionState::Reconnecting, ConnectionState::Reconnecting);
+
+        // variants are not equal to each other
+        assert_ne!(ConnectionState::Disconnected, ConnectionState::Connecting);
+        assert_ne!(ConnectionState::Connected, ConnectionState::Reconnecting);
+        assert_ne!(ConnectionState::Connecting, ConnectionState::Connected);
+        assert_ne!(ConnectionState::Disconnected, ConnectionState::Reconnecting);
+    }
+
+    #[test]
+    fn connection_state_clone_and_debug() {
+        let state = ConnectionState::Connected;
+        let cloned = state;
+        assert_eq!(state, cloned);
+        // Debug derive produces variant name
+        assert_eq!(format!("{state:?}"), "Connected");
+        assert_eq!(
+            format!("{:?}", ConnectionState::Disconnected),
+            "Disconnected"
+        );
+    }
+
+    #[test]
+    fn zero_duration_policy_no_panic() {
+        let mut policy = ReconnectPolicy::exponential(Duration::ZERO, Duration::ZERO);
+        policy.jitter = false;
+
+        assert_eq!(policy.delay_for_attempt(0), Duration::ZERO);
+        assert_eq!(policy.delay_for_attempt(10), Duration::ZERO);
+    }
+
+    #[test]
+    fn jitter_produces_values_in_expected_range() {
+        // run multiple times to get some statistical coverage
+        let policy =
+            ReconnectPolicy::exponential(Duration::from_secs(100), Duration::from_secs(1000));
+        for _ in 0..20 {
+            let delay = policy.delay_for_attempt(0);
+            // base = 100s, jitter range = [0.5 * 100, 1.0 * 100] = [50, 100]
+            assert!(
+                delay >= Duration::from_secs(50),
+                "jitter delay too low: {delay:?}"
+            );
+            assert!(
+                delay <= Duration::from_secs(100),
+                "jitter delay too high: {delay:?}"
+            );
+        }
+    }
 }

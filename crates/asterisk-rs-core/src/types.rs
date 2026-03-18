@@ -847,4 +847,577 @@ mod tests {
         assert_eq!(AgiStatus::from_code(200), Some(AgiStatus::Success));
         assert_eq!(AgiStatus::Success.code(), 200);
     }
+
+    // -----------------------------------------------------------------------
+    // compile-time trait assertions
+    // -----------------------------------------------------------------------
+
+    #[allow(dead_code)]
+    const fn assert_traits<
+        T: Copy + Clone + std::cmp::PartialEq + std::cmp::Eq + std::hash::Hash + std::fmt::Debug,
+    >() {
+    }
+
+    #[test]
+    fn all_enums_implement_required_traits() {
+        assert_traits::<HangupCause>();
+        assert_traits::<ChannelState>();
+        assert_traits::<DeviceState>();
+        assert_traits::<DialStatus>();
+        assert_traits::<CdrDisposition>();
+        assert_traits::<PeerStatus>();
+        assert_traits::<QueueStrategy>();
+        assert_traits::<ExtensionState>();
+        assert_traits::<AgiStatus>();
+    }
+
+    // -----------------------------------------------------------------------
+    // HangupCause
+    // -----------------------------------------------------------------------
+
+    /// (code, variant, description) for every HangupCause variant
+    const HANGUP_CASES: &[(u32, HangupCause, &str)] = &[
+        (0, HangupCause::NotDefined, "not defined"),
+        (1, HangupCause::Unallocated, "unallocated number"),
+        (2, HangupCause::NoRouteTransitNet, "no route to transit network"),
+        (3, HangupCause::NoRouteDestination, "no route to destination"),
+        (5, HangupCause::MisdialledTrunkPrefix, "misdialled trunk prefix"),
+        (6, HangupCause::ChannelUnacceptable, "channel unacceptable"),
+        (7, HangupCause::CallAwardedDelivered, "call awarded and being delivered"),
+        (8, HangupCause::PreEmpted, "pre-empted"),
+        (14, HangupCause::NumberPortedNotHere, "number ported but not found here"),
+        (16, HangupCause::NormalClearing, "normal clearing"),
+        (17, HangupCause::UserBusy, "user busy"),
+        (18, HangupCause::NoUserResponse, "no user response"),
+        (19, HangupCause::NoAnswer, "no answer"),
+        (20, HangupCause::SubscriberAbsent, "subscriber absent"),
+        (21, HangupCause::CallRejected, "call rejected"),
+        (22, HangupCause::NumberChanged, "number changed"),
+        (23, HangupCause::RedirectedToNewDestination, "redirected to new destination"),
+        (26, HangupCause::AnsweredElsewhere, "answered elsewhere"),
+        (27, HangupCause::DestinationOutOfOrder, "destination out of order"),
+        (28, HangupCause::InvalidNumberFormat, "invalid number format"),
+        (29, HangupCause::FacilityRejected, "facility rejected"),
+        (30, HangupCause::ResponseToStatusEnquiry, "response to status enquiry"),
+        (31, HangupCause::NormalUnspecified, "normal unspecified"),
+        (34, HangupCause::NormalCircuitCongestion, "normal circuit congestion"),
+        (38, HangupCause::NetworkOutOfOrder, "network out of order"),
+        (41, HangupCause::NormalTemporaryFailure, "normal temporary failure"),
+        (42, HangupCause::SwitchCongestion, "switch congestion"),
+        (43, HangupCause::AccessInfoDiscarded, "access information discarded"),
+        (44, HangupCause::RequestedChanUnavail, "requested channel unavailable"),
+        (50, HangupCause::FacilityNotSubscribed, "facility not subscribed"),
+        (52, HangupCause::OutgoingCallBarred, "outgoing call barred"),
+        (54, HangupCause::IncomingCallBarred, "incoming call barred"),
+        (57, HangupCause::BearerCapabilityNotAuth, "bearer capability not authorized"),
+        (58, HangupCause::BearerCapabilityNotAvail, "bearer capability not available"),
+        (65, HangupCause::BearerCapabilityNotImpl, "bearer capability not implemented"),
+        (66, HangupCause::ChanNotImplemented, "channel type not implemented"),
+        (69, HangupCause::FacilityNotImplemented, "facility not implemented"),
+        (81, HangupCause::InvalidCallReference, "invalid call reference"),
+        (88, HangupCause::IncompatibleDestination, "incompatible destination"),
+        (95, HangupCause::InvalidMsgUnspecified, "invalid message unspecified"),
+        (96, HangupCause::MandatoryIeMissing, "mandatory information element missing"),
+        (97, HangupCause::MessageTypeNonexist, "message type nonexistent"),
+        (98, HangupCause::WrongMessage, "wrong message"),
+        (99, HangupCause::IeNonexist, "information element nonexistent"),
+        (100, HangupCause::InvalidIeContents, "invalid information element contents"),
+        (101, HangupCause::WrongCallState, "wrong call state"),
+        (102, HangupCause::RecoveryOnTimerExpire, "recovery on timer expiry"),
+        (103, HangupCause::MandatoryIeLengthError, "mandatory information element length error"),
+        (111, HangupCause::ProtocolError, "protocol error"),
+        (127, HangupCause::Interworking, "interworking unspecified"),
+    ];
+
+    #[test]
+    fn hangup_cause_from_code_all_variants() {
+        for &(code, expected, _) in HANGUP_CASES {
+            assert_eq!(
+                HangupCause::from_code(code),
+                Some(expected),
+                "from_code({code}) should return {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hangup_cause_code_round_trip_all_variants() {
+        for &(code, variant, _) in HANGUP_CASES {
+            assert_eq!(
+                variant.code(),
+                code,
+                "{variant:?}.code() should return {code}",
+            );
+        }
+    }
+
+    #[test]
+    fn hangup_cause_description_all_variants() {
+        for &(_, variant, desc) in HANGUP_CASES {
+            assert_eq!(
+                variant.description(),
+                desc,
+                "{variant:?}.description() mismatch",
+            );
+            // description must be non-empty
+            assert!(!variant.description().is_empty());
+        }
+    }
+
+    #[test]
+    fn hangup_cause_display_matches_description() {
+        for &(_, variant, desc) in HANGUP_CASES {
+            assert_eq!(
+                variant.to_string(),
+                desc,
+                "Display for {variant:?} should match description()",
+            );
+        }
+    }
+
+    #[test]
+    fn hangup_cause_from_code_invalid() {
+        for code in [4, 9, 10, 15, 128, 255, u32::MAX] {
+            assert_eq!(
+                HangupCause::from_code(code),
+                None,
+                "from_code({code}) should return None",
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // ChannelState
+    // -----------------------------------------------------------------------
+
+    const CHANNEL_STATE_CASES: &[(u32, ChannelState, &str)] = &[
+        (0, ChannelState::Down, "Down"),
+        (1, ChannelState::Reserved, "Rsrvd"),
+        (2, ChannelState::OffHook, "OffHook"),
+        (3, ChannelState::Dialing, "Dialing"),
+        (4, ChannelState::Ring, "Ring"),
+        (5, ChannelState::Ringing, "Ringing"),
+        (6, ChannelState::Up, "Up"),
+        (7, ChannelState::Busy, "Busy"),
+        (8, ChannelState::DialingOffhook, "Dialing Offhook"),
+        (9, ChannelState::PreRing, "Pre-ring"),
+    ];
+
+    #[test]
+    fn channel_state_from_code_all_variants() {
+        for &(code, expected, _) in CHANNEL_STATE_CASES {
+            assert_eq!(
+                ChannelState::from_code(code),
+                Some(expected),
+                "from_code({code}) should return {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn channel_state_code_round_trip() {
+        for &(code, variant, _) in CHANNEL_STATE_CASES {
+            assert_eq!(variant.code(), code, "{variant:?}.code() mismatch");
+        }
+    }
+
+    #[test]
+    fn channel_state_from_code_invalid() {
+        for code in [10, 100, u32::MAX] {
+            assert_eq!(
+                ChannelState::from_code(code),
+                None,
+                "from_code({code}) should return None",
+            );
+        }
+    }
+
+    #[test]
+    fn channel_state_from_str_name_all_variants() {
+        for &(_, expected, name) in CHANNEL_STATE_CASES {
+            assert_eq!(
+                ChannelState::from_str_name(name),
+                Some(expected),
+                "from_str_name({name:?}) should return {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn channel_state_from_str_name_invalid() {
+        // case sensitive
+        assert_eq!(ChannelState::from_str_name("down"), None);
+        assert_eq!(ChannelState::from_str_name("UNKNOWN"), None);
+        assert_eq!(ChannelState::from_str_name(""), None);
+    }
+
+    #[test]
+    fn channel_state_display_round_trips_with_from_str_name() {
+        for &(_, variant, _) in CHANNEL_STATE_CASES {
+            let displayed = variant.to_string();
+            assert_eq!(
+                ChannelState::from_str_name(&displayed),
+                Some(variant),
+                "Display -> from_str_name round-trip failed for {variant:?}",
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // DeviceState
+    // -----------------------------------------------------------------------
+
+    const DEVICE_STATE_CASES: &[(DeviceState, &str)] = &[
+        (DeviceState::Unknown, "UNKNOWN"),
+        (DeviceState::NotInUse, "NOT_INUSE"),
+        (DeviceState::InUse, "INUSE"),
+        (DeviceState::Busy, "BUSY"),
+        (DeviceState::Invalid, "INVALID"),
+        (DeviceState::Unavailable, "UNAVAILABLE"),
+        (DeviceState::Ringing, "RINGING"),
+        (DeviceState::RingInUse, "RINGINUSE"),
+        (DeviceState::OnHold, "ONHOLD"),
+    ];
+
+    #[test]
+    fn device_state_from_str_name_all_variants() {
+        for &(expected, name) in DEVICE_STATE_CASES {
+            assert_eq!(
+                DeviceState::from_str_name(name),
+                Some(expected),
+                "from_str_name({name:?}) should return {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn device_state_as_str_round_trip() {
+        for &(variant, name) in DEVICE_STATE_CASES {
+            assert_eq!(variant.as_str(), name, "{variant:?}.as_str() mismatch");
+        }
+    }
+
+    #[test]
+    fn device_state_display_matches_as_str() {
+        for &(variant, name) in DEVICE_STATE_CASES {
+            assert_eq!(
+                variant.to_string(),
+                name,
+                "Display for {variant:?} should match as_str()",
+            );
+        }
+    }
+
+    #[test]
+    fn device_state_from_str_name_invalid() {
+        assert_eq!(DeviceState::from_str_name("unknown"), None);
+        assert_eq!(DeviceState::from_str_name("InUse"), None);
+        assert_eq!(DeviceState::from_str_name(""), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // DialStatus
+    // -----------------------------------------------------------------------
+
+    const DIAL_STATUS_CASES: &[(DialStatus, &str)] = &[
+        (DialStatus::Answer, "ANSWER"),
+        (DialStatus::Busy, "BUSY"),
+        (DialStatus::NoAnswer, "NOANSWER"),
+        (DialStatus::Cancel, "CANCEL"),
+        (DialStatus::Congestion, "CONGESTION"),
+        (DialStatus::ChanUnavail, "CHANUNAVAIL"),
+        (DialStatus::DontCall, "DONTCALL"),
+        (DialStatus::Torture, "TORTURE"),
+        (DialStatus::InvalidArgs, "INVALIDARGS"),
+        (DialStatus::Unavailable, "UNAVAILABLE"),
+    ];
+
+    #[test]
+    fn dial_status_from_str_name_all_variants() {
+        for &(expected, name) in DIAL_STATUS_CASES {
+            assert_eq!(
+                DialStatus::from_str_name(name),
+                Some(expected),
+                "from_str_name({name:?}) should return {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn dial_status_as_str_round_trip() {
+        for &(variant, name) in DIAL_STATUS_CASES {
+            assert_eq!(variant.as_str(), name, "{variant:?}.as_str() mismatch");
+        }
+    }
+
+    #[test]
+    fn dial_status_display_matches_as_str() {
+        for &(variant, _) in DIAL_STATUS_CASES {
+            assert_eq!(
+                variant.to_string(),
+                variant.as_str(),
+                "Display for {variant:?} should match as_str()",
+            );
+        }
+    }
+
+    #[test]
+    fn dial_status_from_str_name_invalid() {
+        assert_eq!(DialStatus::from_str_name("answer"), None);
+        assert_eq!(DialStatus::from_str_name("Busy"), None);
+        assert_eq!(DialStatus::from_str_name(""), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // CdrDisposition
+    // -----------------------------------------------------------------------
+
+    const CDR_DISPOSITION_CASES: &[(CdrDisposition, &str)] = &[
+        (CdrDisposition::NoAnswer, "NO ANSWER"),
+        (CdrDisposition::Answered, "ANSWERED"),
+        (CdrDisposition::Busy, "BUSY"),
+        (CdrDisposition::Failed, "FAILED"),
+        (CdrDisposition::Congestion, "CONGESTION"),
+    ];
+
+    #[test]
+    fn cdr_disposition_from_str_name_all_variants() {
+        for &(expected, name) in CDR_DISPOSITION_CASES {
+            assert_eq!(
+                CdrDisposition::from_str_name(name),
+                Some(expected),
+                "from_str_name({name:?}) should return {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn cdr_disposition_as_str_round_trip() {
+        for &(variant, name) in CDR_DISPOSITION_CASES {
+            assert_eq!(variant.as_str(), name, "{variant:?}.as_str() mismatch");
+        }
+    }
+
+    #[test]
+    fn cdr_disposition_display_matches_as_str() {
+        for &(variant, _) in CDR_DISPOSITION_CASES {
+            assert_eq!(
+                variant.to_string(),
+                variant.as_str(),
+                "Display for {variant:?} should match as_str()",
+            );
+        }
+    }
+
+    #[test]
+    fn cdr_disposition_from_str_name_invalid() {
+        assert_eq!(CdrDisposition::from_str_name("no answer"), None);
+        assert_eq!(CdrDisposition::from_str_name("Answered"), None);
+        assert_eq!(CdrDisposition::from_str_name(""), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // PeerStatus
+    // -----------------------------------------------------------------------
+
+    const PEER_STATUS_CASES: &[(PeerStatus, &str)] = &[
+        (PeerStatus::Registered, "Registered"),
+        (PeerStatus::Unregistered, "Unregistered"),
+        (PeerStatus::Reachable, "Reachable"),
+        (PeerStatus::Unreachable, "Unreachable"),
+        (PeerStatus::Lagged, "Lagged"),
+        (PeerStatus::Rejected, "Rejected"),
+        (PeerStatus::Unknown, "Unknown"),
+    ];
+
+    #[test]
+    fn peer_status_from_str_name_all_variants() {
+        for &(expected, name) in PEER_STATUS_CASES {
+            assert_eq!(
+                PeerStatus::from_str_name(name),
+                Some(expected),
+                "from_str_name({name:?}) should return {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn peer_status_as_str_round_trip() {
+        for &(variant, name) in PEER_STATUS_CASES {
+            assert_eq!(variant.as_str(), name, "{variant:?}.as_str() mismatch");
+        }
+    }
+
+    #[test]
+    fn peer_status_display_matches_as_str() {
+        for &(variant, _) in PEER_STATUS_CASES {
+            assert_eq!(
+                variant.to_string(),
+                variant.as_str(),
+                "Display for {variant:?} should match as_str()",
+            );
+        }
+    }
+
+    #[test]
+    fn peer_status_from_str_name_invalid() {
+        assert_eq!(PeerStatus::from_str_name("registered"), None);
+        assert_eq!(PeerStatus::from_str_name("UNKNOWN"), None);
+        assert_eq!(PeerStatus::from_str_name(""), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // QueueStrategy
+    // -----------------------------------------------------------------------
+
+    const QUEUE_STRATEGY_CASES: &[(QueueStrategy, &str)] = &[
+        (QueueStrategy::RingAll, "ringall"),
+        (QueueStrategy::LeastRecent, "leastrecent"),
+        (QueueStrategy::FewestCalls, "fewestcalls"),
+        (QueueStrategy::Random, "random"),
+        (QueueStrategy::RoundRobin, "rrmemory"),
+        (QueueStrategy::Linear, "linear"),
+        (QueueStrategy::WeightedRandom, "wrandom"),
+    ];
+
+    #[test]
+    fn queue_strategy_from_str_name_all_variants() {
+        for &(expected, name) in QUEUE_STRATEGY_CASES {
+            assert_eq!(
+                QueueStrategy::from_str_name(name),
+                Some(expected),
+                "from_str_name({name:?}) should return {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn queue_strategy_as_str_round_trip() {
+        for &(variant, name) in QUEUE_STRATEGY_CASES {
+            assert_eq!(variant.as_str(), name, "{variant:?}.as_str() mismatch");
+        }
+    }
+
+    #[test]
+    fn queue_strategy_display_matches_as_str() {
+        for &(variant, _) in QUEUE_STRATEGY_CASES {
+            assert_eq!(
+                variant.to_string(),
+                variant.as_str(),
+                "Display for {variant:?} should match as_str()",
+            );
+        }
+    }
+
+    #[test]
+    fn queue_strategy_from_str_name_invalid() {
+        assert_eq!(QueueStrategy::from_str_name("RingAll"), None);
+        assert_eq!(QueueStrategy::from_str_name("RANDOM"), None);
+        assert_eq!(QueueStrategy::from_str_name(""), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // ExtensionState
+    // -----------------------------------------------------------------------
+
+    const EXTENSION_STATE_CASES: &[(i32, ExtensionState, &str)] = &[
+        (-2, ExtensionState::Removed, "removed"),
+        (-1, ExtensionState::Idle, "idle"),
+        (1, ExtensionState::InUse, "in use"),
+        (2, ExtensionState::Busy, "busy"),
+        (4, ExtensionState::Unavailable, "unavailable"),
+        (8, ExtensionState::Ringing, "ringing"),
+        (16, ExtensionState::OnHold, "on hold"),
+    ];
+
+    #[test]
+    fn extension_state_from_code_all_variants() {
+        for &(code, expected, _) in EXTENSION_STATE_CASES {
+            assert_eq!(
+                ExtensionState::from_code(code),
+                Some(expected),
+                "from_code({code}) should return {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn extension_state_code_round_trip() {
+        for &(code, variant, _) in EXTENSION_STATE_CASES {
+            assert_eq!(variant.code(), code, "{variant:?}.code() mismatch");
+        }
+    }
+
+    #[test]
+    fn extension_state_from_code_invalid() {
+        for code in [0, 3, 5, 32, -3] {
+            assert_eq!(
+                ExtensionState::from_code(code),
+                None,
+                "from_code({code}) should return None",
+            );
+        }
+    }
+
+    #[test]
+    fn extension_state_display_all_variants() {
+        for &(_, variant, display) in EXTENSION_STATE_CASES {
+            assert_eq!(
+                variant.to_string(),
+                display,
+                "Display for {variant:?} mismatch",
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // AgiStatus
+    // -----------------------------------------------------------------------
+
+    const AGI_STATUS_CASES: &[(u16, AgiStatus, &str)] = &[
+        (200, AgiStatus::Success, "success"),
+        (510, AgiStatus::InvalidCommand, "invalid command"),
+        (511, AgiStatus::DeadChannel, "dead channel"),
+        (520, AgiStatus::EndUsage, "end usage"),
+    ];
+
+    #[test]
+    fn agi_status_from_code_all_variants() {
+        for &(code, expected, _) in AGI_STATUS_CASES {
+            assert_eq!(
+                AgiStatus::from_code(code),
+                Some(expected),
+                "from_code({code}) should return {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn agi_status_code_round_trip() {
+        for &(code, variant, _) in AGI_STATUS_CASES {
+            assert_eq!(variant.code(), code, "{variant:?}.code() mismatch");
+        }
+    }
+
+    #[test]
+    fn agi_status_from_code_invalid() {
+        for code in [0, 100, 201, 512] {
+            assert_eq!(
+                AgiStatus::from_code(code),
+                None,
+                "from_code({code}) should return None",
+            );
+        }
+    }
+
+    #[test]
+    fn agi_status_display_all_variants() {
+        for &(_, variant, display) in AGI_STATUS_CASES {
+            assert_eq!(
+                variant.to_string(),
+                display,
+                "Display for {variant:?} mismatch",
+            );
+        }
+    }
 }
