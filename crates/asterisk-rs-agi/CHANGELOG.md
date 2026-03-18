@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-agi-v0.1.2...asterisk-rs-agi-v0.2.0) - 2026-03-18
+
+### Fixed
+
+- *(agi)* replaced builder panic with Result, added graceful shutdown
+
+### Other
+
+- added #[non_exhaustive] to all public enums
+
 ## [0.1.2](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-agi-v0.1.1...asterisk-rs-agi-v0.1.2) - 2026-03-18
 
 ### Other
