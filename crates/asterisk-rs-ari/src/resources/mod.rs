@@ -3,6 +3,7 @@
 //! each submodule provides handle types and operations for an ari resource.
 
 pub mod application;
+pub mod asterisk;
 pub mod bridge;
 pub mod channel;
 pub mod device_state;

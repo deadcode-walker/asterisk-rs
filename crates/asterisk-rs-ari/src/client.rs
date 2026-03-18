@@ -103,6 +103,38 @@ impl AriClient {
         Ok(())
     }
 
+    /// send a PUT request with a JSON body to the given ARI path
+    pub async fn put<T: DeserializeOwned>(&self, path: &str, body: &impl Serialize) -> Result<T> {
+        let url = self.build_url(path)?;
+        let response = self
+            .http
+            .put(url)
+            .basic_auth(&self.config.username, Some(&self.config.password))
+            .json(body)
+            .send()
+            .await?;
+
+        Self::check_response(response)
+            .await?
+            .json()
+            .await
+            .map_err(AriError::Http)
+    }
+
+    /// send a PUT request with no body to the given ARI path
+    pub async fn put_empty(&self, path: &str) -> Result<()> {
+        let url = self.build_url(path)?;
+        let response = self
+            .http
+            .put(url)
+            .basic_auth(&self.config.username, Some(&self.config.password))
+            .send()
+            .await?;
+
+        Self::check_response(response).await?;
+        Ok(())
+    }
+
     /// send a DELETE request to the given ARI path
     pub async fn delete(&self, path: &str) -> Result<()> {
         let url = self.build_url(path)?;
@@ -115,6 +147,23 @@ impl AriClient {
 
         Self::check_response(response).await?;
         Ok(())
+    }
+
+    /// send a DELETE request and deserialize the response body
+    pub async fn delete_with_response<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let url = self.build_url(path)?;
+        let response = self
+            .http
+            .delete(url)
+            .basic_auth(&self.config.username, Some(&self.config.password))
+            .send()
+            .await?;
+
+        Self::check_response(response)
+            .await?
+            .json()
+            .await
+            .map_err(AriError::Http)
     }
 
     /// subscribe to ARI events from the websocket stream

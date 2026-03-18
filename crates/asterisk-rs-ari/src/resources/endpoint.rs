@@ -28,3 +28,51 @@ pub async fn list_by_tech(client: &AriClient, tech: &str) -> Result<Vec<Endpoint
 pub async fn get(client: &AriClient, tech: &str, resource: &str) -> Result<Endpoint> {
     client.get(&format!("/endpoints/{tech}/{resource}")).await
 }
+
+/// send a message to some technology uri or endpoint
+pub async fn send_message(client: &AriClient, to: &str, from: &str, body: &str) -> Result<()> {
+    client
+        .put_empty(&format!(
+            "/endpoints/sendMessage?to={to}&from={from}&body={body}"
+        ))
+        .await
+}
+
+/// refer an endpoint or technology uri to some technology uri or endpoint
+pub async fn refer(client: &AriClient, to: &str, from: &str, refer_to: &str) -> Result<()> {
+    client
+        .post_empty(&format!(
+            "/endpoints/refer?to={to}&from={from}&refer_to={refer_to}"
+        ))
+        .await
+}
+
+/// send a message to an endpoint
+pub async fn send_message_to_endpoint(
+    client: &AriClient,
+    tech: &str,
+    resource: &str,
+    from: &str,
+    body: &str,
+) -> Result<()> {
+    client
+        .put_empty(&format!(
+            "/endpoints/{tech}/{resource}/sendMessage?from={from}&body={body}"
+        ))
+        .await
+}
+
+/// refer an endpoint to some technology uri or endpoint
+pub async fn refer_to_endpoint(
+    client: &AriClient,
+    tech: &str,
+    resource: &str,
+    from: &str,
+    refer_to: &str,
+) -> Result<()> {
+    client
+        .post_empty(&format!(
+            "/endpoints/{tech}/{resource}/refer?from={from}&refer_to={refer_to}"
+        ))
+        .await
+}

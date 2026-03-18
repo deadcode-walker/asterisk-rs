@@ -26,3 +26,44 @@ pub async fn list(client: &AriClient) -> Result<Vec<Application>> {
 pub async fn get(client: &AriClient, app_name: &str) -> Result<Application> {
     client.get(&format!("/applications/{app_name}")).await
 }
+
+/// subscribe an application to an event source
+pub async fn subscribe(
+    client: &AriClient,
+    application_name: &str,
+    event_source: &str,
+) -> Result<Application> {
+    client
+        .post(
+            &format!("/applications/{application_name}/subscription?eventSource={event_source}"),
+            &serde_json::json!({}),
+        )
+        .await
+}
+
+/// unsubscribe an application from an event source
+pub async fn unsubscribe(
+    client: &AriClient,
+    application_name: &str,
+    event_source: &str,
+) -> Result<Application> {
+    client
+        .delete_with_response(&format!(
+            "/applications/{application_name}/subscription?eventSource={event_source}"
+        ))
+        .await
+}
+
+/// set the event filter for an application
+pub async fn set_event_filter(
+    client: &AriClient,
+    application_name: &str,
+    filter: &serde_json::Value,
+) -> Result<Application> {
+    client
+        .put(
+            &format!("/applications/{application_name}/eventFilter"),
+            filter,
+        )
+        .await
+}
