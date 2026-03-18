@@ -7,7 +7,7 @@ use asterisk_rs_core::event::EventBus;
 use futures_util::StreamExt;
 use tokio::sync::watch;
 
-use crate::event::AriEvent;
+use crate::event::AriMessage;
 
 /// background websocket listener that connects to the ARI event stream,
 /// deserializes events, and publishes them to an event bus
@@ -20,7 +20,7 @@ impl WsEventListener {
     /// spawn the websocket listener as a background task
     pub(crate) fn spawn(
         ws_url: String,
-        event_bus: EventBus<AriEvent>,
+        event_bus: EventBus<AriMessage>,
         reconnect: ReconnectPolicy,
     ) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -49,7 +49,7 @@ impl Drop for WsEventListener {
 /// main websocket loop with reconnection logic
 async fn ws_loop(
     ws_url: String,
-    event_bus: EventBus<AriEvent>,
+    event_bus: EventBus<AriMessage>,
     reconnect: ReconnectPolicy,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
@@ -120,7 +120,7 @@ async fn read_messages(
     ws_stream: tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >,
-    event_bus: &EventBus<AriEvent>,
+    event_bus: &EventBus<AriMessage>,
     shutdown_rx: &mut watch::Receiver<bool>,
 ) -> std::result::Result<(), bool> {
     let (_write, mut read) = ws_stream.split();
@@ -154,12 +154,12 @@ async fn read_messages(
 /// process a single websocket message
 fn handle_message(
     message: tokio_tungstenite::tungstenite::Message,
-    event_bus: &EventBus<AriEvent>,
+    event_bus: &EventBus<AriMessage>,
 ) {
     use tokio_tungstenite::tungstenite::Message;
 
     match message {
-        Message::Text(text) => match serde_json::from_str::<AriEvent>(&text) {
+        Message::Text(text) => match serde_json::from_str::<AriMessage>(&text) {
             Ok(event) => {
                 tracing::debug!(?event, "received ARI event");
                 event_bus.publish(event);

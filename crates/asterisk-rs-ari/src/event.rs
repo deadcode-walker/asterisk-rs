@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// uses serde's internally tagged representation keyed on the `type` field.
 /// unknown event types deserialize to the `Unknown` variant instead of failing.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub enum AriEvent {
@@ -261,7 +261,24 @@ pub enum AriEvent {
     Unknown,
 }
 
-impl asterisk_rs_core::event::Event for AriEvent {}
+/// a complete ARI event with common metadata and typed payload
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AriMessage {
+    /// the stasis application that received this event
+    #[serde(default)]
+    pub application: String,
+    /// ISO 8601 timestamp when the event was created
+    #[serde(default)]
+    pub timestamp: String,
+    /// unique id of the asterisk instance that generated this event
+    #[serde(default)]
+    pub asterisk_id: Option<String>,
+    /// the typed event payload
+    #[serde(flatten)]
+    pub event: AriEvent,
+}
+
+impl asterisk_rs_core::event::Event for AriMessage {}
 
 /// contact info for PJSIP registration status
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -696,5 +713,42 @@ mod tests {
         let event: AriEvent =
             serde_json::from_str(json).expect("recording failed should deserialize");
         assert!(matches!(event, AriEvent::RecordingFailed { .. }));
+    }
+
+    #[test]
+    fn deserialize_ari_message_with_metadata() {
+        let json = r#"{
+            "type": "StasisStart",
+            "application": "my-app",
+            "timestamp": "2024-01-15T10:30:00.000+0000",
+            "asterisk_id": "00:11:22:33:44:55",
+            "channel": {
+                "id": "1234.5",
+                "name": "PJSIP/alice-00000001",
+                "state": "Ring"
+            }
+        }"#;
+        let msg: AriMessage = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(msg.application, "my-app");
+        assert_eq!(msg.timestamp, "2024-01-15T10:30:00.000+0000");
+        assert_eq!(msg.asterisk_id.as_deref(), Some("00:11:22:33:44:55"));
+        assert!(matches!(msg.event, AriEvent::StasisStart { .. }));
+    }
+
+    #[test]
+    fn deserialize_ari_message_without_metadata() {
+        let json = r#"{
+            "type": "StasisEnd",
+            "channel": {
+                "id": "1234.5",
+                "name": "PJSIP/alice-00000001",
+                "state": "Up"
+            }
+        }"#;
+        let msg: AriMessage = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(msg.application, "");
+        assert_eq!(msg.timestamp, "");
+        assert!(msg.asterisk_id.is_none());
+        assert!(matches!(msg.event, AriEvent::StasisEnd { .. }));
     }
 }

@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut events = client.subscribe();
 
     while let Some(event) = events.recv().await {
-        match event {
+        match event.event {
             AriEvent::StasisStart { channel, args, .. } => {
                 tracing::info!(
                     channel_id = %channel.id,

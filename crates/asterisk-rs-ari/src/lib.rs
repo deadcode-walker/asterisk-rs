@@ -13,4 +13,4 @@ pub mod websocket;
 pub use client::AriClient;
 pub use config::AriConfig;
 pub use error::AriError;
-pub use event::AriEvent;
+pub use event::{AriEvent, AriMessage};

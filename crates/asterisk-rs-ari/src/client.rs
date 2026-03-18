@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::config::AriConfig;
 use crate::error::{AriError, Result};
-use crate::event::AriEvent;
+use crate::event::AriMessage;
 use crate::websocket::WsEventListener;
 
 /// async client for the Asterisk REST Interface
@@ -19,7 +19,7 @@ use crate::websocket::WsEventListener;
 pub struct AriClient {
     http: reqwest::Client,
     config: Arc<AriConfig>,
-    event_bus: EventBus<AriEvent>,
+    event_bus: EventBus<AriMessage>,
     ws_listener: Arc<WsEventListener>,
 }
 
@@ -171,12 +171,12 @@ impl AriClient {
     }
 
     /// subscribe to ARI events from the websocket stream
-    pub fn subscribe(&self) -> EventSubscription<AriEvent> {
+    pub fn subscribe(&self) -> EventSubscription<AriMessage> {
         self.event_bus.subscribe()
     }
 
     /// access the underlying event bus
-    pub fn events(&self) -> &EventBus<AriEvent> {
+    pub fn events(&self) -> &EventBus<AriMessage> {
         &self.event_bus
     }
 
