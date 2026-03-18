@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-ami-v0.2.0...asterisk-rs-ami-v0.2.1) - 2026-03-18
+
+### Added
+
+- *(ami)* added remaining 37 AMI actions for complete Asterisk 23 coverage
+
+### Other
+
+- added crate-specific READMEs for sub-crates
+
 ## [0.2.0](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-ami-v0.1.0...asterisk-rs-ami-v0.2.0) - 2026-03-18
 
 ### Added
