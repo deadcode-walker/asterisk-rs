@@ -20,9 +20,9 @@ shared types and error handling in `asterisk-rs-core`.
 |---|---|
 | `asterisk-rs` | Umbrella crate, re-exports all protocols under feature flags |
 | `asterisk-rs-core` | Shared error types, event bus, reconnection policy |
-| `asterisk-rs-ami` | AMI client: typed actions, events, codec, reconnection |
-| `asterisk-rs-agi` | FastAGI server: handler trait, typed commands |
-| `asterisk-rs-ari` | ARI client: REST + WebSocket, typed events, resource handles |
+| `asterisk-rs-ami` | AMI client: 116 typed actions, 161 typed events, codec, reconnection |
+| `asterisk-rs-agi` | FastAGI server: handler trait, all 47 typed commands |
+| `asterisk-rs-ari` | ARI client: REST + WebSocket, all 43 typed events, resource handles |
 
 ## Quick Start
 
@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Features
 
 - Async/await with tokio
-- Typed actions, commands, and events for all three protocols
+- Complete Asterisk 23 protocol coverage: 161 AMI events, 116 AMI actions, 47 AGI commands, 43 ARI events
 - Automatic reconnection with exponential backoff and jitter
 - MD5 challenge-response authentication (AMI)
 - Handle pattern for ARI resources (ChannelHandle, BridgeHandle, etc.)
