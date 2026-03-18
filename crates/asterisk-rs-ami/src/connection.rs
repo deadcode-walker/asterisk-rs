@@ -1,6 +1,6 @@
 //! AMI TCP connection management.
 
-use crate::action::{AmiAction, ChallengeAction, ChallengeLoginAction, LoginAction};
+use crate::action::{AmiAction, ChallengeAction, ChallengeLoginAction, LoginAction, PingAction};
 use crate::codec::{AmiCodec, RawAmiMessage};
 use crate::error::{AmiError, Result};
 use crate::event::AmiEvent;
@@ -47,6 +47,7 @@ impl ConnectionManager {
         credentials: Credentials,
         event_bus: EventBus<AmiEvent>,
         reconnect_policy: ReconnectPolicy,
+        ping_interval: Option<Duration>,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::channel(256);
         let (state_tx, state_rx) = watch::channel(ConnectionState::Disconnected);
@@ -58,6 +59,7 @@ impl ConnectionManager {
             event_bus,
             state_tx,
             reconnect_policy,
+            ping_interval,
         ));
 
         Self {
@@ -101,6 +103,7 @@ async fn connection_task(
     event_bus: EventBus<AmiEvent>,
     state_tx: watch::Sender<ConnectionState>,
     reconnect_policy: ReconnectPolicy,
+    ping_interval: Option<Duration>,
 ) {
     let pending = Arc::new(Mutex::new(PendingActions::new()));
     let mut attempt: u32 = 0;
@@ -125,6 +128,12 @@ async fn connection_task(
                 }
                 tracing::info!("AMI login successful");
                 let _ = state_tx.send(ConnectionState::Connected);
+
+                // set up keep-alive ping timer
+                let mut ping_timer = ping_interval.map(tokio::time::interval);
+                if let Some(ref mut timer) = ping_timer {
+                    timer.tick().await; // consume the immediate first tick
+                }
 
                 // process messages until disconnect
                 loop {
@@ -173,6 +182,21 @@ async fn connection_task(
                                     return;
                                 }
                             }
+                        }
+                        // keep-alive ping
+                        _ = async {
+                            match ping_timer.as_mut() {
+                                Some(timer) => timer.tick().await,
+                                None => std::future::pending().await,
+                            }
+                        } => {
+                            let ping = PingAction;
+                            let (_, ping_msg) = ping.to_message();
+                            if let Err(e) = writer.send(ping_msg).await {
+                                tracing::warn!(error = %e, "keep-alive ping failed, reconnecting");
+                                break;
+                            }
+                            tracing::trace!("keep-alive ping sent");
                         }
                     }
                 }

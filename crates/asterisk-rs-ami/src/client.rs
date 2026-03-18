@@ -161,6 +161,7 @@ pub struct AmiClientBuilder {
     reconnect_policy: ReconnectPolicy,
     timeout: Duration,
     event_capacity: usize,
+    ping_interval: Option<Duration>,
 }
 
 impl Default for AmiClientBuilder {
@@ -172,6 +173,7 @@ impl Default for AmiClientBuilder {
             reconnect_policy: ReconnectPolicy::default(),
             timeout: DEFAULT_TIMEOUT,
             event_capacity: 1024,
+            ping_interval: None,
         }
     }
 }
@@ -207,6 +209,16 @@ impl AmiClientBuilder {
         self
     }
 
+    /// set the interval for keep-alive pings
+    ///
+    /// when set, the client sends periodic Ping actions to detect
+    /// dead connections. a reasonable default is 20 seconds.
+    /// disabled by default.
+    pub fn ping_interval(mut self, interval: Duration) -> Self {
+        self.ping_interval = Some(interval);
+        self
+    }
+
     /// build and connect the client
     ///
     /// waits for TCP connection and login before returning
@@ -223,6 +235,7 @@ impl AmiClientBuilder {
             credentials.clone(),
             event_bus.clone(),
             self.reconnect_policy,
+            self.ping_interval,
         );
 
         // wait for connection + login to complete
