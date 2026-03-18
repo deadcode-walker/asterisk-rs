@@ -36,6 +36,7 @@ pub trait AmiAction {
             RawAmiMessage {
                 headers,
                 output: vec![],
+                channel_variables: std::collections::HashMap::new(),
             },
         )
     }

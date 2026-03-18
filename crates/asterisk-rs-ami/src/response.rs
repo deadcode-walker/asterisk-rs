@@ -18,6 +18,8 @@ pub struct AmiResponse {
     pub headers: HashMap<String, String>,
     /// command output lines (populated for Response: Follows)
     pub output: Vec<String>,
+    /// channel variables extracted from ChanVariable(name) headers
+    pub channel_variables: HashMap<String, String>,
 }
 
 impl AmiResponse {
@@ -40,11 +42,18 @@ impl AmiResponse {
             message,
             headers,
             output: raw.output.clone(),
+            channel_variables: raw.channel_variables.clone(),
         })
     }
+
     /// get a header value from the response
     pub fn get(&self, key: &str) -> Option<&str> {
         self.headers.get(key).map(|s| s.as_str())
+    }
+
+    /// get a channel variable by name
+    pub fn get_variable(&self, name: &str) -> Option<&str> {
+        self.channel_variables.get(name).map(|s| s.as_str())
     }
 }
 
@@ -173,6 +182,7 @@ impl PendingActions {
                 message: None,
                 headers: HashMap::new(),
                 output: vec![],
+                channel_variables: HashMap::new(),
             });
             let _ = pending.tx.send(EventListResponse {
                 response,
@@ -210,6 +220,7 @@ mod tests {
                 ("Message".into(), "Authentication accepted".into()),
             ],
             output: vec![],
+            channel_variables: HashMap::new(),
         };
         let resp = AmiResponse::from_raw(&raw).expect("should parse success response");
         assert!(resp.success);
@@ -226,6 +237,7 @@ mod tests {
                 ("Message".into(), "Permission denied".into()),
             ],
             output: vec![],
+            channel_variables: HashMap::new(),
         };
         let resp = AmiResponse::from_raw(&raw).expect("should parse error response");
         assert!(!resp.success);
@@ -240,6 +252,7 @@ mod tests {
                 ("Channel".into(), "SIP/100-00000001".into()),
             ],
             output: vec![],
+            channel_variables: HashMap::new(),
         };
         assert!(AmiResponse::from_raw(&raw).is_none());
     }
@@ -257,6 +270,7 @@ mod tests {
             message: None,
             headers: HashMap::new(),
             output: vec![],
+            channel_variables: HashMap::new(),
         };
         assert!(pending.deliver(response));
         assert_eq!(pending.pending_count(), 0);
@@ -276,6 +290,7 @@ mod tests {
             message: None,
             headers: HashMap::new(),
             output: vec![],
+            channel_variables: HashMap::new(),
         };
         assert!(!pending.deliver(response));
     }
@@ -305,6 +320,7 @@ mod tests {
             message: None,
             headers: HashMap::new(),
             output: vec![],
+            channel_variables: HashMap::new(),
         };
         assert!(pending.deliver_event_list_response(response));
 
@@ -340,5 +356,21 @@ mod tests {
         };
         // action_id doesn't match
         assert!(!pending.deliver_event_list_event("999", event));
+    }
+
+    #[test]
+    fn response_propagates_channel_variables() {
+        let mut vars = HashMap::new();
+        vars.insert("DIALSTATUS".to_string(), "ANSWER".to_string());
+        let raw = RawAmiMessage {
+            headers: vec![
+                ("Response".into(), "Success".into()),
+                ("ActionID".into(), "99".into()),
+            ],
+            output: vec![],
+            channel_variables: vars,
+        };
+        let resp = AmiResponse::from_raw(&raw).expect("should parse");
+        assert_eq!(resp.get_variable("DIALSTATUS"), Some("ANSWER"));
     }
 }

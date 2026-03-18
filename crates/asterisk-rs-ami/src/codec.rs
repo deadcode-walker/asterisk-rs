@@ -19,6 +19,8 @@ pub struct RawAmiMessage {
     pub headers: Vec<(String, String)>,
     /// command output lines (for Response: Follows)
     pub output: Vec<String>,
+    /// channel variables extracted from ChanVariable(name) headers
+    pub channel_variables: HashMap<String, String>,
 }
 
 impl RawAmiMessage {
@@ -47,6 +49,11 @@ impl RawAmiMessage {
     /// check if this is an event message
     pub fn is_event(&self) -> bool {
         self.get("Event").is_some()
+    }
+
+    /// get a channel variable by name
+    pub fn get_variable(&self, name: &str) -> Option<&str> {
+        self.channel_variables.get(name).map(|s| s.as_str())
     }
 
     /// convert headers to a HashMap (last value wins for duplicates)
@@ -124,6 +131,7 @@ impl Decoder for AmiCodec {
         let message_bytes = &src[..end_pos];
         let mut headers = Vec::new();
         let mut output = Vec::new();
+        let mut channel_variables = HashMap::new();
 
         for line in message_bytes.split(|&b| b == b'\n') {
             let line = line.strip_suffix(b"\r").unwrap_or(line);
@@ -149,7 +157,12 @@ impl Decoder for AmiCodec {
                 } else {
                     String::new()
                 };
-                headers.push((key, value));
+                if key.starts_with("ChanVariable(") && key.ends_with(')') {
+                    let var_name = &key["ChanVariable(".len()..key.len() - 1];
+                    channel_variables.insert(var_name.to_string(), value);
+                } else {
+                    headers.push((key, value));
+                }
             } else {
                 // command output line (e.g., Response: Follows body)
                 output.push(String::from_utf8_lossy(line).to_string());
@@ -164,7 +177,11 @@ impl Decoder for AmiCodec {
             return self.decode(src);
         }
 
-        Ok(Some(RawAmiMessage { headers, output }))
+        Ok(Some(RawAmiMessage {
+            headers,
+            output,
+            channel_variables,
+        }))
     }
 }
 
@@ -174,6 +191,12 @@ impl Encoder<RawAmiMessage> for AmiCodec {
     fn encode(&mut self, item: RawAmiMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
         for (key, value) in &item.headers {
             dst.extend_from_slice(key.as_bytes());
+            dst.extend_from_slice(b": ");
+            dst.extend_from_slice(value.as_bytes());
+            dst.extend_from_slice(b"\r\n");
+        }
+        for (name, value) in &item.channel_variables {
+            dst.extend_from_slice(format!("ChanVariable({})", name).as_bytes());
             dst.extend_from_slice(b": ");
             dst.extend_from_slice(value.as_bytes());
             dst.extend_from_slice(b"\r\n");
@@ -273,6 +296,7 @@ mod tests {
                 ("ActionID".into(), "1".into()),
             ],
             output: vec![],
+            channel_variables: HashMap::new(),
         };
         let mut buf = BytesMut::new();
         codec.encode(msg, &mut buf).expect("encode should succeed");
@@ -322,6 +346,7 @@ mod tests {
         let msg = RawAmiMessage {
             headers: vec![("actionid".into(), "42".into())],
             output: vec![],
+            channel_variables: HashMap::new(),
         };
         assert_eq!(msg.get("ActionID"), Some("42"));
         assert_eq!(msg.get("actionid"), Some("42"));
@@ -348,5 +373,84 @@ mod tests {
         assert_eq!(msg.output.len(), 2);
         assert_eq!(msg.output[0], "core show version");
         assert_eq!(msg.output[1], "Asterisk 23.0.0");
+    }
+
+    #[test]
+    fn decode_channel_variables() {
+        let mut codec = AmiCodec::new();
+        codec.banner_consumed = true;
+        let mut buf = BytesMut::from(
+            "Event: Newchannel\r\n\
+             Channel: PJSIP/100-0001\r\n\
+             ChanVariable(DIALSTATUS): ANSWER\r\n\
+             ChanVariable(FROM_DID): 5551234567\r\n\
+             Uniqueid: 1234.5\r\n\
+             \r\n",
+        );
+        let msg = codec
+            .decode(&mut buf)
+            .expect("decode should succeed")
+            .expect("should produce a message");
+        assert_eq!(msg.get_variable("DIALSTATUS"), Some("ANSWER"));
+        assert_eq!(msg.get_variable("FROM_DID"), Some("5551234567"));
+        // ChanVariable headers should NOT appear in regular headers
+        assert!(msg.get("ChanVariable(DIALSTATUS)").is_none());
+        // regular headers should still work
+        assert_eq!(msg.get("Channel"), Some("PJSIP/100-0001"));
+    }
+
+    #[test]
+    fn encode_channel_variables() {
+        let mut codec = AmiCodec::new();
+        let mut vars = HashMap::new();
+        vars.insert("DIALSTATUS".to_string(), "ANSWER".to_string());
+        let msg = RawAmiMessage {
+            headers: vec![("Action".into(), "Originate".into())],
+            output: vec![],
+            channel_variables: vars,
+        };
+        let mut buf = BytesMut::new();
+        codec.encode(msg, &mut buf).expect("encode should succeed");
+        let encoded = String::from_utf8_lossy(&buf);
+        assert!(encoded.contains("Action: Originate\r\n"));
+        assert!(encoded.contains("ChanVariable(DIALSTATUS): ANSWER\r\n"));
+        assert!(encoded.ends_with("\r\n\r\n") || encoded.ends_with("\r\n"));
+    }
+
+    #[test]
+    fn decode_empty_channel_variable() {
+        let mut codec = AmiCodec::new();
+        codec.banner_consumed = true;
+        let mut buf = BytesMut::from(
+            "Event: Test\r\n\
+             ChanVariable(): \r\n\
+             \r\n",
+        );
+        let msg = codec
+            .decode(&mut buf)
+            .expect("decode should succeed")
+            .expect("should produce a message");
+        // empty parens => empty string key
+        assert_eq!(msg.get_variable(""), Some(""));
+    }
+
+    #[test]
+    fn non_chanvariable_parens_stays_in_headers() {
+        let mut codec = AmiCodec::new();
+        codec.banner_consumed = true;
+        let mut buf = BytesMut::from(
+            "Event: Test\r\n\
+             ChanVariableExtra(x): y\r\n\
+             ChanVariable: plain\r\n\
+             \r\n",
+        );
+        let msg = codec
+            .decode(&mut buf)
+            .expect("decode should succeed")
+            .expect("should produce a message");
+        // these are NOT channel variables
+        assert_eq!(msg.get("ChanVariableExtra(x)"), Some("y"));
+        assert_eq!(msg.get("ChanVariable"), Some("plain"));
+        assert!(msg.channel_variables.is_empty());
     }
 }
