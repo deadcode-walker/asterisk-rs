@@ -1,10 +1,11 @@
 //! typed AMI event types
 
 use crate::codec::RawAmiMessage;
+use serde::Serialize;
 use std::collections::HashMap;
 
 /// all known AMI event types
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[non_exhaustive]
 pub enum AmiEvent {
     /// new channel created
@@ -2904,6 +2905,7 @@ mod tests {
                 ("Cause".into(), "16".into()),
                 ("Cause-txt".into(), "Normal Clearing".into()),
             ],
+            output: vec![],
         };
         let event = AmiEvent::from_raw(&raw).expect("should parse hangup event");
         assert_eq!(event.event_name(), "Hangup");
@@ -2926,6 +2928,7 @@ mod tests {
                 ("Event".into(), "CustomEvent".into()),
                 ("Data".into(), "something".into()),
             ],
+            output: vec![],
         };
         let event = AmiEvent::from_raw(&raw).expect("should parse unknown event");
         assert_eq!(event.event_name(), "CustomEvent");
@@ -2936,6 +2939,7 @@ mod tests {
     fn non_event_returns_none() {
         let raw = RawAmiMessage {
             headers: vec![("Response".into(), "Success".into())],
+            output: vec![],
         };
         assert!(AmiEvent::from_raw(&raw).is_none());
     }
@@ -2950,6 +2954,7 @@ mod tests {
                 ("Value".into(), "ANSWER".into()),
                 ("Uniqueid".into(), "1234.5".into()),
             ],
+            output: vec![],
         };
         let event = AmiEvent::from_raw(&raw).expect("should parse");
         assert_eq!(event.event_name(), "VarSet");
@@ -2974,6 +2979,7 @@ mod tests {
                 ("Uniqueid".into(), "5678.1".into()),
                 ("MusicClass".into(), "default".into()),
             ],
+            output: vec![],
         };
         let event = AmiEvent::from_raw(&raw).expect("should parse");
         assert_eq!(event.event_name(), "Hold");
@@ -2994,6 +3000,7 @@ mod tests {
                 ("Response".into(), "Success".into()),
                 ("Reason".into(), "4".into()),
             ],
+            output: vec![],
         };
         let event = AmiEvent::from_raw(&raw).expect("should parse");
         assert_eq!(event.event_name(), "OriginateResponse");
@@ -3019,6 +3026,7 @@ mod tests {
                 ("Position".into(), "1".into()),
                 ("Count".into(), "3".into()),
             ],
+            output: vec![],
         };
         let event = AmiEvent::from_raw(&raw).expect("should parse");
         assert_eq!(event.event_name(), "QueueCallerJoin");
@@ -3047,6 +3055,7 @@ mod tests {
                 ("AccountID".into(), "admin".into()),
                 ("RemoteAddress".into(), "IPV4/TCP/192.168.1.100/5038".into()),
             ],
+            output: vec![],
         };
         let event = AmiEvent::from_raw(&raw).expect("should parse");
         assert_eq!(event.event_name(), "FailedACL");
@@ -3078,6 +3087,7 @@ mod tests {
                 ("Source".into(), "100".into()),
                 ("DestinationContext".into(), "default".into()),
             ],
+            output: vec![],
         };
         let event = AmiEvent::from_raw(&raw).expect("should parse");
         assert_eq!(event.event_name(), "Cdr");
@@ -3107,6 +3117,7 @@ mod tests {
                 ("Uniqueid".into(), "abc.1".into()),
                 ("Admin".into(), "Yes".into()),
             ],
+            output: vec![],
         };
         let event = AmiEvent::from_raw(&raw).expect("should parse");
         assert_eq!(event.event_name(), "ConfbridgeJoin");

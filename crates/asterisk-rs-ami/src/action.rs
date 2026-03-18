@@ -31,7 +31,13 @@ pub trait AmiAction {
             ("ActionID".to_string(), action_id.clone()),
         ];
         headers.extend(self.to_headers());
-        (action_id, RawAmiMessage { headers })
+        (
+            action_id,
+            RawAmiMessage {
+                headers,
+                output: vec![],
+            },
+        )
     }
 }
 

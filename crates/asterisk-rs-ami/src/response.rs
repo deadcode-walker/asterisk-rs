@@ -16,6 +16,8 @@ pub struct AmiResponse {
     pub message: Option<String>,
     /// all headers as a map
     pub headers: HashMap<String, String>,
+    /// command output lines (populated for Response: Follows)
+    pub output: Vec<String>,
 }
 
 impl AmiResponse {
@@ -37,9 +39,9 @@ impl AmiResponse {
             response_type,
             message,
             headers,
+            output: raw.output.clone(),
         })
     }
-
     /// get a header value from the response
     pub fn get(&self, key: &str) -> Option<&str> {
         self.headers.get(key).map(|s| s.as_str())
@@ -118,6 +120,7 @@ mod tests {
                 ("ActionID".into(), "42".into()),
                 ("Message".into(), "Authentication accepted".into()),
             ],
+            output: vec![],
         };
         let resp = AmiResponse::from_raw(&raw).expect("should parse success response");
         assert!(resp.success);
@@ -133,6 +136,7 @@ mod tests {
                 ("ActionID".into(), "43".into()),
                 ("Message".into(), "Permission denied".into()),
             ],
+            output: vec![],
         };
         let resp = AmiResponse::from_raw(&raw).expect("should parse error response");
         assert!(!resp.success);
@@ -146,6 +150,7 @@ mod tests {
                 ("Event".into(), "Hangup".into()),
                 ("Channel".into(), "SIP/100-00000001".into()),
             ],
+            output: vec![],
         };
         assert!(AmiResponse::from_raw(&raw).is_none());
     }
@@ -162,6 +167,7 @@ mod tests {
             response_type: "Success".into(),
             message: None,
             headers: HashMap::new(),
+            output: vec![],
         };
         assert!(pending.deliver(response));
         assert_eq!(pending.pending_count(), 0);
@@ -180,6 +186,7 @@ mod tests {
             response_type: "Success".into(),
             message: None,
             headers: HashMap::new(),
+            output: vec![],
         };
         assert!(!pending.deliver(response));
     }

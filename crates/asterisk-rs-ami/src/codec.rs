@@ -17,6 +17,8 @@ const MAX_MESSAGE_SIZE: usize = 64 * 1024;
 pub struct RawAmiMessage {
     /// ordered key-value headers
     pub headers: Vec<(String, String)>,
+    /// command output lines (for Response: Follows)
+    pub output: Vec<String>,
 }
 
 impl RawAmiMessage {
@@ -121,10 +123,16 @@ impl Decoder for AmiCodec {
         // extract the message bytes (not including the final \r\n\r\n)
         let message_bytes = &src[..end_pos];
         let mut headers = Vec::new();
+        let mut output = Vec::new();
 
         for line in message_bytes.split(|&b| b == b'\n') {
             let line = line.strip_suffix(b"\r").unwrap_or(line);
             if line.is_empty() {
+                continue;
+            }
+
+            // skip the END COMMAND marker
+            if line == b"--END COMMAND--" {
                 continue;
             }
 
@@ -142,8 +150,10 @@ impl Decoder for AmiCodec {
                     String::new()
                 };
                 headers.push((key, value));
+            } else {
+                // command output line (e.g., Response: Follows body)
+                output.push(String::from_utf8_lossy(line).to_string());
             }
-            // lines without ':' are silently skipped (e.g., command output in Response: Follows)
         }
 
         // advance past the message + terminator (\r\n\r\n = 4 bytes)
@@ -154,7 +164,7 @@ impl Decoder for AmiCodec {
             return self.decode(src);
         }
 
-        Ok(Some(RawAmiMessage { headers }))
+        Ok(Some(RawAmiMessage { headers, output }))
     }
 }
 
@@ -262,6 +272,7 @@ mod tests {
                 ("Secret".into(), "password".into()),
                 ("ActionID".into(), "1".into()),
             ],
+            output: vec![],
         };
         let mut buf = BytesMut::new();
         codec.encode(msg, &mut buf).expect("encode should succeed");
@@ -310,8 +321,32 @@ mod tests {
     fn case_insensitive_header_lookup() {
         let msg = RawAmiMessage {
             headers: vec![("actionid".into(), "42".into())],
+            output: vec![],
         };
         assert_eq!(msg.get("ActionID"), Some("42"));
         assert_eq!(msg.get("actionid"), Some("42"));
+    }
+
+    #[test]
+    fn decode_command_response() {
+        let mut buf = BytesMut::from(
+            "Asterisk Call Manager/1.0\r\n\
+             Response: Follows\r\n\
+             ActionID: 42\r\n\
+             Privilege: Command\r\n\
+             core show version\r\n\
+             Asterisk 23.0.0\r\n\
+             --END COMMAND--\r\n\
+             \r\n",
+        );
+        let mut codec = AmiCodec::new();
+        let msg = codec
+            .decode(&mut buf)
+            .expect("should decode")
+            .expect("should have message");
+        assert_eq!(msg.get("Response"), Some("Follows"));
+        assert_eq!(msg.output.len(), 2);
+        assert_eq!(msg.output[0], "core show version");
+        assert_eq!(msg.output[1], "Asterisk 23.0.0");
     }
 }

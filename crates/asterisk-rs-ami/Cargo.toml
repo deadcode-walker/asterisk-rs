@@ -23,6 +23,7 @@ thiserror.workspace = true
 md-5.workspace = true
 futures-util.workspace = true
 pin-project-lite.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

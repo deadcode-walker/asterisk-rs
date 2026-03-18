@@ -11,6 +11,7 @@ use asterisk_rs_core::event::EventBus;
 
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch, Mutex};
 use tokio_util::codec::{FramedRead, FramedWrite};
@@ -102,8 +103,8 @@ async fn connection_task(
         let _ = state_tx.send(ConnectionState::Connecting);
         tracing::info!(address = %address, attempt, "connecting to AMI");
 
-        match TcpStream::connect(&address).await {
-            Ok(stream) => {
+        match tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(&address)).await {
+            Ok(Ok(stream)) => {
                 attempt = 0;
                 tracing::info!(address = %address, "TCP connected to AMI");
 
@@ -166,8 +167,11 @@ async fn connection_task(
                 // connection lost — cancel pending actions
                 pending.lock().await.cancel_all();
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 tracing::error!(address = %address, error = %e, "failed to connect to AMI");
+            }
+            Err(_) => {
+                tracing::error!(address = %address, "AMI connection timed out");
             }
         }
 
