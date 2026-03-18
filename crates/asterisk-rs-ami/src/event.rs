@@ -4,7 +4,8 @@ use crate::codec::RawAmiMessage;
 use std::collections::HashMap;
 
 /// all known AMI event types
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum AmiEvent {
     /// new channel created
     NewChannel {

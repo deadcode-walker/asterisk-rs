@@ -4,6 +4,7 @@ use asterisk_rs_core::error::{AuthError, ConnectionError, ProtocolError, Timeout
 
 /// errors specific to AMI operations
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum AmiError {
     #[error("connection error: {0}")]
     Connection(#[from] ConnectionError),

@@ -2,6 +2,7 @@ use asterisk_rs_core::error::ProtocolError;
 
 /// errors specific to the AGI protocol
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum AgiError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),

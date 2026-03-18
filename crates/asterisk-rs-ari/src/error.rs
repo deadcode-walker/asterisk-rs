@@ -2,6 +2,7 @@
 
 /// errors that can occur during ARI operations
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum AriError {
     #[error("HTTP request failed: {0}")]
     Http(#[from] reqwest::Error),

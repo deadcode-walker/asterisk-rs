@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// unknown event types deserialize to the `Unknown` variant instead of failing.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
+#[non_exhaustive]
 pub enum AriEvent {
     StasisStart {
         channel: Channel,

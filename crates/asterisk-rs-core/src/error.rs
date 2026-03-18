@@ -2,6 +2,7 @@
 
 /// top-level error type encompassing all asterisk-rs failures
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("connection failed: {0}")]
     Connection(#[from] ConnectionError),
@@ -22,6 +23,7 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ConnectionError {
     #[error("failed to connect to {address}: {source}")]
     ConnectFailed {
@@ -43,6 +45,7 @@ pub enum ConnectionError {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum AuthError {
     #[error("login rejected: {reason}")]
     Rejected { reason: String },
@@ -55,6 +58,7 @@ pub enum AuthError {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum TimeoutError {
     #[error("action timed out after {elapsed:?}")]
     Action { elapsed: std::time::Duration },
@@ -64,6 +68,7 @@ pub enum TimeoutError {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ProtocolError {
     #[error("malformed message: {details}")]
     MalformedMessage { details: String },
