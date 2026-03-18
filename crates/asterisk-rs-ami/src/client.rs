@@ -82,6 +82,53 @@ impl AmiClient {
         self.event_bus.subscribe()
     }
 
+    /// send an action that returns its results as a list of events
+    ///
+    /// actions like `Status`, `CoreShowChannels`, `QueueStatus`, etc.
+    /// return a series of events terminated by a `*Complete` event.
+    /// this method collects all events and returns them as a single response.
+    pub async fn send_collecting<A: AmiAction>(
+        &self,
+        action: &A,
+    ) -> Result<crate::response::EventListResponse> {
+        let (action_id, message) = action.to_message();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+
+        self.connection
+            .send(ConnectionCommand::SendEventGeneratingAction {
+                message,
+                action_id: action_id.clone(),
+                response_tx,
+            })
+            .await?;
+
+        let result = tokio::time::timeout(self.timeout, response_rx)
+            .await
+            .map_err(|_| {
+                AmiError::Timeout(asterisk_rs_core::error::TimeoutError::Action {
+                    elapsed: self.timeout,
+                })
+            })?
+            .map_err(|_| AmiError::ResponseChannelClosed)?;
+
+        Ok(result)
+    }
+
+    /// subscribe to events matching a filter predicate
+    ///
+    /// ```rust,ignore
+    /// // subscribe only to hangup events
+    /// let mut hangups = client.subscribe_filtered(|e| {
+    ///     e.event_name() == "Hangup"
+    /// });
+    /// ```
+    pub fn subscribe_filtered(
+        &self,
+        predicate: impl Fn(&AmiEvent) -> bool + Send + 'static,
+    ) -> asterisk_rs_core::event::FilteredSubscription<AmiEvent> {
+        self.event_bus.subscribe_filtered(predicate)
+    }
+
     /// get current connection state
     pub fn connection_state(&self) -> ConnectionState {
         self.connection.state()

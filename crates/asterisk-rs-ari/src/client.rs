@@ -175,6 +175,14 @@ impl AriClient {
         self.event_bus.subscribe()
     }
 
+    /// subscribe to events matching a filter predicate
+    pub fn subscribe_filtered(
+        &self,
+        predicate: impl Fn(&AriMessage) -> bool + Send + 'static,
+    ) -> asterisk_rs_core::event::FilteredSubscription<AriMessage> {
+        self.event_bus.subscribe_filtered(predicate)
+    }
+
     /// access the underlying event bus
     pub fn events(&self) -> &EventBus<AriMessage> {
         &self.event_bus
