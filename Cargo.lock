@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "asterisk-rs"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "asterisk-rs-agi",
  "asterisk-rs-ami",
@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-agi"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "asterisk-rs-core",
  "bytes",
@@ -26,7 +26,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-ami"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "asterisk-rs-core",
  "bytes",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-ari"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "asterisk-rs-core",
  "base64",
@@ -60,7 +60,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "pin-project-lite",
  "serde",
