@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_core::config::ReconnectPolicy;
-use asterisk_rs_tests::mock::ami_server::{get_header, handle_login, MockAmiServer};
 use asterisk_rs_tests::helpers::init_tracing;
+use asterisk_rs_tests::mock::ami_server::{get_header, handle_login, MockAmiServer};
 
 #[tokio::test]
 async fn connect_and_login() {
@@ -944,7 +944,6 @@ async fn reconnect_on_disconnect() {
     let _ = mock_handle.await;
 }
 
-
 #[tokio::test]
 async fn builder_missing_credentials() {
     init_tracing();
@@ -955,10 +954,7 @@ async fn builder_missing_credentials() {
         .build()
         .await;
 
-    assert!(
-        result.is_err(),
-        "builder without credentials should fail"
-    );
+    assert!(result.is_err(), "builder without credentials should fail");
 }
 
 #[tokio::test]
@@ -1025,8 +1021,12 @@ async fn concurrent_stress_50_actions() {
             let aid = get_header(&msg, "ActionID")
                 .expect("should have ActionID")
                 .to_string();
-            conn.send_message(&[("Response", "Success"), ("ActionID", &aid), ("Ping", "Pong")])
-                .await;
+            conn.send_message(&[
+                ("Response", "Success"),
+                ("ActionID", &aid),
+                ("Ping", "Pong"),
+            ])
+            .await;
         }
 
         // drain remaining (logoff)
@@ -1064,11 +1064,7 @@ async fn concurrent_stress_50_actions() {
         action_ids.insert(resp.action_id.clone());
     }
 
-    assert_eq!(
-        action_ids.len(),
-        50,
-        "all 50 action IDs should be distinct"
-    );
+    assert_eq!(action_ids.len(), 50, "all 50 action IDs should be distinct");
 
     client
         .disconnect()
@@ -1285,10 +1281,938 @@ async fn send_on_disconnected_client_returns_error() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     let result = client.ping().await;
-    assert!(
-        result.is_err(),
-        "ping on disconnected client should fail"
+    assert!(result.is_err(), "ping on disconnected client should fail");
+
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn originate_action_success() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let msg = conn.read_message().await.expect("should receive originate");
+        let aid = get_header(&msg, "ActionID")
+            .expect("should have ActionID")
+            .to_string();
+        let action = get_header(&msg, "Action").expect("should have Action");
+        assert_eq!(action, "Originate");
+        assert_eq!(get_header(&msg, "Channel"), Some("SIP/100@trunk"));
+        assert_eq!(get_header(&msg, "Context"), Some("default"));
+        assert_eq!(get_header(&msg, "Exten"), Some("200"));
+        assert_eq!(get_header(&msg, "Priority"), Some("1"));
+
+        conn.send_message(&[
+            ("Response", "Success"),
+            ("ActionID", &aid),
+            ("Message", "Originate successfully queued"),
+        ])
+        .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let action = asterisk_rs_ami::action::OriginateAction::new("SIP/100@trunk")
+        .context("default")
+        .extension("200")
+        .priority(1);
+    let response = client
+        .originate(action)
+        .await
+        .expect("originate should succeed");
+    assert!(response.success, "originate response should be success");
+    assert_eq!(
+        response.message.as_deref(),
+        Some("Originate successfully queued")
     );
 
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn originate_action_failure() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let msg = conn.read_message().await.expect("should receive originate");
+        let aid = get_header(&msg, "ActionID")
+            .expect("should have ActionID")
+            .to_string();
+
+        conn.send_message(&[
+            ("Response", "Error"),
+            ("ActionID", &aid),
+            ("Message", "Channel not found"),
+        ])
+        .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let action = asterisk_rs_ami::action::OriginateAction::new("SIP/nonexistent");
+    let response = client.originate(action).await.expect("should get response");
+    assert!(!response.success, "originate should fail");
+    assert_eq!(response.message.as_deref(), Some("Channel not found"));
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn hangup_action_success() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let msg = conn.read_message().await.expect("should receive hangup");
+        let aid = get_header(&msg, "ActionID")
+            .expect("should have ActionID")
+            .to_string();
+        let action = get_header(&msg, "Action").expect("should have Action");
+        assert_eq!(action, "Hangup");
+        assert_eq!(get_header(&msg, "Channel"), Some("SIP/100-00000001"));
+
+        conn.send_message(&[
+            ("Response", "Success"),
+            ("ActionID", &aid),
+            ("Message", "Channel Hungup"),
+        ])
+        .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let action = asterisk_rs_ami::action::HangupAction::new("SIP/100-00000001");
+    let response = client.hangup(action).await.expect("hangup should succeed");
+    assert!(response.success, "hangup response should be success");
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn hangup_action_with_cause() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let msg = conn.read_message().await.expect("should receive hangup");
+        let aid = get_header(&msg, "ActionID")
+            .expect("should have ActionID")
+            .to_string();
+        assert_eq!(get_header(&msg, "Action"), Some("Hangup"));
+        assert_eq!(get_header(&msg, "Channel"), Some("SIP/200-00000002"));
+        assert_eq!(
+            get_header(&msg, "Cause"),
+            Some("21"),
+            "cause header should be sent to server"
+        );
+
+        conn.send_message(&[("Response", "Success"), ("ActionID", &aid)])
+            .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let action = asterisk_rs_ami::action::HangupAction::new("SIP/200-00000002").cause(21);
+    let response = client.hangup(action).await.expect("hangup should succeed");
+    assert!(response.success);
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn send_collecting_status() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let msg = conn
+            .read_message()
+            .await
+            .expect("should receive Status action");
+        let aid = get_header(&msg, "ActionID")
+            .expect("should have ActionID")
+            .to_string();
+        assert_eq!(get_header(&msg, "Action"), Some("Status"));
+
+        conn.send_message(&[
+            ("Response", "Success"),
+            ("ActionID", &aid),
+            ("Message", "Channel status will follow"),
+        ])
+        .await;
+
+        // one status event
+        conn.send_message(&[
+            ("Event", "Status"),
+            ("ActionID", &aid),
+            ("Channel", "PJSIP/300-00000003"),
+            ("ChannelState", "6"),
+            ("ChannelStateDesc", "Up"),
+        ])
+        .await;
+
+        // completion
+        conn.send_message(&[
+            ("Event", "StatusComplete"),
+            ("ActionID", &aid),
+            ("Items", "1"),
+        ])
+        .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let result = client
+        .send_collecting(&asterisk_rs_ami::action::StatusAction { channel: None })
+        .await
+        .expect("send_collecting should succeed");
+
+    assert!(result.response.success);
+    assert_eq!(
+        result.events.len(),
+        2,
+        "should have 1 Status + 1 StatusComplete"
+    );
+    assert_eq!(result.events[0].event_name(), "Status");
+    assert_eq!(result.events[1].event_name(), "StatusComplete");
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn send_collecting_core_show_channels() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let msg = conn.read_message().await.expect("should receive action");
+        let aid = get_header(&msg, "ActionID")
+            .expect("should have ActionID")
+            .to_string();
+        assert_eq!(get_header(&msg, "Action"), Some("CoreShowChannels"));
+
+        conn.send_message(&[
+            ("Response", "Success"),
+            ("ActionID", &aid),
+            ("Message", "Channels will follow"),
+        ])
+        .await;
+
+        conn.send_message(&[
+            ("Event", "CoreShowChannel"),
+            ("ActionID", &aid),
+            ("Channel", "SIP/100-00000001"),
+            ("Duration", "00:01:30"),
+        ])
+        .await;
+
+        conn.send_message(&[
+            ("Event", "CoreShowChannel"),
+            ("ActionID", &aid),
+            ("Channel", "SIP/200-00000002"),
+            ("Duration", "00:05:00"),
+        ])
+        .await;
+
+        conn.send_message(&[
+            ("Event", "CoreShowChannelsComplete"),
+            ("ActionID", &aid),
+            ("ListItems", "2"),
+        ])
+        .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let result = client
+        .send_collecting(&asterisk_rs_ami::action::CoreShowChannelsAction)
+        .await
+        .expect("send_collecting should succeed");
+
+    assert!(result.response.success);
+    assert_eq!(
+        result.events.len(),
+        3,
+        "should have 2 CoreShowChannel + 1 CoreShowChannelsComplete"
+    );
+    assert_eq!(result.events[0].event_name(), "CoreShowChannel");
+    assert_eq!(result.events[1].event_name(), "CoreShowChannel");
+    assert_eq!(result.events[2].event_name(), "CoreShowChannelsComplete");
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn send_collecting_queue_status() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let msg = conn.read_message().await.expect("should receive action");
+        let aid = get_header(&msg, "ActionID")
+            .expect("should have ActionID")
+            .to_string();
+        assert_eq!(get_header(&msg, "Action"), Some("QueueStatus"));
+
+        conn.send_message(&[
+            ("Response", "Success"),
+            ("ActionID", &aid),
+            ("Message", "Queue status will follow"),
+        ])
+        .await;
+
+        conn.send_message(&[
+            ("Event", "QueueParams"),
+            ("ActionID", &aid),
+            ("Queue", "support"),
+            ("Calls", "3"),
+        ])
+        .await;
+
+        conn.send_message(&[
+            ("Event", "QueueMember"),
+            ("ActionID", &aid),
+            ("Queue", "support"),
+            ("Name", "Agent/1001"),
+        ])
+        .await;
+
+        conn.send_message(&[
+            ("Event", "QueueStatusComplete"),
+            ("ActionID", &aid),
+            ("Items", "2"),
+        ])
+        .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let result = client
+        .send_collecting(&asterisk_rs_ami::action::QueueStatusAction {
+            queue: None,
+            member: None,
+        })
+        .await
+        .expect("send_collecting should succeed");
+
+    assert!(result.response.success);
+    assert_eq!(
+        result.events.len(),
+        3,
+        "should have QueueParams + QueueMember + QueueStatusComplete"
+    );
+    assert_eq!(result.events[0].event_name(), "QueueParams");
+    assert_eq!(result.events[1].event_name(), "QueueMember");
+    assert_eq!(result.events[2].event_name(), "QueueStatusComplete");
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn send_collecting_no_events() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let msg = conn.read_message().await.expect("should receive action");
+        let aid = get_header(&msg, "ActionID")
+            .expect("should have ActionID")
+            .to_string();
+
+        conn.send_message(&[
+            ("Response", "Success"),
+            ("ActionID", &aid),
+            ("Message", "Channel status will follow"),
+        ])
+        .await;
+
+        // immediately send complete with 0 items
+        conn.send_message(&[
+            ("Event", "StatusComplete"),
+            ("ActionID", &aid),
+            ("Items", "0"),
+        ])
+        .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let result = client
+        .send_collecting(&asterisk_rs_ami::action::StatusAction { channel: None })
+        .await
+        .expect("send_collecting should succeed");
+
+    assert!(result.response.success);
+    assert_eq!(
+        result.events.len(),
+        1,
+        "should have only the StatusComplete event"
+    );
+    assert_eq!(result.events[0].event_name(), "StatusComplete");
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn action_failed_response_with_message() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let msg = conn.read_message().await.expect("should receive action");
+        let aid = get_header(&msg, "ActionID")
+            .expect("should have ActionID")
+            .to_string();
+
+        conn.send_message(&[
+            ("Response", "Error"),
+            ("ActionID", &aid),
+            ("Message", "Permission denied"),
+        ])
+        .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let response = client.ping().await.expect("should get response");
+    assert!(!response.success, "response should indicate failure");
+    assert_eq!(response.response_type, "Error");
+    assert_eq!(response.message.as_deref(), Some("Permission denied"));
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn action_timeout_on_no_response() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // read the action but never respond
+        let _msg = conn.read_message().await;
+
+        // hold connection open
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_millis(100))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let result = client.ping().await;
+    assert!(result.is_err(), "action should timeout");
+    let err = format!("{}", result.expect_err("already asserted err"));
+    assert!(
+        err.contains("timeout"),
+        "error should mention timeout: {err}"
+    );
+
+    drop(client);
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn concurrent_actions_interleaved_responses() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // read 3 actions, respond in reverse order
+        let mut actions = Vec::new();
+        for _ in 0..3 {
+            let msg = conn.read_message().await.expect("should receive action");
+            let aid = get_header(&msg, "ActionID")
+                .expect("should have ActionID")
+                .to_string();
+            actions.push(aid);
+        }
+
+        // respond in reverse order
+        for (i, aid) in actions.iter().rev().enumerate() {
+            conn.send_message(&[
+                ("Response", "Success"),
+                ("ActionID", aid),
+                ("Ping", "Pong"),
+                ("Order", &(i + 1).to_string()),
+            ])
+            .await;
+        }
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let c1 = client.clone();
+    let c2 = client.clone();
+    let c3 = client.clone();
+
+    let (r1, r2, r3) = tokio::join!(
+        tokio::spawn(async move { c1.ping().await }),
+        tokio::spawn(async move { c2.ping().await }),
+        tokio::spawn(async move { c3.ping().await }),
+    );
+
+    let resp1 = r1
+        .expect("task 1 should not panic")
+        .expect("ping 1 should succeed");
+    let resp2 = r2
+        .expect("task 2 should not panic")
+        .expect("ping 2 should succeed");
+    let resp3 = r3
+        .expect("task 3 should not panic")
+        .expect("ping 3 should succeed");
+
+    assert!(resp1.success);
+    assert!(resp2.success);
+    assert!(resp3.success);
+
+    // all three should have distinct action IDs
+    let mut ids = vec![&resp1.action_id, &resp2.action_id, &resp3.action_id];
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), 3, "all 3 action IDs should be distinct");
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn event_bus_continues_during_action() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let msg = conn.read_message().await.expect("should receive action");
+        let aid = get_header(&msg, "ActionID")
+            .expect("should have ActionID")
+            .to_string();
+
+        // send an unsolicited event BEFORE responding to the action
+        conn.send_message(&[
+            ("Event", "PeerStatus"),
+            ("Peer", "SIP/100"),
+            ("PeerStatus", "Registered"),
+        ])
+        .await;
+
+        // small delay to ensure event is dispatched before response
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        conn.send_message(&[
+            ("Response", "Success"),
+            ("ActionID", &aid),
+            ("Ping", "Pong"),
+        ])
+        .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let mut sub = client.subscribe();
+
+    // send ping — the event should arrive while we wait for the response
+    let response = client.ping().await.expect("ping should succeed");
+    assert!(response.success);
+
+    // the event should have been delivered to the subscriber
+    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv())
+        .await
+        .expect("should receive event within timeout")
+        .expect("subscription should not be closed");
+    assert_eq!(event.event_name(), "PeerStatus");
+
+    drop(client);
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn connection_refused() {
+    init_tracing();
+
+    // use a port with nothing listening
+    let result = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(19998)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(2))
+        .build()
+        .await;
+
+    assert!(
+        result.is_err(),
+        "connecting to a port with no listener should fail"
+    );
+}
+
+#[tokio::test]
+async fn server_closes_during_action() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // read the action then close the connection without responding
+        let _msg = conn.read_message().await;
+        // conn drops here — TCP close
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let result = client.ping().await;
+    assert!(
+        result.is_err(),
+        "action should fail when server closes connection"
+    );
+
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn rapid_disconnect_reconnect_disabled() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+        // drop connection immediately after login
+    });
+
+    let result = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await;
+
+    match result {
+        Ok(client) => {
+            // build succeeded before disconnect propagated — wait for it
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            assert_eq!(
+                client.connection_state(),
+                asterisk_rs_core::config::ConnectionState::Disconnected,
+                "should be disconnected after server drops with no reconnect"
+            );
+        }
+        Err(_) => {
+            // build failed because disconnect arrived first — also valid
+        }
+    }
+
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn builder_custom_event_capacity() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // send several events to test that the small capacity works
+        for i in 0..5 {
+            conn.send_message(&[("Event", "FullyBooted"), ("Status", &format!("Boot {i}"))])
+                .await;
+        }
+
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .event_capacity(8)
+        .build()
+        .await
+        .expect("client should connect with custom event capacity");
+
+    let mut sub = client.subscribe();
+
+    // receive at least one event to verify the bus works at custom capacity
+    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv())
+        .await
+        .expect("should receive event within timeout")
+        .expect("subscription should not be closed");
+    assert_eq!(event.event_name(), "FullyBooted");
+
+    drop(client);
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn builder_custom_timeout() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // read the action then delay longer than the client timeout
+        let _msg = conn.read_message().await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // hold open
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_millis(50))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let result = client.ping().await;
+    assert!(result.is_err(), "action should timeout with 50ms timeout");
+    let err = format!("{}", result.expect_err("already asserted err"));
+    assert!(
+        err.contains("timeout"),
+        "error should mention timeout: {err}"
+    );
+
+    drop(client);
     let _ = handle.await;
 }
