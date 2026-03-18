@@ -11,14 +11,15 @@ asterisk-rs (umbrella, feature-gated re-exports)
   |
   +-- asterisk-rs-core (shared foundation)
   |     error.rs    -- Error, ConnectionError, AuthError, TimeoutError, ProtocolError
-  |     event.rs    -- Event trait, EventBus<E>, EventSubscription<E> (tokio broadcast)
+  |     event.rs    -- Event trait, EventBus<E>, EventSubscription<E>, FilteredSubscription<E>
   |     config.rs   -- ReconnectPolicy (exponential backoff + jitter), ConnectionState enum
   |     auth.rs     -- Credentials (redacted Debug, never leaks secret)
+  |     types.rs    -- domain constants (HangupCause, ChannelState, DeviceState, etc.)
   |
   +-- asterisk-rs-ami (TCP client, port 5038)
   |     codec.rs      -- tokio-util Decoder/Encoder for Key: Value\r\n\r\n framing
   |     action.rs     -- AmiAction trait + typed action structs for all Asterisk 23 actions
-  |     response.rs   -- AmiResponse parsing, PendingActions (ActionID correlation via oneshot)
+  |     response.rs   -- AmiResponse, EventListResponse, PendingActions (ActionID correlation)
   |     event.rs      -- AmiEvent enum (typed variants + Unknown), implements core::Event
   |     connection.rs -- ConnectionManager: background task, reconnect loop, message dispatch
   |     client.rs     -- AmiClient builder, send_action<A>, MD5 challenge-response auth
@@ -124,17 +125,17 @@ Each crate re-exports `pub type Result<T> = std::result::Result<T, XxxError>;`.
 All clients and servers use builder pattern for configuration:
 
 - `AmiClient::builder().host().port().credentials().build().await?` -- connect + login
-- `AgiServer::builder().bind().handler().max_connections().build().await?` -- bind listener
+- `AgiServer::builder().bind().handler().max_connections().build().await?` -- bind listener, returns `(AgiServer, ShutdownHandle)`
 - `AriConfigBuilder::new("app_name").host().port().username().password().build()?` -- then `AriClient::connect(config).await?`
 
 Builders validate required fields in `.build()` and return `Result`.
 
 ### Event System
 
-Protocol events implement `asterisk_rs_core::event::Event` (requires `Clone + Send + Sync + Debug + 'static`). Published via `EventBus<E>` (tokio broadcast). Consumed via `EventSubscription<E>::recv()` which handles lag by logging and skipping.
+Protocol events implement `asterisk_rs_core::event::Event` (requires `Clone + Send + Sync + Debug + 'static`). Published via `EventBus<E>` (tokio broadcast). Consumed via `EventSubscription<E>::recv()` which handles lag by logging and skipping. Filtered subscriptions via `FilteredSubscription<E>` with predicate closures.
 
-- AMI: `AmiEvent` enum with typed variants + `Unknown { event_name, headers }`
-- ARI: `AriEvent` enum with typed variants, serde `#[serde(tag = "type")]` + `#[serde(other)] Unknown`. Wrapped in `AriMessage` with application/timestamp/asterisk_id metadata.
+- AMI: `AmiEvent` enum with typed variants + `Unknown { event_name, headers }`. Serializable via serde. Event-generating actions collected via `EventListResponse` and `send_collecting()`.
+- ARI: `AriEvent` enum with typed variants, serde `#[serde(tag = "type")]` + `#[serde(other)] Unknown`. Wrapped in `AriMessage` with application/timestamp/asterisk_id metadata. Serializable via serde.
 - AGI: No event bus (synchronous request/response protocol)
 
 ### Reconnection
@@ -157,7 +158,7 @@ handle.play("sound:hello").await?;
 handle.hangup(None).await?;
 ```
 
-Handles are `Clone + Debug`. Operations construct REST paths from the embedded ID.
+Handles are `Clone + Debug`. Operations construct REST paths from the embedded ID. Query parameters use `url_encode` for safe encoding.
 
 ### Action Trait (AMI)
 
@@ -245,12 +246,14 @@ Tests are co-located with source:
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `asterisk-rs-ami/src/codec.rs` | 7 | Banner parsing, encode/decode, partial messages, size guard |
-| `asterisk-rs-ami/src/response.rs` | 6 | Response parsing, PendingActions lifecycle |
-| `asterisk-rs-ami/src/event.rs` | 3 | Event parsing, unknown events, non-event filtering |
+| `asterisk-rs-core` (all) | 19 | EventBus, ReconnectPolicy, Credentials, domain types |
+| `asterisk-rs-ami/src/codec.rs` | 8 | Banner parsing, encode/decode, partial messages, size guard |
+| `asterisk-rs-ami/src/response.rs` | 8 | Response parsing, PendingActions lifecycle |
+| `asterisk-rs-ami/src/event.rs` | 10 | Event parsing, unknown events, non-event filtering |
+| `asterisk-rs-ami/src/action.rs` | 12 | Action formatting, header construction |
 | `asterisk-rs-agi/src/response.rs` | 7 | AGI response codes, data/endpos parsing |
-| `asterisk-rs-agi/src/command.rs` | 5 | Command formatting, quoting, escaping |
-| `asterisk-rs-ari/src/event.rs` | 4 | JSON deserialization, optional fields, unknown types |
+| `asterisk-rs-agi/src/command.rs` | 7 | Command formatting, quoting, escaping |
+| `asterisk-rs-ari/src/event.rs` | 14 | JSON deserialization, optional fields, unknown types |
 
 ### Test Patterns
 
@@ -261,7 +264,7 @@ Tests are co-located with source:
 
 ### Coverage Gaps
 
-- `asterisk-rs-core`: zero tests (error, event, config, auth modules)
+- `asterisk-rs-core`: now has 19 tests covering EventBus, ReconnectPolicy, Credentials, domain types
 - Client/connection logic: no tests for AmiClient, AriClient, ConnectionManager
 - Network layer: no mock servers, no integration tests
 - AGI server accept loop and handler dispatch: untested

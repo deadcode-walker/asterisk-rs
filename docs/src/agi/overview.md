@@ -36,11 +36,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Features
+## Capabilities
 
-- All 47 AGI commands with typed methods
-- Request environment parsing (`agi_*` variables)
-- Argument quoting and escaping
+- Every AGI command with typed async methods
+- Handler trait using native async fn (RPITIT, no macro needed)
+- Request environment parsing from Asterisk
 - Configurable concurrency limits
 - Graceful shutdown via `ShutdownHandle`
 

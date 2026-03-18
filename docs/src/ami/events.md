@@ -1,8 +1,8 @@
 # Events
 
-AMI delivers real-time events as things happen in Asterisk. All 161 event types
-are parsed into typed `AmiEvent` variants. See [Reference](./reference.md) for
-the complete list.
+AMI delivers real-time events as things happen in Asterisk. Events are parsed
+into typed `AmiEvent` variants. See [Reference](./reference.md) for the
+complete list.
 
 ## Subscribing
 

@@ -45,4 +45,4 @@ Every `AriMessage` carries:
 - `asterisk_id` — unique Asterisk instance ID (for clusters)
 - `event` — the typed `AriEvent` payload
 
-See [Reference](./reference.md) for all 43 event types.
+See [Reference](./reference.md) for the complete event list.

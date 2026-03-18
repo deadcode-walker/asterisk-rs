@@ -20,12 +20,16 @@ globs:
 - Connection types own their `tokio::task` handles and clean up on drop.
 - Use `tokio::select!` for concurrent operations, not `futures::join!` unless all branches must complete.
 - Cancel safety: document whether async functions are cancel-safe in their doc comments.
+- AMI connection task re-authenticates after every reconnect (Login is re-sent automatically).
+- ARI HTTP client uses 10s connect timeout + 30s request timeout.
 
 ## Types
 
 - Prefer newtypes over raw primitives for domain concepts (`ActionId(String)` not bare `String`).
 - Derive `Debug, Clone` on all public types. Add `Serialize, Deserialize` where wire format applies.
-- Use `#[non_exhaustive]` on public enums that may grow.
+- `#[non_exhaustive]` on all public enums that may grow.
+- `Serialize` on event types to support logging and forwarding.
+- `PartialEq` on AMI event and response types for assertion and matching.
 
 ## Crate boundaries
 
@@ -41,3 +45,12 @@ cargo clippy --workspace -- -D warnings  # lint
 cargo test --workspace                 # test
 cargo doc --workspace --no-deps        # docs
 ```
+
+## Patterns
+
+- `FilteredSubscription` wraps `EventSubscription` with a predicate closure for selective event delivery.
+- `EventListResponse` collects multi-event action results via `send_collecting()`.
+- `AriMessage` wraps `AriEvent` with common metadata fields (application, timestamp, asterisk_id).
+- `url_encode()` in ARI client for percent-encoding user-provided query parameter values.
+- `ShutdownHandle` returned from AGI server builder for graceful shutdown.
+- AMI `RawAmiMessage.output` captures multi-line command output from `Response: Follows`.

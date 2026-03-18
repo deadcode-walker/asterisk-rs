@@ -28,7 +28,7 @@ channel name, caller ID, called extension, context, language, etc.
 
 ## Channel Commands
 
-`AgiChannel` provides typed methods for all 47 AGI commands: `answer`, `hangup`,
+`AgiChannel` provides typed async methods for every AGI command: `answer`, `hangup`,
 `stream_file`, `get_data`, `say_digits`, `record_file`, `database_get`,
 `speech_create`, and more. See [Reference](./reference.md).
 

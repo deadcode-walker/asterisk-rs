@@ -10,7 +10,7 @@ Async Rust client for Asterisk PBX. Originate calls, handle events, control
 channels, bridges, queues, and recordings across all three Asterisk interfaces.
 
 - **AMI** -- monitor and control Asterisk over TCP. Typed events, actions, automatic reconnection, MD5 auth.
-- **AGI** -- run dialplan logic from your Rust service. FastAGI server with all 47 commands.
+- **AGI** -- run dialplan logic from your Rust service. FastAGI server with typed async commands.
 - **ARI** -- full call control via REST + WebSocket. Resource handles, typed events with metadata.
 
 ## Example

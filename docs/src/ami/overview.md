@@ -11,7 +11,7 @@ use asterisk_rs_ami::AmiClient;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = AmiClient::builder()
-        .host("127.0.0.1")
+        .host("10.0.0.1")
         .credentials("admin", "secret")
         .build()
         .await?;
@@ -24,13 +24,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Features
+## Capabilities
 
+- Typed events and actions covering the full Asterisk 23 AMI surface
 - MD5 challenge-response and plaintext authentication
 - Automatic reconnection with re-authentication
-- 161 typed events, 152 typed actions
-- Event bus with filtered subscriptions
-- Event-generating action collection (`send_collecting`)
+- Filtered subscriptions -- receive only events you care about
+- Event-collecting actions -- `send_collecting()` gathers multi-event responses
 - Command output capture for `Response: Follows`
 - Configurable timeouts, backoff, and event buffer size
 

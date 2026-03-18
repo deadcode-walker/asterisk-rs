@@ -11,16 +11,14 @@ use asterisk_rs_ari::{AriClient, AriConfig};
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AriConfig::builder("my-app")
-        .host("127.0.0.1")
-        .port(8088)
+        .host("10.0.0.1")
         .username("asterisk")
         .password("secret")
         .build()?;
 
     let client = AriClient::connect(config).await?;
-
-    // subscribe to stasis events
     let mut events = client.subscribe();
+
     while let Some(msg) = events.recv().await {
         println!("[{}] {:?}", msg.application, msg.event);
     }
@@ -29,15 +27,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Features
+## Capabilities
 
-- REST client with all 90 ARI endpoints
-- WebSocket event listener with reconnection
-- All 43 typed events with metadata (application, timestamp, asterisk_id)
-- Resource handles (ChannelHandle, BridgeHandle, PlaybackHandle, RecordingHandle)
-- Filtered subscriptions
-- URL encoding for user-provided values
-- HTTP connect and request timeouts
+- REST client and WebSocket listener covering the full Asterisk 23 ARI surface
+- Typed events with metadata (application, timestamp, asterisk_id)
+- Filtered subscriptions -- receive only events you care about
+- Resource handles for channels, bridges, playbacks, recordings
+- System management -- modules, logging, config, global variables
+- URL-safe query encoding, HTTP timeouts, WebSocket lifecycle management
 
 See [Stasis Applications](./stasis.md) for the event model,
 [Resources](./resources.md) for the handle pattern, and
