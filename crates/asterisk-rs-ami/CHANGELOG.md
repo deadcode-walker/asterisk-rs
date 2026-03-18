@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-ami-v0.3.0...asterisk-rs-ami-v0.4.0) - 2026-03-18
+
+### Added
+
+- *(ami)* added keep-alive ping loop with configurable interval
+- *(ami)* added channel variable extraction from ChanVariable headers
+- *(ami)* added event-generating action collection via send_collecting
+- *(core)* added filtered event subscriptions
+
+### Fixed
+
+- *(ami)* added command output parsing, Serialize, connect timeout
+
+### Other
+
+- updated AGENTS.md, CHANGELOG, and AMI README for channel variables and ping loop
+- rewrote all documentation to match established pattern
+- rewrote all documentation for production quality
+
 ## [0.3.0](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-ami-v0.2.1...asterisk-rs-ami-v0.3.0) - 2026-03-18
 
 ### Fixed
