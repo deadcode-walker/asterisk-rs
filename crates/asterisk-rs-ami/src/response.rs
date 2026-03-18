@@ -4,7 +4,7 @@ use crate::codec::RawAmiMessage;
 use std::collections::HashMap;
 
 /// parsed AMI response
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AmiResponse {
     /// the ActionID this response corresponds to
     pub action_id: String,

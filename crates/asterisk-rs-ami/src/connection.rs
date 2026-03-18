@@ -1,9 +1,11 @@
 //! AMI TCP connection management.
 
+use crate::action::{AmiAction, ChallengeAction, ChallengeLoginAction, LoginAction};
 use crate::codec::{AmiCodec, RawAmiMessage};
 use crate::error::{AmiError, Result};
 use crate::event::AmiEvent;
 use crate::response::{AmiResponse, PendingActions};
+use asterisk_rs_core::auth::Credentials;
 use asterisk_rs_core::config::{ConnectionState, ReconnectPolicy};
 use asterisk_rs_core::event::EventBus;
 
@@ -35,6 +37,7 @@ impl ConnectionManager {
     /// spawn a new connection manager task
     pub fn spawn(
         address: String,
+        credentials: Credentials,
         event_bus: EventBus<AmiEvent>,
         reconnect_policy: ReconnectPolicy,
     ) -> Self {
@@ -43,6 +46,7 @@ impl ConnectionManager {
 
         tokio::spawn(connection_task(
             address,
+            credentials,
             command_rx,
             event_bus,
             state_tx,
@@ -85,6 +89,7 @@ impl ConnectionManager {
 
 async fn connection_task(
     address: String,
+    credentials: Credentials,
     mut command_rx: mpsc::Receiver<ConnectionCommand>,
     event_bus: EventBus<AmiEvent>,
     state_tx: watch::Sender<ConnectionState>,
@@ -99,13 +104,20 @@ async fn connection_task(
 
         match TcpStream::connect(&address).await {
             Ok(stream) => {
-                let _ = state_tx.send(ConnectionState::Connected);
                 attempt = 0;
-                tracing::info!(address = %address, "connected to AMI");
+                tracing::info!(address = %address, "TCP connected to AMI");
 
                 let (read_half, write_half) = stream.into_split();
                 let mut reader = FramedRead::new(read_half, AmiCodec::new());
                 let mut writer = FramedWrite::new(write_half, AmiCodec::new());
+
+                // authenticate after connecting
+                if let Err(e) = perform_login(&credentials, &mut reader, &mut writer).await {
+                    tracing::error!(error = %e, "AMI login failed after connect");
+                    continue; // will trigger reconnect
+                }
+                tracing::info!("AMI login successful");
+                let _ = state_tx.send(ConnectionState::Connected);
 
                 // process messages until disconnect
                 loop {
@@ -175,6 +187,87 @@ async fn connection_task(
         tokio::time::sleep(delay).await;
         attempt += 1;
     }
+}
+
+/// perform the AMI login sequence over the raw framed connection
+///
+/// tries MD5 challenge-response first, falls back to plaintext
+async fn perform_login(
+    credentials: &Credentials,
+    reader: &mut FramedRead<tokio::net::tcp::OwnedReadHalf, AmiCodec>,
+    writer: &mut FramedWrite<tokio::net::tcp::OwnedWriteHalf, AmiCodec>,
+) -> Result<()> {
+    // try MD5 challenge-response first
+    let (_, challenge_msg) = ChallengeAction.to_message();
+    writer.send(challenge_msg).await?;
+
+    let challenge_resp = read_next_response(reader).await?;
+
+    if challenge_resp.success {
+        if let Some(challenge) = challenge_resp.get("Challenge") {
+            let key = compute_md5_key(challenge, credentials.secret());
+            let login = ChallengeLoginAction {
+                username: credentials.username().to_string(),
+                key,
+            };
+            let (_, login_msg) = login.to_message();
+            writer.send(login_msg).await?;
+
+            let login_resp = read_next_response(reader).await?;
+            if !login_resp.success {
+                return Err(AmiError::Auth(
+                    asterisk_rs_core::error::AuthError::Rejected {
+                        reason: login_resp.message.unwrap_or_default(),
+                    },
+                ));
+            }
+            return Ok(());
+        }
+    }
+
+    // fall back to plaintext
+    let login = LoginAction {
+        username: credentials.username().to_string(),
+        secret: credentials.secret().to_string(),
+    };
+    let (_, login_msg) = login.to_message();
+    writer.send(login_msg).await?;
+
+    let login_resp = read_next_response(reader).await?;
+    if !login_resp.success {
+        return Err(AmiError::Auth(
+            asterisk_rs_core::error::AuthError::Rejected {
+                reason: login_resp.message.unwrap_or_default(),
+            },
+        ));
+    }
+    Ok(())
+}
+
+/// read frames until we get a Response (skipping events and banners)
+async fn read_next_response(
+    reader: &mut FramedRead<tokio::net::tcp::OwnedReadHalf, AmiCodec>,
+) -> Result<AmiResponse> {
+    loop {
+        match reader.next().await {
+            Some(Ok(raw)) => {
+                if let Some(resp) = AmiResponse::from_raw(&raw) {
+                    return Ok(resp);
+                }
+                // skip events/banners during login
+            }
+            Some(Err(e)) => return Err(e),
+            None => return Err(AmiError::Disconnected),
+        }
+    }
+}
+
+fn compute_md5_key(challenge: &str, secret: &str) -> String {
+    use md5::{Digest, Md5};
+    let mut hasher = Md5::new();
+    hasher.update(challenge.as_bytes());
+    hasher.update(secret.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 async fn dispatch_message(

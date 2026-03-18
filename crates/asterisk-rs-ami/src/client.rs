@@ -1,8 +1,6 @@
 //! AMI client with builder pattern.
 
-use crate::action::{
-    self, AmiAction, ChallengeAction, ChallengeLoginAction, LoginAction, LogoffAction, PingAction,
-};
+use crate::action::{self, AmiAction, LogoffAction, PingAction};
 use crate::connection::{ConnectionCommand, ConnectionManager};
 use crate::error::{AmiError, Result};
 use crate::event::AmiEvent;
@@ -96,52 +94,6 @@ impl AmiClient {
         self.connection.shutdown().await;
         Ok(())
     }
-
-    /// perform login sequence (plaintext or MD5 based on server support)
-    async fn login(&self) -> Result<()> {
-        // try MD5 challenge first for stronger auth
-        let challenge_result = self.send_action(&ChallengeAction).await;
-
-        match challenge_result {
-            Ok(resp) if resp.success => {
-                let challenge = resp.get("Challenge").ok_or(AmiError::Auth(
-                    asterisk_rs_core::error::AuthError::ChallengeFailed,
-                ))?;
-
-                let key = compute_md5_key(challenge, self.credentials.secret());
-                let login = ChallengeLoginAction {
-                    username: self.credentials.username().to_string(),
-                    key,
-                };
-                let resp = self.send_action(&login).await?;
-                if !resp.success {
-                    return Err(AmiError::Auth(
-                        asterisk_rs_core::error::AuthError::Rejected {
-                            reason: resp.message.unwrap_or_default(),
-                        },
-                    ));
-                }
-            }
-            _ => {
-                // fall back to plaintext login
-                let login = LoginAction {
-                    username: self.credentials.username().to_string(),
-                    secret: self.credentials.secret().to_string(),
-                };
-                let resp = self.send_action(&login).await?;
-                if !resp.success {
-                    return Err(AmiError::Auth(
-                        asterisk_rs_core::error::AuthError::Rejected {
-                            reason: resp.message.unwrap_or_default(),
-                        },
-                    ));
-                }
-            }
-        }
-
-        tracing::info!("AMI login successful");
-        Ok(())
-    }
 }
 
 impl std::fmt::Debug for AmiClient {
@@ -153,16 +105,8 @@ impl std::fmt::Debug for AmiClient {
     }
 }
 
-/// compute MD5 key for challenge-response auth: md5(challenge + secret)
-fn compute_md5_key(challenge: &str, secret: &str) -> String {
-    use md5::{Digest, Md5};
-    let mut hasher = Md5::new();
-    hasher.update(challenge.as_bytes());
-    hasher.update(secret.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
-
 /// builder for [`AmiClient`]
+#[must_use]
 pub struct AmiClientBuilder {
     host: String,
     port: u16,
@@ -218,7 +162,7 @@ impl AmiClientBuilder {
 
     /// build and connect the client
     ///
-    /// waits for TCP connection then performs login before returning
+    /// waits for TCP connection and login before returning
     pub async fn build(self) -> Result<AmiClient> {
         let credentials = self.credentials.ok_or(AmiError::Auth(
             asterisk_rs_core::error::AuthError::InvalidCredentials,
@@ -227,24 +171,23 @@ impl AmiClientBuilder {
         let event_bus = EventBus::new(self.event_capacity);
         let address = format!("{}:{}", self.host, self.port);
 
-        let connection =
-            ConnectionManager::spawn(address, event_bus.clone(), self.reconnect_policy);
+        let connection = ConnectionManager::spawn(
+            address,
+            credentials.clone(),
+            event_bus.clone(),
+            self.reconnect_policy,
+        );
 
-        // wait for connection to be established
+        // wait for connection + login to complete
         connection
             .wait_for_state(ConnectionState::Connected)
             .await?;
 
-        let client = AmiClient {
+        Ok(AmiClient {
             connection: Arc::new(connection),
             event_bus,
             credentials,
             timeout: self.timeout,
-        };
-
-        // perform login
-        client.login().await?;
-
-        Ok(client)
+        })
     }
 }

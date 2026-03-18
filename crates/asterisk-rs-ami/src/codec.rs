@@ -13,7 +13,7 @@ use crate::error::AmiError;
 const MAX_MESSAGE_SIZE: usize = 64 * 1024;
 
 /// raw AMI message as parsed from the wire
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RawAmiMessage {
     /// ordered key-value headers
     pub headers: Vec<(String, String)>,
