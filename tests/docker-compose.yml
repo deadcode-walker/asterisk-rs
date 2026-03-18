@@ -1,0 +1,14 @@
+services:
+  asterisk:
+    build:
+      context: ./asterisk
+    ports:
+      - "5038:5038"
+      - "8088:8088"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show version"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
