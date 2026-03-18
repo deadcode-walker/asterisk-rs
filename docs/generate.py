@@ -124,26 +124,24 @@ def extract_command_constants(path: Path) -> list[dict]:
 
 def extract_domain_types(path: Path) -> list[dict]:
     """extract enums from the types module with their variants."""
-    text = path.read_text()
+    lines = path.read_text().split("\n")
     types = []
-    enum_pattern = re.compile(
-        r"/// (.+?)\n(?:#\[.*?\]\n)*pub enum (\w+)\s*\{(.*?)\n\}", re.DOTALL
-    )
-
-    for m in enum_pattern.finditer(text):
-        doc = m.group(1)
-        name = m.group(2)
-        body = m.group(3)
-        variant_count = len(
-            [
-                l
-                for l in body.split("\n")
-                if l.strip() and l.strip()[0].isupper() and "=" in l or l.strip().endswith(",")
-                if l.strip()[0].isupper()
-            ]
-        )
-        types.append({"name": name, "doc": doc, "variants": variant_count})
-
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("pub enum ") and "{" in line:
+            name = line.split("pub enum ")[1].split("{")[0].split(" ")[0].strip()
+            # look backwards for doc comment (skip attributes)
+            doc_lines = []
+            j = i - 1
+            while j >= 0 and lines[j].strip().startswith("#["):
+                j -= 1
+            while j >= 0 and lines[j].strip().startswith("///"):
+                doc_lines.insert(0, lines[j].strip()[3:].strip())
+                j -= 1
+            doc = " ".join(doc_lines) if doc_lines else ""
+            types.append({"name": name, "doc": doc})
+        i += 1
     return types
 
 

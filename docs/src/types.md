@@ -64,136 +64,7 @@ Q.931/Q.850 hangup cause codes used across AMI and ARI
 
 ## `ChannelState`
 
-parse a hangup cause from its numeric code
-    pub fn from_code(code: u32) -> Option<Self> {
-        match code {
-            0 => Some(Self::NotDefined),
-            1 => Some(Self::Unallocated),
-            2 => Some(Self::NoRouteTransitNet),
-            3 => Some(Self::NoRouteDestination),
-            5 => Some(Self::MisdialledTrunkPrefix),
-            6 => Some(Self::ChannelUnacceptable),
-            7 => Some(Self::CallAwardedDelivered),
-            8 => Some(Self::PreEmpted),
-            14 => Some(Self::NumberPortedNotHere),
-            16 => Some(Self::NormalClearing),
-            17 => Some(Self::UserBusy),
-            18 => Some(Self::NoUserResponse),
-            19 => Some(Self::NoAnswer),
-            20 => Some(Self::SubscriberAbsent),
-            21 => Some(Self::CallRejected),
-            22 => Some(Self::NumberChanged),
-            23 => Some(Self::RedirectedToNewDestination),
-            26 => Some(Self::AnsweredElsewhere),
-            27 => Some(Self::DestinationOutOfOrder),
-            28 => Some(Self::InvalidNumberFormat),
-            29 => Some(Self::FacilityRejected),
-            30 => Some(Self::ResponseToStatusEnquiry),
-            31 => Some(Self::NormalUnspecified),
-            34 => Some(Self::NormalCircuitCongestion),
-            38 => Some(Self::NetworkOutOfOrder),
-            41 => Some(Self::NormalTemporaryFailure),
-            42 => Some(Self::SwitchCongestion),
-            43 => Some(Self::AccessInfoDiscarded),
-            44 => Some(Self::RequestedChanUnavail),
-            50 => Some(Self::FacilityNotSubscribed),
-            52 => Some(Self::OutgoingCallBarred),
-            54 => Some(Self::IncomingCallBarred),
-            57 => Some(Self::BearerCapabilityNotAuth),
-            58 => Some(Self::BearerCapabilityNotAvail),
-            65 => Some(Self::BearerCapabilityNotImpl),
-            66 => Some(Self::ChanNotImplemented),
-            69 => Some(Self::FacilityNotImplemented),
-            81 => Some(Self::InvalidCallReference),
-            88 => Some(Self::IncompatibleDestination),
-            95 => Some(Self::InvalidMsgUnspecified),
-            96 => Some(Self::MandatoryIeMissing),
-            97 => Some(Self::MessageTypeNonexist),
-            98 => Some(Self::WrongMessage),
-            99 => Some(Self::IeNonexist),
-            100 => Some(Self::InvalidIeContents),
-            101 => Some(Self::WrongCallState),
-            102 => Some(Self::RecoveryOnTimerExpire),
-            103 => Some(Self::MandatoryIeLengthError),
-            111 => Some(Self::ProtocolError),
-            127 => Some(Self::Interworking),
-            _ => None,
-        }
-    }
-
-    /// the numeric cause code
-    pub fn code(self) -> u32 {
-        self as u32
-    }
-
-    /// human-readable description
-    pub fn description(self) -> &'static str {
-        match self {
-            Self::NotDefined => "not defined",
-            Self::Unallocated => "unallocated number",
-            Self::NoRouteTransitNet => "no route to transit network",
-            Self::NoRouteDestination => "no route to destination",
-            Self::MisdialledTrunkPrefix => "misdialled trunk prefix",
-            Self::ChannelUnacceptable => "channel unacceptable",
-            Self::CallAwardedDelivered => "call awarded and being delivered",
-            Self::PreEmpted => "pre-empted",
-            Self::NumberPortedNotHere => "number ported but not found here",
-            Self::NormalClearing => "normal clearing",
-            Self::UserBusy => "user busy",
-            Self::NoUserResponse => "no user response",
-            Self::NoAnswer => "no answer",
-            Self::SubscriberAbsent => "subscriber absent",
-            Self::CallRejected => "call rejected",
-            Self::NumberChanged => "number changed",
-            Self::RedirectedToNewDestination => "redirected to new destination",
-            Self::AnsweredElsewhere => "answered elsewhere",
-            Self::DestinationOutOfOrder => "destination out of order",
-            Self::InvalidNumberFormat => "invalid number format",
-            Self::FacilityRejected => "facility rejected",
-            Self::ResponseToStatusEnquiry => "response to status enquiry",
-            Self::NormalUnspecified => "normal unspecified",
-            Self::NormalCircuitCongestion => "normal circuit congestion",
-            Self::NetworkOutOfOrder => "network out of order",
-            Self::NormalTemporaryFailure => "normal temporary failure",
-            Self::SwitchCongestion => "switch congestion",
-            Self::AccessInfoDiscarded => "access information discarded",
-            Self::RequestedChanUnavail => "requested channel unavailable",
-            Self::FacilityNotSubscribed => "facility not subscribed",
-            Self::OutgoingCallBarred => "outgoing call barred",
-            Self::IncomingCallBarred => "incoming call barred",
-            Self::BearerCapabilityNotAuth => "bearer capability not authorized",
-            Self::BearerCapabilityNotAvail => "bearer capability not available",
-            Self::BearerCapabilityNotImpl => "bearer capability not implemented",
-            Self::ChanNotImplemented => "channel type not implemented",
-            Self::FacilityNotImplemented => "facility not implemented",
-            Self::InvalidCallReference => "invalid call reference",
-            Self::IncompatibleDestination => "incompatible destination",
-            Self::InvalidMsgUnspecified => "invalid message unspecified",
-            Self::MandatoryIeMissing => "mandatory information element missing",
-            Self::MessageTypeNonexist => "message type nonexistent",
-            Self::WrongMessage => "wrong message",
-            Self::IeNonexist => "information element nonexistent",
-            Self::InvalidIeContents => "invalid information element contents",
-            Self::WrongCallState => "wrong call state",
-            Self::RecoveryOnTimerExpire => "recovery on timer expiry",
-            Self::MandatoryIeLengthError => "mandatory information element length error",
-            Self::ProtocolError => "protocol error",
-            Self::Interworking => "interworking unspecified",
-        }
-    }
-}
-
-impl fmt::Display for HangupCause {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.description())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ChannelState
-// ---------------------------------------------------------------------------
-
-/// channel state as reported by Asterisk
+channel state as reported by Asterisk
 
 | Variant | Description |
 |---------|-------------|
@@ -210,69 +81,7 @@ impl fmt::Display for HangupCause {
 
 ## `DeviceState`
 
-parse a channel state from its numeric code
-    pub fn from_code(code: u32) -> Option<Self> {
-        match code {
-            0 => Some(Self::Down),
-            1 => Some(Self::Reserved),
-            2 => Some(Self::OffHook),
-            3 => Some(Self::Dialing),
-            4 => Some(Self::Ring),
-            5 => Some(Self::Ringing),
-            6 => Some(Self::Up),
-            7 => Some(Self::Busy),
-            8 => Some(Self::DialingOffhook),
-            9 => Some(Self::PreRing),
-            _ => None,
-        }
-    }
-
-    /// the numeric state code
-    pub fn code(self) -> u32 {
-        self as u32
-    }
-
-    /// parse from the string representation used in AMI/ARI
-    pub fn from_str_name(s: &str) -> Option<Self> {
-        match s {
-            "Down" => Some(Self::Down),
-            "Rsrvd" => Some(Self::Reserved),
-            "OffHook" => Some(Self::OffHook),
-            "Dialing" => Some(Self::Dialing),
-            "Ring" => Some(Self::Ring),
-            "Ringing" => Some(Self::Ringing),
-            "Up" => Some(Self::Up),
-            "Busy" => Some(Self::Busy),
-            "Dialing Offhook" => Some(Self::DialingOffhook),
-            "Pre-ring" => Some(Self::PreRing),
-            _ => None,
-        }
-    }
-}
-
-impl fmt::Display for ChannelState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::Down => "Down",
-            Self::Reserved => "Rsrvd",
-            Self::OffHook => "OffHook",
-            Self::Dialing => "Dialing",
-            Self::Ring => "Ring",
-            Self::Ringing => "Ringing",
-            Self::Up => "Up",
-            Self::Busy => "Busy",
-            Self::DialingOffhook => "Dialing Offhook",
-            Self::PreRing => "Pre-ring",
-        };
-        f.write_str(s)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// DeviceState
-// ---------------------------------------------------------------------------
-
-/// device state values used in device state events and queries
+device state values used in device state events and queries
 
 | Variant | Description |
 |---------|-------------|
@@ -288,49 +97,7 @@ impl fmt::Display for ChannelState {
 
 ## `DialStatus`
 
-parse from the wire-format string
-    pub fn from_str_name(s: &str) -> Option<Self> {
-        match s {
-            "UNKNOWN" => Some(Self::Unknown),
-            "NOT_INUSE" => Some(Self::NotInUse),
-            "INUSE" => Some(Self::InUse),
-            "BUSY" => Some(Self::Busy),
-            "INVALID" => Some(Self::Invalid),
-            "UNAVAILABLE" => Some(Self::Unavailable),
-            "RINGING" => Some(Self::Ringing),
-            "RINGINUSE" => Some(Self::RingInUse),
-            "ONHOLD" => Some(Self::OnHold),
-            _ => None,
-        }
-    }
-
-    /// the wire-format string
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Unknown => "UNKNOWN",
-            Self::NotInUse => "NOT_INUSE",
-            Self::InUse => "INUSE",
-            Self::Busy => "BUSY",
-            Self::Invalid => "INVALID",
-            Self::Unavailable => "UNAVAILABLE",
-            Self::Ringing => "RINGING",
-            Self::RingInUse => "RINGINUSE",
-            Self::OnHold => "ONHOLD",
-        }
-    }
-}
-
-impl fmt::Display for DeviceState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// DialStatus
-// ---------------------------------------------------------------------------
-
-/// result of a dial attempt, set in the DIALSTATUS channel variable
+result of a dial attempt, set in the DIALSTATUS channel variable
 
 | Variant | Description |
 |---------|-------------|
@@ -347,51 +114,7 @@ impl fmt::Display for DeviceState {
 
 ## `CdrDisposition`
 
-parse from the wire-format string
-    pub fn from_str_name(s: &str) -> Option<Self> {
-        match s {
-            "ANSWER" => Some(Self::Answer),
-            "BUSY" => Some(Self::Busy),
-            "NOANSWER" => Some(Self::NoAnswer),
-            "CANCEL" => Some(Self::Cancel),
-            "CONGESTION" => Some(Self::Congestion),
-            "CHANUNAVAIL" => Some(Self::ChanUnavail),
-            "DONTCALL" => Some(Self::DontCall),
-            "TORTURE" => Some(Self::Torture),
-            "INVALIDARGS" => Some(Self::InvalidArgs),
-            "UNAVAILABLE" => Some(Self::Unavailable),
-            _ => None,
-        }
-    }
-
-    /// the wire-format string
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Answer => "ANSWER",
-            Self::Busy => "BUSY",
-            Self::NoAnswer => "NOANSWER",
-            Self::Cancel => "CANCEL",
-            Self::Congestion => "CONGESTION",
-            Self::ChanUnavail => "CHANUNAVAIL",
-            Self::DontCall => "DONTCALL",
-            Self::Torture => "TORTURE",
-            Self::InvalidArgs => "INVALIDARGS",
-            Self::Unavailable => "UNAVAILABLE",
-        }
-    }
-}
-
-impl fmt::Display for DialStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// CdrDisposition
-// ---------------------------------------------------------------------------
-
-/// CDR disposition values
+CDR disposition values
 
 | Variant | Description |
 |---------|-------------|
@@ -403,41 +126,7 @@ impl fmt::Display for DialStatus {
 
 ## `PeerStatus`
 
-parse from the wire-format string
-    pub fn from_str_name(s: &str) -> Option<Self> {
-        match s {
-            "NO ANSWER" => Some(Self::NoAnswer),
-            "ANSWERED" => Some(Self::Answered),
-            "BUSY" => Some(Self::Busy),
-            "FAILED" => Some(Self::Failed),
-            "CONGESTION" => Some(Self::Congestion),
-            _ => None,
-        }
-    }
-
-    /// the wire-format string
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::NoAnswer => "NO ANSWER",
-            Self::Answered => "ANSWERED",
-            Self::Busy => "BUSY",
-            Self::Failed => "FAILED",
-            Self::Congestion => "CONGESTION",
-        }
-    }
-}
-
-impl fmt::Display for CdrDisposition {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// PeerStatus
-// ---------------------------------------------------------------------------
-
-/// SIP/PJSIP peer registration status
+SIP/PJSIP peer registration status
 
 | Variant | Description |
 |---------|-------------|
@@ -451,45 +140,7 @@ impl fmt::Display for CdrDisposition {
 
 ## `QueueStrategy`
 
-parse from the wire-format string
-    pub fn from_str_name(s: &str) -> Option<Self> {
-        match s {
-            "Registered" => Some(Self::Registered),
-            "Unregistered" => Some(Self::Unregistered),
-            "Reachable" => Some(Self::Reachable),
-            "Unreachable" => Some(Self::Unreachable),
-            "Lagged" => Some(Self::Lagged),
-            "Rejected" => Some(Self::Rejected),
-            "Unknown" => Some(Self::Unknown),
-            _ => None,
-        }
-    }
-
-    /// the wire-format string
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Registered => "Registered",
-            Self::Unregistered => "Unregistered",
-            Self::Reachable => "Reachable",
-            Self::Unreachable => "Unreachable",
-            Self::Lagged => "Lagged",
-            Self::Rejected => "Rejected",
-            Self::Unknown => "Unknown",
-        }
-    }
-}
-
-impl fmt::Display for PeerStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// QueueStrategy
-// ---------------------------------------------------------------------------
-
-/// queue member selection strategy
+queue member selection strategy
 
 | Variant | Description |
 |---------|-------------|
@@ -503,45 +154,7 @@ impl fmt::Display for PeerStatus {
 
 ## `ExtensionState`
 
-parse from the wire-format string
-    pub fn from_str_name(s: &str) -> Option<Self> {
-        match s {
-            "ringall" => Some(Self::RingAll),
-            "leastrecent" => Some(Self::LeastRecent),
-            "fewestcalls" => Some(Self::FewestCalls),
-            "random" => Some(Self::Random),
-            "rrmemory" => Some(Self::RoundRobin),
-            "linear" => Some(Self::Linear),
-            "wrandom" => Some(Self::WeightedRandom),
-            _ => None,
-        }
-    }
-
-    /// the wire-format string
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::RingAll => "ringall",
-            Self::LeastRecent => "leastrecent",
-            Self::FewestCalls => "fewestcalls",
-            Self::Random => "random",
-            Self::RoundRobin => "rrmemory",
-            Self::Linear => "linear",
-            Self::WeightedRandom => "wrandom",
-        }
-    }
-}
-
-impl fmt::Display for QueueStrategy {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ExtensionState
-// ---------------------------------------------------------------------------
-
-/// extension hint state values
+extension hint state values
 
 | Variant | Description |
 |---------|-------------|
@@ -555,46 +168,7 @@ impl fmt::Display for QueueStrategy {
 
 ## `AgiStatus`
 
-parse an extension state from its numeric code
-    pub fn from_code(code: i32) -> Option<Self> {
-        match code {
-            -2 => Some(Self::Removed),
-            -1 => Some(Self::Idle),
-            1 => Some(Self::InUse),
-            2 => Some(Self::Busy),
-            4 => Some(Self::Unavailable),
-            8 => Some(Self::Ringing),
-            16 => Some(Self::OnHold),
-            _ => None,
-        }
-    }
-
-    /// the numeric state code
-    pub fn code(self) -> i32 {
-        self as i32
-    }
-}
-
-impl fmt::Display for ExtensionState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::Removed => "removed",
-            Self::Idle => "idle",
-            Self::InUse => "in use",
-            Self::Busy => "busy",
-            Self::Unavailable => "unavailable",
-            Self::Ringing => "ringing",
-            Self::OnHold => "on hold",
-        };
-        f.write_str(s)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// AgiStatus
-// ---------------------------------------------------------------------------
-
-/// AGI response status codes
+AGI response status codes
 
 | Variant | Description |
 |---------|-------------|
