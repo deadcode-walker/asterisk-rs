@@ -188,8 +188,101 @@ impl ChannelHandle {
             )
             .await
     }
-}
 
+    /// redirect the channel to a different dialplan location
+    pub async fn redirect(&self, context: &str, extension: &str, priority: i64) -> Result<()> {
+        self.client
+            .post_empty(&format!(
+                "/channels/{}/redirect?context={}&extension={}&priority={}",
+                self.id, context, extension, priority
+            ))
+            .await
+    }
+
+    /// start ringing on the channel
+    pub async fn ring(&self) -> Result<()> {
+        self.client
+            .post_empty(&format!("/channels/{}/ring", self.id))
+            .await
+    }
+
+    /// stop ringing on the channel
+    pub async fn ring_stop(&self) -> Result<()> {
+        self.client
+            .delete(&format!("/channels/{}/ring", self.id))
+            .await
+    }
+
+    /// start silence on the channel
+    pub async fn start_silence(&self) -> Result<()> {
+        self.client
+            .post_empty(&format!("/channels/{}/silence", self.id))
+            .await
+    }
+
+    /// stop silence on the channel
+    pub async fn stop_silence(&self) -> Result<()> {
+        self.client
+            .delete(&format!("/channels/{}/silence", self.id))
+            .await
+    }
+
+    /// play media on the channel with additional options
+    pub async fn play_with_id(&self, playback_id: &str, media: &str) -> Result<Playback> {
+        self.client
+            .post(
+                &format!("/channels/{}/play/{}", self.id, playback_id),
+                &serde_json::json!({"media": media}),
+            )
+            .await
+    }
+
+    /// dial a created channel
+    pub async fn dial(&self, caller: Option<&str>, timeout: Option<i32>) -> Result<()> {
+        let mut params = Vec::new();
+        if let Some(c) = caller {
+            params.push(format!("caller={c}"));
+        }
+        if let Some(t) = timeout {
+            params.push(format!("timeout={t}"));
+        }
+        let query = if params.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", params.join("&"))
+        };
+        self.client
+            .post_empty(&format!("/channels/{}/dial{}", self.id, query))
+            .await
+    }
+
+    /// get rtp statistics for the channel
+    pub async fn rtp_statistics(&self) -> Result<serde_json::Value> {
+        self.client
+            .get(&format!("/channels/{}/rtp_statistics", self.id))
+            .await
+    }
+
+    /// start an external media session
+    pub async fn external_media(
+        &self,
+        app: &str,
+        external_host: &str,
+        format: &str,
+    ) -> Result<Channel> {
+        self.client
+            .post(
+                "/channels/externalMedia",
+                &serde_json::json!({
+                    "app": app,
+                    "external_host": external_host,
+                    "format": format,
+                    "channelId": self.id,
+                }),
+            )
+            .await
+    }
+}
 /// list all active channels
 pub async fn list(client: &AriClient) -> Result<Vec<Channel>> {
     client.get("/channels").await
@@ -203,4 +296,17 @@ pub async fn get(client: &AriClient, channel_id: &str) -> Result<Channel> {
 /// originate a new channel
 pub async fn originate(client: &AriClient, params: &OriginateParams) -> Result<Channel> {
     client.post("/channels", params).await
+}
+
+/// create a channel without dialing it
+pub async fn create(client: &AriClient, endpoint: &str, app: &str) -> Result<Channel> {
+    client
+        .post(
+            "/channels/create",
+            &serde_json::json!({
+                "endpoint": endpoint,
+                "app": app,
+            }),
+        )
+        .await
 }

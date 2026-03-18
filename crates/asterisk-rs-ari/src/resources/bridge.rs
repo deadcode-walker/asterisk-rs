@@ -67,6 +67,46 @@ impl BridgeHandle {
     pub async fn destroy(&self) -> Result<()> {
         self.client.delete(&format!("/bridges/{}", self.id)).await
     }
+
+    /// start music on hold for the bridge
+    pub async fn start_moh(&self, moh_class: Option<&str>) -> Result<()> {
+        let path = match moh_class {
+            Some(c) => format!("/bridges/{}/moh?mohClass={}", self.id, c),
+            None => format!("/bridges/{}/moh", self.id),
+        };
+        self.client.post_empty(&path).await
+    }
+
+    /// stop music on hold for the bridge
+    pub async fn stop_moh(&self) -> Result<()> {
+        self.client
+            .delete(&format!("/bridges/{}/moh", self.id))
+            .await
+    }
+
+    /// play media with a specific playback id
+    pub async fn play_with_id(&self, playback_id: &str, media: &str) -> Result<Playback> {
+        self.client
+            .post(
+                &format!("/bridges/{}/play/{}", self.id, playback_id),
+                &serde_json::json!({"media": media}),
+            )
+            .await
+    }
+
+    /// set the video source for the bridge
+    pub async fn set_video_source(&self, channel_id: &str) -> Result<()> {
+        self.client
+            .post_empty(&format!("/bridges/{}/videoSource/{}", self.id, channel_id))
+            .await
+    }
+
+    /// clear the video source for the bridge
+    pub async fn clear_video_source(&self) -> Result<()> {
+        self.client
+            .delete(&format!("/bridges/{}/videoSource", self.id))
+            .await
+    }
 }
 
 /// create a new bridge
