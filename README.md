@@ -3,7 +3,7 @@
 ![crates.io](https://img.shields.io/crates/v/asterisk-rs.svg)
 ![docs.rs](https://img.shields.io/docsrs/asterisk-rs)
 ![CI](https://github.com/deadcode-walker/asterisk-rs/actions/workflows/ci.yml/badge.svg)
-![MSRV](https://img.shields.io/badge/MSRV-1.75-blue)
+![MSRV](https://img.shields.io/badge/MSRV-1.83-blue)
 ![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)
 
 Async Rust clients for Asterisk AMI, AGI, and ARI.
@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## MSRV
 
-1.75
+1.83
 
 ## License
 

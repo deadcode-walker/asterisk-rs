@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-asterisk-rs is a Rust workspace providing async clients for the three Asterisk PBX integration protocols: AMI (Manager Interface), AGI (Gateway Interface), and ARI (REST Interface). All crates are async-only using tokio, target MSRV 1.75, and are dual-licensed MIT OR Apache-2.0.
+asterisk-rs is a Rust workspace providing async clients for the three Asterisk PBX integration protocols: AMI (Manager Interface), AGI (Gateway Interface), and ARI (REST Interface). All crates are async-only using tokio, target MSRV 1.83, and are dual-licensed MIT OR Apache-2.0.
 
 ## Architecture & Data Flow
 
@@ -98,7 +98,7 @@ These are set in the root `Cargo.toml` and inherited by every crate via `[lints]
 ### Formatting
 
 - `rustfmt.toml`: edition 2021, `max_width = 100`
-- `clippy.toml`: `msrv = "1.75"`, `cognitive-complexity-threshold = 25`
+- `clippy.toml`: `msrv = "1.83"`, `cognitive-complexity-threshold = 25`
 
 ### Comment Style
 
@@ -210,7 +210,7 @@ pub trait AgiHandler: Send + Sync + 'static {
 
 - **Async runtime**: tokio (hard dependency, not runtime-agnostic)
 - **TLS**: rustls (via reqwest and tokio-tungstenite features; no openssl dependency)
-- **MSRV**: 1.75 (required for async fn in trait / RPITIT)
+- **MSRV**: 1.83 (required for async fn in trait / RPITIT)
 - **Edition**: 2021
 - **License**: MIT OR Apache-2.0
 - **Formatter**: rustfmt (run `cargo fmt --all`)
@@ -226,7 +226,7 @@ pub trait AgiHandler: Send + Sync + 'static {
 | check | ubuntu | stable | `cargo check --workspace --all-targets --all-features` |
 | fmt | ubuntu | nightly | `cargo fmt --all -- --check` |
 | clippy | ubuntu | stable | `cargo clippy` with `-D warnings` |
-| test | ubuntu/macos/windows | stable + 1.75 | `cargo test --workspace --all-features` |
+| test | ubuntu/macos/windows | stable + 1.83 | `cargo test --workspace --all-features` |
 | test-minimal | ubuntu | stable | `cargo test --workspace --no-default-features` |
 | security | ubuntu | stable | Weekly + on Cargo.toml changes; cargo-deny + rustsec audit |
 | coverage | ubuntu | stable | cargo-llvm-cov, uploads to codecov |
