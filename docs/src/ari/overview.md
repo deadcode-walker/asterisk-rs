@@ -1,71 +1,44 @@
 # ARI (Asterisk REST Interface)
 
-The Asterisk REST Interface (ARI) exposes Asterisk functionality through a
-combination of HTTP REST endpoints and a WebSocket event stream. It is designed
-for building custom communications applications using the Stasis framework.
-
-## How ARI Differs from AMI and AGI
-
-| | AMI | AGI | ARI |
-|---|-----|-----|-----|
-| **Transport** | TCP (text) | TCP (text) | HTTP + WebSocket |
-| **Direction** | Bidirectional | Request-response | REST + push events |
-| **Scope** | System management | Single call scripting | Application development |
-| **Concurrency** | Async events | Synchronous per call | Fully async |
-
-AMI is for monitoring and management. AGI is for scripting individual call
-flows. ARI is for building full applications that control channels, bridges,
-recordings, and playbacks with fine-grained control.
-
-## Architecture
-
-ARI uses two communication channels:
-
-- **HTTP REST API** -- for control operations: creating channels, joining
-  bridges, starting playbacks, managing recordings. The client authenticates
-  with HTTP basic auth on each request.
-- **WebSocket** -- for receiving real-time events. When a channel enters a
-  Stasis application, Asterisk pushes events over the WebSocket describing
-  everything that happens to that channel.
+ARI provides full call control through a REST API combined with a WebSocket
+event stream for Stasis applications.
 
 ## Quick Start
 
-```rust,no_run
-use asterisk_ari::{AriClient, AriConfig};
-use asterisk_ari::config::AriConfigBuilder;
+```rust,ignore
+use asterisk_rs_ari::{AriClient, AriConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = AriConfigBuilder::new()
+    let config = AriConfig::builder("my-app")
         .host("127.0.0.1")
         .port(8088)
         .username("asterisk")
         .password("secret")
-        .app_name("my-app")
         .build()?;
 
     let client = AriClient::connect(config).await?;
 
-    let mut sub = client.subscribe();
-    while let Ok(event) = sub.recv().await {
-        println!("{:?}", event);
+    // subscribe to stasis events
+    let mut events = client.subscribe();
+    while let Some(msg) = events.recv().await {
+        println!("[{}] {:?}", msg.application, msg.event);
     }
 
     Ok(())
 }
 ```
 
-## Stasis Model
+## Features
 
-In your Asterisk dialplan, route calls into a Stasis application:
+- REST client with all 90 ARI endpoints
+- WebSocket event listener with reconnection
+- All 43 typed events with metadata (application, timestamp, asterisk_id)
+- Resource handles (ChannelHandle, BridgeHandle, PlaybackHandle, RecordingHandle)
+- Filtered subscriptions
+- URL encoding for user-provided values
+- HTTP connect and request timeouts
 
-```text
-exten => 100,1,Stasis(my-app)
-```
-
-Once a channel enters Stasis, Asterisk stops processing dialplan and hands
-full control to your ARI application. You receive events and issue REST
-commands to control the call.
-
-See [Stasis Applications](./stasis.md) for details on the event loop and
-[Resources](./resources.md) for the available control operations.
+See [Stasis Applications](./stasis.md) for the event model,
+[Resources](./resources.md) for the handle pattern, and
+[Reference](./reference.md) for complete endpoint lists.

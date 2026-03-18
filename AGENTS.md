@@ -17,9 +17,9 @@ asterisk-rs (umbrella, feature-gated re-exports)
   |
   +-- asterisk-rs-ami (TCP client, port 5038)
   |     codec.rs      -- tokio-util Decoder/Encoder for Key: Value\r\n\r\n framing
-  |     action.rs     -- AmiAction trait + 116 typed action structs covering all Asterisk 23 actions
+  |     action.rs     -- AmiAction trait + typed action structs for all Asterisk 23 actions
   |     response.rs   -- AmiResponse parsing, PendingActions (ActionID correlation via oneshot)
-  |     event.rs      -- AmiEvent enum (161 typed variants + Unknown), implements core::Event
+  |     event.rs      -- AmiEvent enum (typed variants + Unknown), implements core::Event
   |     connection.rs -- ConnectionManager: background task, reconnect loop, message dispatch
   |     client.rs     -- AmiClient builder, send_action<A>, MD5 challenge-response auth
   |
@@ -27,15 +27,15 @@ asterisk-rs (umbrella, feature-gated re-exports)
   |     server.rs     -- AgiServer<H: AgiHandler>: TCP listener, Semaphore concurrency
   |     handler.rs    -- AgiHandler trait (RPITIT, async fn in trait)
   |     request.rs    -- AgiRequest: parsed agi_* environment variables
-  |     channel.rs    -- AgiChannel: all 47 typed AGI commands over split TCP stream
-  |     command.rs    -- 47 command constants + format_command() with argument quoting
+  |     channel.rs    -- AgiChannel: typed AGI commands over split TCP stream
+  |     command.rs    -- command constants + format_command() with argument quoting
   |     response.rs   -- AgiResponse: parse "200 result=X (data) endpos=N"
   |
   +-- asterisk-rs-ari (HTTP + WebSocket, port 8088)
         client.rs     -- AriClient: reqwest REST + WsEventListener, Basic Auth
         config.rs     -- AriConfigBuilder: constructs base_url + ws_url
         websocket.rs  -- WsEventListener: background task, reconnect, JSON deserialization
-        event.rs      -- AriEvent enum (all 43 typed variants, serde tagged on "type"), Channel/Bridge/Playback/Endpoint/Peer/ContactInfo types
+        event.rs      -- AriEvent enum (serde tagged on "type"), AriMessage wrapper with metadata
         resources/    -- Handle pattern: ChannelHandle, BridgeHandle, PlaybackHandle, RecordingHandle
                          + free functions (list, get, create, originate) per resource
 ```
@@ -133,8 +133,8 @@ Builders validate required fields in `.build()` and return `Result`.
 
 Protocol events implement `asterisk_rs_core::event::Event` (requires `Clone + Send + Sync + Debug + 'static`). Published via `EventBus<E>` (tokio broadcast). Consumed via `EventSubscription<E>::recv()` which handles lag by logging and skipping.
 
-- AMI: `AmiEvent` enum with 161 typed variants + `Unknown { event_name, headers }`
-- ARI: `AriEvent` enum with all 43 typed variants, serde `#[serde(tag = "type")]` + `#[serde(other)] Unknown`
+- AMI: `AmiEvent` enum with typed variants + `Unknown { event_name, headers }`
+- ARI: `AriEvent` enum with typed variants, serde `#[serde(tag = "type")]` + `#[serde(other)] Unknown`. Wrapped in `AriMessage` with application/timestamp/asterisk_id metadata.
 - AGI: No event bus (synchronous request/response protocol)
 
 ### Reconnection

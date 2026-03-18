@@ -9,16 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `asterisk-rs-core`: shared error types, event bus, reconnection policy, credentials
-- `asterisk-rs-ami`: AMI client with typed actions (Login, Originate, Hangup, Redirect, Command, GetVar, SetVar, and 109 more), typed events (161 variants covering all Asterisk 23 events), AMI wire protocol codec, MD5 challenge-response auth, automatic reconnection
-- `asterisk-rs-agi`: FastAGI TCP server with handler trait, all 47 AGI commands with typed methods, response parsing, configurable concurrency
-- `asterisk-rs-ari`: ARI REST client with WebSocket event listener, all 43 ARI event types with typed deserialization, resource handles (ChannelHandle, BridgeHandle, PlaybackHandle, RecordingHandle), resource modules for channels, bridges, endpoints, playbacks, recordings, device state, mailboxes, sounds, applications
+- `asterisk-rs-core`: shared error types, event bus with filtered subscriptions, reconnection policy, credentials with secret redaction
+- `asterisk-rs-core`: typed domain constants -- hangup causes, channel states, device states, dial statuses, CDR dispositions, peer statuses, queue strategies, extension states, AGI status codes
+- `asterisk-rs-ami`: AMI client with typed events and actions covering the full Asterisk 23 protocol surface, MD5 challenge-response auth, automatic reconnection with re-authentication
+- `asterisk-rs-ami`: event-collecting actions (`send_collecting`) for multi-event responses (Status, QueueStatus, CoreShowChannels, etc.)
+- `asterisk-rs-ami`: filtered event subscriptions, command output capture for `Response: Follows`, connect timeout
+- `asterisk-rs-agi`: FastAGI TCP server with handler trait (RPITIT), all AGI commands with typed async methods, configurable concurrency, graceful shutdown
+- `asterisk-rs-ari`: ARI REST client with WebSocket event listener, typed events with metadata (application, timestamp, asterisk_id), resource handles, system management endpoints
+- `asterisk-rs-ari`: filtered subscriptions, URL-safe query encoding, HTTP timeouts, WebSocket lifecycle management
 - `asterisk-rs`: umbrella crate with feature-gated re-exports (ami, agi, ari)
+- `#[non_exhaustive]` on all public enums for forward compatibility
 - GitHub Actions CI, security audit, documentation deployment, release automation
-- mdBook user guide and rustdoc API documentation
+- Auto-generated reference documentation from source
 - Examples for all three protocols
-- `asterisk-rs-ami`: complete AMI event coverage — 161 typed variants covering all Asterisk 23 events (core call flow, transfers, bridge, queue, agent, confbridge, meetme, mixmonitor, parking, pickup, device/presence/extension state, PJSIP, CDR/CEL, RTCP, security, system, async AGI, DAHDI, AOC, FAX)
-- `asterisk-rs-ami`: complete AMI action coverage — 116 typed action structs covering all Asterisk 23 actions (status, core, database, transfer, bridge, queue, mixmonitor, confbridge, parking, config, PJSIP, dialplan, mailbox/MWI, voicemail, meetme, agent, FAX)
-- `asterisk-rs-agi`: complete AGI command coverage — all 47 Asterisk 23 commands with typed methods (database, speech recognition, say commands, flow control, recording, stream control)
-- `asterisk-rs-ari`: complete ARI event coverage — all 43 Asterisk 23 events with typed deserialization (Dial, Hold/Unhold, transfers, talking, tone detection, device/presence/endpoint state, contact status, text messages, REST responses)
-- `asterisk-rs-ari`: expanded resource operations — channel redirect/ring/silence/dial/external media, bridge MOH/video source control

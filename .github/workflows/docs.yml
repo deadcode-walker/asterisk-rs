@@ -1,56 +1,59 @@
 name: Docs
 
 on:
-  push:
-    branches: [main]
-  release:
-    types: [published]
+   push:
+      branches: [main]
+   release:
+      types: [published]
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+   contents: read
+   pages: write
+   id-token: write
 
 concurrency:
-  group: "pages"
-  cancel-in-progress: true
+   group: "pages"
+   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build Documentation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+   build:
+      name: Build Documentation
+      runs-on: ubuntu-latest
+      steps:
+         - uses: actions/checkout@v4
+         - uses: dtolnay/rust-toolchain@stable
+         - uses: Swatinem/rust-cache@v2
 
-      - name: Install mdBook
-        run: cargo install mdbook --no-default-features --features search
+         - name: Install mdBook
+           run: cargo install mdbook --no-default-features --features search
 
-      - name: Build rustdoc
-        run: cargo doc --workspace --all-features --no-deps
-        env:
-          RUSTDOCFLAGS: "--cfg docsrs"
+         - name: Build rustdoc
+           run: cargo doc --workspace --all-features --no-deps
+           env:
+              RUSTDOCFLAGS: "--cfg docsrs"
 
-      - name: Build mdBook
-        run: mdbook build docs/
+         - name: Generate reference pages
+           run: python3 docs/generate.py
 
-      - name: Assemble site
-        run: |
-          mkdir -p _site
-          cp -r docs/book/* _site/
-          cp -r target/doc _site/api
+         - name: Build mdBook
+           run: mdbook build docs/
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
+         - name: Assemble site
+           run: |
+              mkdir -p _site
+              cp -r docs/book/* _site/
+              cp -r target/doc _site/api
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+         - uses: actions/upload-pages-artifact@v3
+           with:
+              path: _site
+
+   deploy:
+      needs: build
+      runs-on: ubuntu-latest
+      environment:
+         name: github-pages
+         url: ${{ steps.deployment.outputs.page_url }}
+      steps:
+         - id: deployment
+           uses: actions/deploy-pages@v4

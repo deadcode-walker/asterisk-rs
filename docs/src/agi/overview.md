@@ -1,58 +1,33 @@
 # AGI (Asterisk Gateway Interface)
 
-The Asterisk Gateway Interface (AGI) is a synchronous command protocol for
-controlling call flow from external programs. When a call hits an AGI
-application in the dialplan, Asterisk connects to the application, sends
-environment variables describing the call, and then executes commands sent
-back by the application.
-
-## Transports
-
-AGI supports three transport mechanisms:
-
-1. **Process AGI** -- Asterisk spawns a local process and communicates via
-   stdin/stdout. Simple but limited to the same machine.
-2. **FastAGI** -- Asterisk connects to a TCP server (default port 4573). This
-   allows the AGI application to run on a separate host and handle multiple
-   concurrent calls.
-3. **AsyncAGI** -- Commands are sent via AMI rather than a direct connection.
-   Useful for integrating AGI logic into an existing AMI-based application.
-
-## This Crate
-
-The `asterisk-rs-agi` crate implements a **FastAGI server**. It provides:
-
-- `AgiServer` -- a TCP server that accepts incoming FastAGI connections
-- `AgiHandler` -- a trait you implement to define call handling logic
-- `AgiRequest` -- parsed environment variables from Asterisk
-- `AgiChannel` -- typed methods for sending AGI commands
+AGI allows external programs to control Asterisk dialplan execution.
+This crate implements a FastAGI TCP server that accepts connections
+from Asterisk and dispatches them to a handler.
 
 ## Quick Start
 
-```rust,no_run
-use asterisk_agi::{AgiServer, AgiHandler, AgiRequest, AgiChannel};
+```rust,ignore
+use asterisk_rs_agi::{AgiServer, AgiHandler, AgiRequest, AgiChannel};
 
 struct MyHandler;
 
 impl AgiHandler for MyHandler {
-    async fn handle(
-        &self,
-        request: AgiRequest,
-        mut channel: AgiChannel,
-    ) -> Result<(), asterisk_agi::AgiError> {
-        println!("call from: {}", request.caller_id_num());
+    async fn handle(&self, request: AgiRequest, mut channel: AgiChannel)
+        -> asterisk_rs_agi::error::Result<()>
+    {
         channel.answer().await?;
-        channel.stream_file("welcome", "#").await?;
-        channel.hangup().await?;
+        channel.stream_file("hello-world", "").await?;
+        channel.hangup(None).await?;
         Ok(())
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let server = AgiServer::builder()
+    let (server, _shutdown) = AgiServer::builder()
         .bind("0.0.0.0:4573")
         .handler(MyHandler)
+        .max_connections(100)
         .build()
         .await?;
 
@@ -61,10 +36,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-In your Asterisk dialplan, point to this server:
+## Features
 
-```text
-exten => 100,1,AGI(agi://192.168.1.10:4573)
-```
+- All 47 AGI commands with typed methods
+- Request environment parsing (`agi_*` variables)
+- Argument quoting and escaping
+- Configurable concurrency limits
+- Graceful shutdown via `ShutdownHandle`
 
-For details on the server and handler API, see [FastAGI Server](./fastagi.md).
+See [FastAGI Server](./fastagi.md) for server details and
+[Reference](./reference.md) for the complete command list.

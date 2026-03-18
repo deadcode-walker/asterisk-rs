@@ -1,63 +1,42 @@
 # Getting Started
 
-## Installation
+Add asterisk-rs to your project:
 
-Add `asterisk-rs` to your project:
-
-```sh
-cargo add asterisk-rs
+```toml
+[dependencies]
+asterisk-rs = "0.2"
 ```
 
-Or pick individual protocol crates:
+Or pick individual protocols:
 
-```sh
-cargo add asterisk-rs-ami    # AMI only
-cargo add asterisk-rs-agi    # AGI only
-cargo add asterisk-rs-ari    # ARI only
+```toml
+[dependencies]
+asterisk-rs = { version = "0.2", default-features = false, features = ["ami"] }
 ```
 
-## Prerequisites
+Or use crates directly:
 
-You need a running Asterisk instance. The crate supports Asterisk 16+ (LTS and current releases).
+```toml
+[dependencies]
+asterisk-rs-ami = "0.2"
+```
 
 ## Protocols
 
-Asterisk exposes three interfaces:
+| Protocol | Port | Transport | Crate |
+|----------|------|-----------|-------|
+| AMI | 5038 | TCP | `asterisk-rs-ami` |
+| AGI | 4573 | TCP (FastAGI) | `asterisk-rs-agi` |
+| ARI | 8088 | HTTP + WebSocket | `asterisk-rs-ari` |
 
-| Protocol | Port | Transport | Use Case |
-|----------|------|-----------|----------|
-| AMI | 5038 | TCP | Server management, call control, event monitoring |
-| AGI | 4573 | TCP (FastAGI) | Dialplan scripting, IVR logic |
-| ARI | 8088 | HTTP + WebSocket | Application development, full call control |
+## Domain Types
 
-Each protocol has its own crate with independent documentation. See the sidebar for protocol-specific guides.
+Common Asterisk constants are available as typed enums in `asterisk_rs_core::types`:
+hangup causes, channel states, device states, dial statuses, and more.
+See [Domain Types](./types.md) for the full list.
 
-## Quick Example
+## Requirements
 
-Connect to AMI and originate a call:
-
-```rust,no_run
-use asterisk_ami::AmiClient;
-use std::time::Duration;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let client = AmiClient::builder()
-        .host("127.0.0.1")
-        .port(5038)
-        .credentials("admin", "secret")
-        .build()
-        .await?;
-
-    client.originate()
-        .channel("SIP/100")
-        .context("default")
-        .extension("200")
-        .priority(1)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await?;
-
-    Ok(())
-}
-```
+- Rust 1.83+ (for async fn in trait / RPITIT)
+- tokio runtime
+- A running Asterisk instance for integration

@@ -1,150 +1,66 @@
 # FastAGI Server
 
-## Server Configuration
+## Binding
 
-`AgiServer` uses a builder pattern to configure the TCP listener:
+The server binds a TCP listener and dispatches each connection to your handler.
+Asterisk connects via the `AGI()` dialplan application:
 
-```rust,no_run
-use asterisk_agi::{AgiServer, AgiHandler, AgiRequest, AgiChannel, AgiError};
+```ini
+exten => 100,1,AGI(agi://your-server:4573)
+```
 
-struct MyHandler;
-impl AgiHandler for MyHandler {
-    async fn handle(&self, _req: AgiRequest, _ch: AgiChannel) -> Result<(), AgiError> {
-        Ok(())
-    }
-}
+## Handler Trait
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let server = AgiServer::builder()
-        .bind("0.0.0.0:4573")
-        .handler(MyHandler)
-        .max_connections(100)
-        .build()
-        .await?;
-
-    server.run().await?;
-    Ok(())
+```rust,ignore
+pub trait AgiHandler: Send + Sync + 'static {
+    fn handle(&self, request: AgiRequest, channel: AgiChannel)
+        -> impl Future<Output = Result<()>> + Send;
 }
 ```
 
-| Method | Default | Description |
-|--------|---------|-------------|
-| `bind(addr)` | `"0.0.0.0:4573"` | TCP address to listen on |
-| `handler(h)` | required | Your `AgiHandler` implementation |
-| `max_connections(n)` | unlimited | Maximum concurrent AGI sessions |
+The handler receives the AGI request (parsed environment variables from Asterisk)
+and a channel for sending commands back.
 
-The server spawns a new tokio task for each incoming connection.
+## Request Environment
 
-## AgiHandler Trait
+`AgiRequest` contains the `agi_*` variables sent by Asterisk at connection start:
+channel name, caller ID, called extension, context, language, etc.
 
-Implement `AgiHandler` to define your call logic:
+## Channel Commands
 
-```rust,no_run
-use asterisk_agi::{AgiHandler, AgiRequest, AgiChannel, AgiError};
+`AgiChannel` provides typed methods for all 47 AGI commands: `answer`, `hangup`,
+`stream_file`, `get_data`, `say_digits`, `record_file`, `database_get`,
+`speech_create`, and more. See [Reference](./reference.md).
 
-struct IvrHandler;
+## Concurrency
 
-impl AgiHandler for IvrHandler {
-    async fn handle(
-        &self,
-        request: AgiRequest,
-        mut channel: AgiChannel,
-    ) -> Result<(), AgiError> {
-        channel.answer().await?;
+Limit concurrent connections with `max_connections`:
 
-        // play a prompt and collect up to 4 digits
-        let digits = channel.get_data("enter-pin", 5000, 4).await?;
-        channel.verbose(&format!("caller entered: {}", digits), 1).await?;
-
-        channel.hangup().await?;
-        Ok(())
-    }
-}
+```rust,ignore
+let (server, _shutdown) = AgiServer::builder()
+    .bind("0.0.0.0:4573")
+    .handler(MyHandler)
+    .max_connections(50)
+    .build()
+    .await?;
 ```
 
-The trait requires `Send + Sync + 'static` so the handler can be shared across
-connections. The future returned by `handle` must be `Send`.
+## Graceful Shutdown
 
-## AgiRequest
+`build()` returns a `ShutdownHandle` that stops the accept loop:
 
-When Asterisk connects, it sends a block of environment variables describing
-the call. These are parsed into `AgiRequest` with typed accessors:
+```rust,ignore
+let (server, shutdown) = AgiServer::builder()
+    .bind("0.0.0.0:4573")
+    .handler(MyHandler)
+    .build()
+    .await?;
 
-| Method | Description |
-|--------|-------------|
-| `network_script()` | The AGI script path from the dialplan |
-| `request_url()` | Full request URL |
-| `channel_name()` | Asterisk channel name |
-| `channel_type()` | Channel technology (SIP, PJSIP, etc.) |
-| `language()` | Channel language |
-| `caller_id_num()` | Caller ID number |
-| `caller_id_name()` | Caller ID name |
-| `dnid()` | Dialed number |
-| `context()` | Dialplan context |
-| `extension()` | Dialplan extension |
-| `priority()` | Dialplan priority |
-| `account_code()` | Account code |
-| `unique_id()` | Channel unique ID |
-| `enhanced()` | Whether enhanced AGI (EAGI) is active |
-| `get(key)` | Raw header lookup |
+// stop accepting after ctrl-c
+tokio::spawn(async move {
+    tokio::signal::ctrl_c().await.ok();
+    shutdown.shutdown();
+});
 
-## AgiChannel Commands
-
-`AgiChannel` provides typed methods for each AGI command:
-
-| Method | AGI Command | Description |
-|--------|-------------|-------------|
-| `answer()` | `ANSWER` | Answer the channel |
-| `hangup()` | `HANGUP` | Hang up the channel |
-| `stream_file(file, escape)` | `STREAM FILE` | Play an audio file |
-| `get_data(file, timeout, max)` | `GET DATA` | Play a file and collect DTMF |
-| `say_digits(digits, escape)` | `SAY DIGITS` | Speak digits |
-| `say_number(number, escape)` | `SAY NUMBER` | Speak a number |
-| `set_variable(name, value)` | `SET VARIABLE` | Set a channel variable |
-| `get_variable(name)` | `GET VARIABLE` | Get a channel variable |
-| `exec(app, args)` | `EXEC` | Execute a dialplan application |
-| `wait_for_digit(timeout)` | `WAIT FOR DIGIT` | Wait for a single DTMF press |
-| `channel_status()` | `CHANNEL STATUS` | Query channel state |
-| `verbose(msg, level)` | `VERBOSE` | Write to Asterisk CLI |
-| `send_command(raw)` | any | Send a raw AGI command string |
-
-All command methods are async and return `Result<AgiResponse>`, where
-`AgiResponse` contains the result code and any data returned by Asterisk.
-## Example: Full IVR
-
-```rust,no_run
-use asterisk_agi::{AgiServer, AgiHandler, AgiRequest, AgiChannel, AgiError};
-struct VoicemailHandler {
-    greeting: String,
-}
-
-impl AgiHandler for VoicemailHandler {
-    async fn handle(
-        &self,
-        request: AgiRequest,
-        mut channel: AgiChannel,
-    ) -> Result<(), AgiError> {
-        channel.answer().await?;
-        channel.stream_file(&self.greeting, "#").await?;
-        let mailbox = channel.get_data("enter-mailbox", 5000, 4).await?;
-        channel.exec("VoiceMail", &format!("{}@default", mailbox)).await?;
-        channel.hangup().await?;
-        Ok(())
-    }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let server = AgiServer::builder()
-        .bind("0.0.0.0:4573")
-        .handler(VoicemailHandler {
-            greeting: "vm-greeting".to_owned(),
-        })
-        .build()
-        .await?;
-
-    server.run().await?;
-    Ok(())
-}
+server.run().await?;
 ```

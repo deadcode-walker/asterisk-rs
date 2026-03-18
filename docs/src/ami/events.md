@@ -1,108 +1,66 @@
 # Events
 
-AMI delivers real-time events as things happen in the Asterisk system. The
-crate parses these into typed `AmiEvent` variants.
+AMI delivers real-time events as things happen in Asterisk. All 161 event types
+are parsed into typed `AmiEvent` variants. See [Reference](./reference.md) for
+the complete list.
 
 ## Subscribing
 
-Call `client.subscribe()` to get an `EventSubscription` that receives events
-from the internal broadcast channel:
+```rust,ignore
+let mut sub = client.subscribe();
 
-```rust,no_run
-use asterisk_ami::{AmiClient, AmiEvent};
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = AmiClient::builder()
-        .host("127.0.0.1")
-        .credentials("admin", "secret")
-        .build()
-        .await?;
-
-    let mut sub = client.subscribe();
-
-    while let Ok(event) = sub.recv().await {
-        match event {
-            AmiEvent::NewChannel(data) => {
-                println!("new channel: {:?}", data);
-            }
-            AmiEvent::Hangup(data) => {
-                println!("hangup: {:?}", data);
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
+while let Some(event) = sub.recv().await {
+    println!("{}: {}", event.event_name(), event.channel().unwrap_or("n/a"));
 }
 ```
 
-Multiple subscribers can exist simultaneously. Each receives a copy of every
-event. If a subscriber falls behind, events are dropped from its buffer.
+## Filtered Subscriptions
 
-## Event Variants
+Subscribe to specific event types without processing every event:
 
-| Variant | Fired when |
-|---------|------------|
-| `NewChannel` | A new channel is created |
-| `Hangup` | A channel is hung up |
-| `Newstate` | A channel changes state (ringing, up, etc.) |
-| `DialBegin` | An outbound dial attempt starts |
-| `DialEnd` | An outbound dial attempt completes |
-| `DtmfBegin` | A DTMF digit press starts |
-| `DtmfEnd` | A DTMF digit press ends |
-| `FullyBooted` | Asterisk has finished starting up |
-| `PeerStatus` | A SIP/PJSIP peer changes registration status |
-| `BridgeCreate` | A bridge is created |
-| `BridgeDestroy` | A bridge is destroyed |
-| `BridgeEnter` | A channel enters a bridge |
-| `BridgeLeave` | A channel leaves a bridge |
-| `Unknown` | Any event not covered above |
+```rust,ignore
+let mut hangups = client.subscribe_filtered(|e| {
+    e.event_name() == "Hangup"
+});
 
-## Accessing Event Data
+while let Some(event) = hangups.recv().await {
+    if let AmiEvent::Hangup { channel, cause, cause_txt, .. } = event {
+        println!("hangup on {channel}: {cause} ({cause_txt})");
+    }
+}
+```
 
-Each variant carries a struct with the relevant fields parsed from the AMI
-message headers. Common accessors available on `AmiEvent`:
+## Event-Generating Actions
 
-- `event_name()` -- the raw event name string
-- `channel()` -- the associated channel name, if any
-- `unique_id()` -- the unique channel identifier, if any
+Actions like `Status`, `CoreShowChannels`, and `QueueStatus` return results
+as a sequence of events. Use `send_collecting` to gather them:
+
+```rust,ignore
+use asterisk_rs_ami::action::StatusAction;
+
+let result = client.send_collecting(&StatusAction { channel: None }).await?;
+println!("got {} channel status events", result.events.len());
+for event in &result.events {
+    println!("  {}", event.event_name());
+}
+```
+
+## Common Accessors
+
+Every `AmiEvent` has:
+- `event_name()` — the raw event name string
+- `channel()` — the associated channel name, if any
+- `unique_id()` — the unique channel identifier, if any
 
 ## Unknown Events
 
-Asterisk modules can generate custom events not covered by the typed variants.
-These arrive as `AmiEvent::Unknown`, which preserves all raw headers so you can
-inspect them manually:
+Events not covered by typed variants arrive as `AmiEvent::Unknown`:
 
-```rust,no_run
-# use asterisk_ami::AmiEvent;
-# fn handle(event: AmiEvent) {
-if let AmiEvent::Unknown(raw) = event {
-    let name = raw.get("Event").unwrap_or_default();
-    println!("unhandled event: {}", name);
-}
-# }
-```
-
-## Filtering
-
-For high-volume systems, filter events early to avoid unnecessary processing:
-
-```rust,no_run
-# use asterisk_ami::AmiEvent;
-# async fn example(mut sub: asterisk_rs_core::event::EventSubscription<AmiEvent>) {
-while let Ok(event) = sub.recv().await {
-    // only process call lifecycle events
-    match &event {
-        AmiEvent::NewChannel(_)
-        | AmiEvent::Hangup(_)
-        | AmiEvent::DialBegin(_)
-        | AmiEvent::DialEnd(_) => {
-            process_call_event(event);
-        }
-        _ => {} // discard
+```rust,ignore
+if let AmiEvent::Unknown { event_name, headers } = event {
+    println!("unhandled: {event_name}");
+    for (k, v) in &headers {
+        println!("  {k}: {v}");
     }
 }
-# }
-# fn process_call_event(_: AmiEvent) {}
 ```
