@@ -31,19 +31,21 @@ cargo add asterisk-rs
 ```
 
 ```rust,no_run
-use asterisk_rs::ami::{AmiClient, AmiClientBuilder};
+use asterisk_rs::ami::AmiClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = AmiClientBuilder::new("127.0.0.1:5038")
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(5038)
         .credentials("admin", "secret")
         .build()
         .await?;
 
-    let response = client.action("Command", &[("Command", "core show channels")]).await?;
+    let response = client.ping().await?;
     println!("{response:?}");
 
-    client.logoff().await?;
+    client.disconnect().await?;
     Ok(())
 }
 ```
