@@ -86,3 +86,51 @@ impl<E: Event> fmt::Debug for EventSubscription<E> {
         f.debug_struct("EventSubscription").finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    struct TestEvent(String);
+    impl Event for TestEvent {}
+
+    #[tokio::test]
+    async fn publish_and_receive() {
+        let bus = EventBus::new(16);
+        let mut sub = bus.subscribe();
+
+        bus.publish(TestEvent("hello".into()));
+
+        let event = sub.recv().await.expect("should receive event");
+        assert_eq!(event.0, "hello");
+    }
+
+    #[test]
+    fn publish_to_zero_subscribers_returns_zero() {
+        let bus: EventBus<TestEvent> = EventBus::new(16);
+        assert_eq!(bus.publish(TestEvent("nobody".into())), 0);
+    }
+
+    #[test]
+    fn subscriber_count() {
+        let bus: EventBus<TestEvent> = EventBus::new(16);
+        assert_eq!(bus.subscriber_count(), 0);
+
+        let _sub1 = bus.subscribe();
+        assert_eq!(bus.subscriber_count(), 1);
+
+        let _sub2 = bus.subscribe();
+        assert_eq!(bus.subscriber_count(), 2);
+
+        drop(_sub1);
+        // note: broadcast receiver count doesn't decrease on drop until next send
+    }
+
+    #[test]
+    fn default_capacity() {
+        let bus: EventBus<TestEvent> = EventBus::default();
+        // default is 256, just verify it doesn't panic
+        bus.publish(TestEvent("test".into()));
+    }
+}

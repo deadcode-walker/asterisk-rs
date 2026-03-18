@@ -33,3 +33,32 @@ impl std::fmt::Debug for Credentials {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn credentials_debug_redacts_secret() {
+        let creds = Credentials::new("admin", "s3cret");
+        let debug = format!("{creds:?}");
+        assert!(debug.contains("admin"));
+        assert!(debug.contains("[redacted]"));
+        assert!(!debug.contains("s3cret"));
+    }
+
+    #[test]
+    fn credentials_accessors() {
+        let creds = Credentials::new("user", "pass");
+        assert_eq!(creds.username(), "user");
+        assert_eq!(creds.secret(), "pass");
+    }
+
+    #[test]
+    fn credentials_clone_preserves_values() {
+        let creds = Credentials::new("admin", "secret");
+        let cloned = creds.clone();
+        assert_eq!(cloned.username(), "admin");
+        assert_eq!(cloned.secret(), "secret");
+    }
+}
