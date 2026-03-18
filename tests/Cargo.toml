@@ -1,0 +1,29 @@
+[package]
+name = "asterisk-rs-tests"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+asterisk-rs-ami = { path = "../crates/asterisk-rs-ami" }
+asterisk-rs-agi = { path = "../crates/asterisk-rs-agi" }
+asterisk-rs-ari = { path = "../crates/asterisk-rs-ari" }
+asterisk-rs-core = { path = "../crates/asterisk-rs-core" }
+tokio = { workspace = true, features = ["full"] }
+tokio-util = { workspace = true, features = ["codec"] }
+futures-util.workspace = true
+bytes.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+tokio-tungstenite.workspace = true
+
+[features]
+integration = []

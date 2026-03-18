@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = ["crates/*", "tests"]
 
 [workspace.package]
 edition = "2021"
@@ -34,3 +34,6 @@ url = "2"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 pin-project-lite = "0.2"
 tracing-subscriber = "0.3"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
