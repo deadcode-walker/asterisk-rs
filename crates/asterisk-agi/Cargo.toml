@@ -1,0 +1,23 @@
+[package]
+name = "asterisk-agi"
+version = "0.1.0"
+description = "Async Rust FastAGI server for Asterisk Gateway Interface"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+asterisk-rs-core = { path = "../asterisk-rs-core", version = "0.1.0" }
+tokio = { workspace = true, features = ["net", "sync", "time", "io-util", "macros", "rt"] }
+tracing.workspace = true
+thiserror.workspace = true
+bytes.workspace = true
+
+[dev-dependencies]
+tracing-subscriber.workspace = true

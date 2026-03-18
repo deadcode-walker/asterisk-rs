@@ -1,0 +1,29 @@
+[package]
+name = "asterisk-ari"
+version = "0.1.0"
+description = "Async Rust client for the Asterisk REST Interface (ARI)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+asterisk-rs-core = { path = "../asterisk-rs-core", version = "0.1.0" }
+tokio = { workspace = true, features = ["net", "sync", "time", "macros", "rt"] }
+reqwest.workspace = true
+tokio-tungstenite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+base64.workspace = true
+url.workspace = true
+futures-util.workspace = true
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
