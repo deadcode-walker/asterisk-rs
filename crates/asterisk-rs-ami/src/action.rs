@@ -2428,6 +2428,653 @@ impl AmiAction for PlayMFAction {
     }
 }
 
+// ---------------------------------------------------------------------------
+// dahdi
+// ---------------------------------------------------------------------------
+
+/// disable do not disturb on a DAHDI channel
+pub struct DAHDIDNDoffAction {
+    pub dahdi_channel: String,
+}
+
+impl AmiAction for DAHDIDNDoffAction {
+    fn action_name(&self) -> &str {
+        "DAHDIDNDoff"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("DAHDIChannel".into(), self.dahdi_channel.clone())]
+    }
+}
+
+/// enable do not disturb on a DAHDI channel
+pub struct DAHDIDNDonAction {
+    pub dahdi_channel: String,
+}
+
+impl AmiAction for DAHDIDNDonAction {
+    fn action_name(&self) -> &str {
+        "DAHDIDNDon"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("DAHDIChannel".into(), self.dahdi_channel.clone())]
+    }
+}
+
+/// dial a number on a DAHDI channel that is off hook
+pub struct DAHDIDialOffhookAction {
+    pub dahdi_channel: String,
+    pub number: String,
+}
+
+impl AmiAction for DAHDIDialOffhookAction {
+    fn action_name(&self) -> &str {
+        "DAHDIDialOffhook"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("DAHDIChannel".into(), self.dahdi_channel.clone()),
+            ("Number".into(), self.number.clone()),
+        ]
+    }
+}
+
+/// hangup a DAHDI channel
+pub struct DAHDIHangupAction {
+    pub dahdi_channel: String,
+}
+
+impl AmiAction for DAHDIHangupAction {
+    fn action_name(&self) -> &str {
+        "DAHDIHangup"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("DAHDIChannel".into(), self.dahdi_channel.clone())]
+    }
+}
+
+/// restart the DAHDI channels
+pub struct DAHDIRestartAction;
+
+impl AmiAction for DAHDIRestartAction {
+    fn action_name(&self) -> &str {
+        "DAHDIRestart"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+/// show DAHDI channel information
+pub struct DAHDIShowChannelsAction {
+    pub dahdi_channel: Option<String>,
+}
+
+impl AmiAction for DAHDIShowChannelsAction {
+    fn action_name(&self) -> &str {
+        "DAHDIShowChannels"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        let mut h = vec![];
+        if let Some(ref ch) = self.dahdi_channel {
+            h.push(("DAHDIChannel".into(), ch.clone()));
+        }
+        h
+    }
+}
+
+/// show DAHDI status
+pub struct DAHDIShowStatusAction;
+
+impl AmiAction for DAHDIShowStatusAction {
+    fn action_name(&self) -> &str {
+        "DAHDIShowStatus"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+/// transfer a DAHDI channel
+pub struct DAHDITransferAction {
+    pub dahdi_channel: String,
+}
+
+impl AmiAction for DAHDITransferAction {
+    fn action_name(&self) -> &str {
+        "DAHDITransfer"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("DAHDIChannel".into(), self.dahdi_channel.clone())]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// iax
+// ---------------------------------------------------------------------------
+
+/// show IAX2 network statistics
+pub struct IAXnetstatsAction;
+
+impl AmiAction for IAXnetstatsAction {
+    fn action_name(&self) -> &str {
+        "IAXnetstats"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+/// list IAX2 peers
+pub struct IAXpeerlistAction;
+
+impl AmiAction for IAXpeerlistAction {
+    fn action_name(&self) -> &str {
+        "IAXpeerlist"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+/// list IAX2 peers (compact)
+pub struct IAXpeersAction;
+
+impl AmiAction for IAXpeersAction {
+    fn action_name(&self) -> &str {
+        "IAXpeers"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+/// list IAX2 registrations
+pub struct IAXregistryAction;
+
+impl AmiAction for IAXregistryAction {
+    fn action_name(&self) -> &str {
+        "IAXregistry"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// pri
+// ---------------------------------------------------------------------------
+
+/// set the PRI debug log file
+pub struct PRIDebugFileSetAction {
+    pub filename: String,
+}
+
+impl AmiAction for PRIDebugFileSetAction {
+    fn action_name(&self) -> &str {
+        "PRIDebugFileSet"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("Filename".into(), self.filename.clone())]
+    }
+}
+
+/// unset the PRI debug log file
+pub struct PRIDebugFileUnsetAction;
+
+impl AmiAction for PRIDebugFileUnsetAction {
+    fn action_name(&self) -> &str {
+        "PRIDebugFileUnset"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+/// set the PRI debug level for a span
+pub struct PRIDebugSetAction {
+    pub span: u32,
+    pub level: u32,
+}
+
+impl AmiAction for PRIDebugSetAction {
+    fn action_name(&self) -> &str {
+        "PRIDebugSet"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Span".into(), self.span.to_string()),
+            ("Level".into(), self.level.to_string()),
+        ]
+    }
+}
+
+/// show PRI spans
+pub struct PRIShowSpansAction {
+    pub span: Option<u32>,
+}
+
+impl AmiAction for PRIShowSpansAction {
+    fn action_name(&self) -> &str {
+        "PRIShowSpans"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        let mut h = vec![];
+        if let Some(s) = self.span {
+            h.push(("Span".into(), s.to_string()));
+        }
+        h
+    }
+}
+
+// ---------------------------------------------------------------------------
+// bridge technology
+// ---------------------------------------------------------------------------
+
+/// list available bridge technologies
+pub struct BridgeTechnologyListAction;
+
+impl AmiAction for BridgeTechnologyListAction {
+    fn action_name(&self) -> &str {
+        "BridgeTechnologyList"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+/// suspend a bridge technology
+pub struct BridgeTechnologySuspendAction {
+    pub bridge_technology: String,
+}
+
+impl AmiAction for BridgeTechnologySuspendAction {
+    fn action_name(&self) -> &str {
+        "BridgeTechnologySuspend"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("BridgeTechnology".into(), self.bridge_technology.clone())]
+    }
+}
+
+/// unsuspend a bridge technology
+pub struct BridgeTechnologyUnsuspendAction {
+    pub bridge_technology: String,
+}
+
+impl AmiAction for BridgeTechnologyUnsuspendAction {
+    fn action_name(&self) -> &str {
+        "BridgeTechnologyUnsuspend"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("BridgeTechnology".into(), self.bridge_technology.clone())]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// pjsip advanced
+// ---------------------------------------------------------------------------
+
+/// show PJSIP inbound registration contact statuses
+pub struct PJSIPShowRegistrationInboundContactStatusesAction;
+
+impl AmiAction for PJSIPShowRegistrationInboundContactStatusesAction {
+    fn action_name(&self) -> &str {
+        "PJSIPShowRegistrationInboundContactStatuses"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+/// show PJSIP resource lists
+pub struct PJSIPShowResourceListsAction;
+
+impl AmiAction for PJSIPShowResourceListsAction {
+    fn action_name(&self) -> &str {
+        "PJSIPShowResourceLists"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+/// show PJSIP inbound subscriptions
+pub struct PJSIPShowSubscriptionsInboundAction;
+
+impl AmiAction for PJSIPShowSubscriptionsInboundAction {
+    fn action_name(&self) -> &str {
+        "PJSIPShowSubscriptionsInbound"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+/// show PJSIP outbound subscriptions
+pub struct PJSIPShowSubscriptionsOutboundAction;
+
+impl AmiAction for PJSIPShowSubscriptionsOutboundAction {
+    fn action_name(&self) -> &str {
+        "PJSIPShowSubscriptionsOutbound"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// queue advanced
+// ---------------------------------------------------------------------------
+
+/// change priority of a caller in a queue
+pub struct QueueChangePriorityCallerAction {
+    pub queue: String,
+    pub caller: String,
+    pub priority: u32,
+}
+
+impl AmiAction for QueueChangePriorityCallerAction {
+    fn action_name(&self) -> &str {
+        "QueueChangePriorityCaller"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Queue".into(), self.queue.clone()),
+            ("Caller".into(), self.caller.clone()),
+            ("Priority".into(), self.priority.to_string()),
+        ]
+    }
+}
+
+/// set ring in use for a queue member
+pub struct QueueMemberRingInUseAction {
+    pub interface: String,
+    pub ring_in_use: bool,
+}
+
+impl AmiAction for QueueMemberRingInUseAction {
+    fn action_name(&self) -> &str {
+        "QueueMemberRingInUse"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Interface".into(), self.interface.clone()),
+            ("RingInUse".into(), self.ring_in_use.to_string()),
+        ]
+    }
+}
+
+/// show a queue rule
+pub struct QueueRuleAction {
+    pub rule: String,
+}
+
+impl AmiAction for QueueRuleAction {
+    fn action_name(&self) -> &str {
+        "QueueRule"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("Rule".into(), self.rule.clone())]
+    }
+}
+
+/// withdraw a caller from a queue
+pub struct QueueWithdrawCallerAction {
+    pub queue: String,
+    pub caller: String,
+}
+
+impl AmiAction for QueueWithdrawCallerAction {
+    fn action_name(&self) -> &str {
+        "QueueWithdrawCaller"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Queue".into(), self.queue.clone()),
+            ("Caller".into(), self.caller.clone()),
+        ]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// sorcery cache
+// ---------------------------------------------------------------------------
+
+/// expire all objects in a sorcery memory cache
+pub struct SorceryMemoryCacheExpireAction {
+    pub cache: String,
+}
+
+impl AmiAction for SorceryMemoryCacheExpireAction {
+    fn action_name(&self) -> &str {
+        "SorceryMemoryCacheExpire"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("Cache".into(), self.cache.clone())]
+    }
+}
+
+/// expire a specific object in a sorcery memory cache
+pub struct SorceryMemoryCacheExpireObjectAction {
+    pub cache: String,
+    pub object: String,
+}
+
+impl AmiAction for SorceryMemoryCacheExpireObjectAction {
+    fn action_name(&self) -> &str {
+        "SorceryMemoryCacheExpireObject"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Cache".into(), self.cache.clone()),
+            ("Object".into(), self.object.clone()),
+        ]
+    }
+}
+
+/// populate a sorcery memory cache
+pub struct SorceryMemoryCachePopulateAction {
+    pub cache: String,
+}
+
+impl AmiAction for SorceryMemoryCachePopulateAction {
+    fn action_name(&self) -> &str {
+        "SorceryMemoryCachePopulate"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("Cache".into(), self.cache.clone())]
+    }
+}
+
+/// mark all objects in a sorcery memory cache as stale
+pub struct SorceryMemoryCacheStaleAction {
+    pub cache: String,
+}
+
+impl AmiAction for SorceryMemoryCacheStaleAction {
+    fn action_name(&self) -> &str {
+        "SorceryMemoryCacheStale"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("Cache".into(), self.cache.clone())]
+    }
+}
+
+/// mark a specific object in a sorcery memory cache as stale
+pub struct SorceryMemoryCacheStaleObjectAction {
+    pub cache: String,
+    pub object: String,
+}
+
+impl AmiAction for SorceryMemoryCacheStaleObjectAction {
+    fn action_name(&self) -> &str {
+        "SorceryMemoryCacheStaleObject"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Cache".into(), self.cache.clone()),
+            ("Object".into(), self.object.clone()),
+        ]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// voicemail
+// ---------------------------------------------------------------------------
+
+/// forward a voicemail message
+pub struct VoicemailForwardAction {
+    pub mailbox: String,
+    pub context: String,
+    pub from_mailbox: String,
+    pub from_context: String,
+    pub from_folder: String,
+    pub message_id: String,
+}
+
+impl AmiAction for VoicemailForwardAction {
+    fn action_name(&self) -> &str {
+        "VoicemailForward"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Mailbox".into(), self.mailbox.clone()),
+            ("Context".into(), self.context.clone()),
+            ("FromMailbox".into(), self.from_mailbox.clone()),
+            ("FromContext".into(), self.from_context.clone()),
+            ("FromFolder".into(), self.from_folder.clone()),
+            ("ID".into(), self.message_id.clone()),
+        ]
+    }
+}
+
+/// move a voicemail message
+pub struct VoicemailMoveAction {
+    pub mailbox: String,
+    pub context: String,
+    pub folder: String,
+    pub message_id: String,
+}
+
+impl AmiAction for VoicemailMoveAction {
+    fn action_name(&self) -> &str {
+        "VoicemailMove"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Mailbox".into(), self.mailbox.clone()),
+            ("Context".into(), self.context.clone()),
+            ("Folder".into(), self.folder.clone()),
+            ("ID".into(), self.message_id.clone()),
+        ]
+    }
+}
+
+/// remove a voicemail message
+pub struct VoicemailRemoveAction {
+    pub mailbox: String,
+    pub context: String,
+    pub folder: String,
+    pub message_id: String,
+}
+
+impl AmiAction for VoicemailRemoveAction {
+    fn action_name(&self) -> &str {
+        "VoicemailRemove"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Mailbox".into(), self.mailbox.clone()),
+            ("Context".into(), self.context.clone()),
+            ("Folder".into(), self.folder.clone()),
+            ("ID".into(), self.message_id.clone()),
+        ]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// confbridge
+// ---------------------------------------------------------------------------
+
+/// set the single video source in a conference bridge
+pub struct ConfbridgeSetSingleVideoSrcAction {
+    pub conference: String,
+    pub channel: String,
+}
+
+impl AmiAction for ConfbridgeSetSingleVideoSrcAction {
+    fn action_name(&self) -> &str {
+        "ConfbridgeSetSingleVideoSrc"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Conference".into(), self.conference.clone()),
+            ("Channel".into(), self.channel.clone()),
+        ]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// jabber
+// ---------------------------------------------------------------------------
+
+/// send a jabber (XMPP) message
+pub struct JabberSendAction {
+    pub jabber: String,
+    pub jid: String,
+    pub message: String,
+}
+
+impl AmiAction for JabberSendAction {
+    fn action_name(&self) -> &str {
+        "JabberSend"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("Jabber".into(), self.jabber.clone()),
+            ("JID".into(), self.jid.clone()),
+            ("Message".into(), self.message.clone()),
+        ]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2533,5 +3180,47 @@ mod tests {
         let action = PJSIPShowEndpointsAction;
         assert_eq!(action.action_name(), "PJSIPShowEndpoints");
         assert!(action.to_headers().is_empty());
+    }
+
+    #[test]
+    fn dahdi_dnd_on_action() {
+        let action = DAHDIDNDonAction {
+            dahdi_channel: "1".into(),
+        };
+        assert_eq!(action.action_name(), "DAHDIDNDon");
+        let headers = action.to_headers();
+        assert!(headers.iter().any(|(k, v)| k == "DAHDIChannel" && v == "1"));
+    }
+
+    #[test]
+    fn bridge_technology_list_action() {
+        let action = BridgeTechnologyListAction;
+        assert_eq!(action.action_name(), "BridgeTechnologyList");
+        assert!(action.to_headers().is_empty());
+    }
+
+    #[test]
+    fn queue_change_priority_caller_action() {
+        let action = QueueChangePriorityCallerAction {
+            queue: "support".into(),
+            caller: "PJSIP/100-0001".into(),
+            priority: 5,
+        };
+        assert_eq!(action.action_name(), "QueueChangePriorityCaller");
+        let headers = action.to_headers();
+        assert!(headers.iter().any(|(k, v)| k == "Queue" && v == "support"));
+        assert!(headers.iter().any(|(k, v)| k == "Priority" && v == "5"));
+    }
+
+    #[test]
+    fn sorcery_cache_expire_object_action() {
+        let action = SorceryMemoryCacheExpireObjectAction {
+            cache: "contacts".into(),
+            object: "obj-1".into(),
+        };
+        assert_eq!(action.action_name(), "SorceryMemoryCacheExpireObject");
+        let headers = action.to_headers();
+        assert!(headers.iter().any(|(k, v)| k == "Cache" && v == "contacts"));
+        assert!(headers.iter().any(|(k, v)| k == "Object" && v == "obj-1"));
     }
 }
