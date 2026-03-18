@@ -5,10 +5,10 @@
 //!
 //! Usage: cargo run --example ari_stasis_app
 
-use asterisk_ari::config::AriConfigBuilder;
-use asterisk_ari::event::AriEvent;
-use asterisk_ari::resources::channel::ChannelHandle;
-use asterisk_ari::AriClient;
+use asterisk_rs_ari::config::AriConfigBuilder;
+use asterisk_rs_ari::event::AriEvent;
+use asterisk_rs_ari::resources::channel::ChannelHandle;
+use asterisk_rs_ari::AriClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn handle_call(channel: ChannelHandle) -> asterisk_ari::error::Result<()> {
+async fn handle_call(channel: ChannelHandle) -> asterisk_rs_ari::error::Result<()> {
     channel.answer().await?;
     channel.play("sound:hello-world").await?;
     channel.hangup(None).await?;

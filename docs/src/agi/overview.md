@@ -20,7 +20,7 @@ AGI supports three transport mechanisms:
 
 ## This Crate
 
-The `asterisk-agi` crate implements a **FastAGI server**. It provides:
+The `asterisk-rs-agi` crate implements a **FastAGI server**. It provides:
 
 - `AgiServer` -- a TCP server that accepts incoming FastAGI connections
 - `AgiHandler` -- a trait you implement to define call handling logic

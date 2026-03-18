@@ -7,7 +7,7 @@
 //! # Quick Start
 //!
 //! ```rust,no_run
-//! use asterisk_ami::AmiClient;
+//! use asterisk_rs_ami::AmiClient;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {

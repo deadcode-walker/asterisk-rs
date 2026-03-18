@@ -11,9 +11,9 @@ cargo add asterisk-rs
 Or pick individual protocol crates:
 
 ```sh
-cargo add asterisk-ami    # AMI only
-cargo add asterisk-agi    # AGI only
-cargo add asterisk-ari    # ARI only
+cargo add asterisk-rs-ami    # AMI only
+cargo add asterisk-rs-agi    # AGI only
+cargo add asterisk-rs-ari    # ARI only
 ```
 
 ## Prerequisites

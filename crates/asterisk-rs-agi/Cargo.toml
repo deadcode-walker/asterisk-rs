@@ -1,5 +1,5 @@
 [package]
-name = "asterisk-agi"
+name = "asterisk-rs-agi"
 version = "0.1.0"
 description = "Async Rust FastAGI server for Asterisk Gateway Interface"
 edition.workspace = true

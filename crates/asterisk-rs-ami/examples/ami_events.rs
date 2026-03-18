@@ -4,7 +4,7 @@
 //!
 //! Usage: cargo run --example ami_events
 
-use asterisk_ami::AmiClient;
+use asterisk_rs_ami::AmiClient;
 use std::time::Duration;
 
 #[tokio::main]

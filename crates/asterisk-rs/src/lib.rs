@@ -18,10 +18,10 @@
 pub use asterisk_rs_core as core;
 
 #[cfg(feature = "ami")]
-pub use asterisk_ami as ami;
+pub use asterisk_rs_ami as ami;
 
 #[cfg(feature = "agi")]
-pub use asterisk_agi as agi;
+pub use asterisk_rs_agi as agi;
 
 #[cfg(feature = "ari")]
-pub use asterisk_ari as ari;
+pub use asterisk_rs_ari as ari;

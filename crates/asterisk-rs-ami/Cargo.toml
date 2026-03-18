@@ -1,5 +1,5 @@
 [package]
-name = "asterisk-ami"
+name = "asterisk-rs-ami"
 version = "0.1.0"
 description = "Async Rust client for the Asterisk Manager Interface (AMI)"
 edition.workspace = true

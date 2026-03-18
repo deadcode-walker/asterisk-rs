@@ -15,7 +15,7 @@ asterisk-rs (umbrella, feature-gated re-exports)
   |     config.rs   -- ReconnectPolicy (exponential backoff + jitter), ConnectionState enum
   |     auth.rs     -- Credentials (redacted Debug, never leaks secret)
   |
-  +-- asterisk-ami (TCP client, port 5038)
+  +-- asterisk-rs-ami (TCP client, port 5038)
   |     codec.rs      -- tokio-util Decoder/Encoder for Key: Value\r\n\r\n framing
   |     action.rs     -- AmiAction trait + typed actions (Login, Originate, Hangup, etc.)
   |     response.rs   -- AmiResponse parsing, PendingActions (ActionID correlation via oneshot)
@@ -23,7 +23,7 @@ asterisk-rs (umbrella, feature-gated re-exports)
   |     connection.rs -- ConnectionManager: background task, reconnect loop, message dispatch
   |     client.rs     -- AmiClient builder, send_action<A>, MD5 challenge-response auth
   |
-  +-- asterisk-agi (TCP server, port 4573)
+  +-- asterisk-rs-agi (TCP server, port 4573)
   |     server.rs     -- AgiServer<H: AgiHandler>: TCP listener, Semaphore concurrency
   |     handler.rs    -- AgiHandler trait (RPITIT, async fn in trait)
   |     request.rs    -- AgiRequest: parsed agi_* environment variables
@@ -31,7 +31,7 @@ asterisk-rs (umbrella, feature-gated re-exports)
   |     command.rs    -- Command constants + format_command() with argument quoting
   |     response.rs   -- AgiResponse: parse "200 result=X (data) endpos=N"
   |
-  +-- asterisk-ari (HTTP + WebSocket, port 8088)
+  +-- asterisk-rs-ari (HTTP + WebSocket, port 8088)
         client.rs     -- AriClient: reqwest REST + WsEventListener, Basic Auth
         config.rs     -- AriConfigBuilder: constructs base_url + ws_url
         websocket.rs  -- WsEventListener: background task, reconnect, JSON deserialization
@@ -49,10 +49,10 @@ asterisk-rs (umbrella, feature-gated re-exports)
 | Path | Purpose |
 |------|---------|
 | `crates/asterisk-rs-core/src/` | Shared error types, event bus, reconnect policy, credentials |
-| `crates/asterisk-ami/src/` | AMI protocol: codec, actions, events, client, connection |
-| `crates/asterisk-agi/src/` | AGI protocol: server, handler trait, channel commands |
-| `crates/asterisk-ari/src/` | ARI protocol: REST client, WebSocket, events, resource handles |
-| `crates/asterisk-ari/src/resources/` | One module per ARI resource (channel, bridge, endpoint, etc.) |
+| `crates/asterisk-rs-ami/src/` | AMI protocol: codec, actions, events, client, connection |
+| `crates/asterisk-rs-agi/src/` | AGI protocol: server, handler trait, channel commands |
+| `crates/asterisk-rs-ari/src/` | ARI protocol: REST client, WebSocket, events, resource handles |
+| `crates/asterisk-rs-ari/src/resources/` | One module per ARI resource (channel, bridge, endpoint, etc.) |
 | `crates/asterisk-rs/src/` | Umbrella crate with `#[cfg(feature)]` re-exports |
 | `docs/src/` | mdBook user guide (ami/, agi/, ari/ subdirectories) |
 | `.github/workflows/` | CI, security audit, docs deploy, release, coverage, semver checks |
@@ -195,14 +195,14 @@ pub trait AgiHandler: Send + Sync + 'static {
 | `Cargo.toml` | Workspace root: MSRV, lints, shared deps |
 | `crates/asterisk-rs-core/src/error.rs` | Core error hierarchy (all crates wrap these) |
 | `crates/asterisk-rs-core/src/event.rs` | EventBus and Event trait (AMI + ARI pub/sub) |
-| `crates/asterisk-ami/src/codec.rs` | AMI wire protocol parser/serializer |
-| `crates/asterisk-ami/src/client.rs` | AmiClient public API + AmiClientBuilder |
-| `crates/asterisk-ami/src/connection.rs` | AMI background connection task |
-| `crates/asterisk-agi/src/handler.rs` | AgiHandler trait definition |
-| `crates/asterisk-agi/src/server.rs` | FastAGI server accept loop |
-| `crates/asterisk-ari/src/client.rs` | AriClient REST + WebSocket API |
-| `crates/asterisk-ari/src/event.rs` | AriEvent serde-tagged enum + supporting types |
-| `crates/asterisk-ari/src/resources/channel.rs` | ChannelHandle + OriginateParams |
+| `crates/asterisk-rs-ami/src/codec.rs` | AMI wire protocol parser/serializer |
+| `crates/asterisk-rs-ami/src/client.rs` | AmiClient public API + AmiClientBuilder |
+| `crates/asterisk-rs-ami/src/connection.rs` | AMI background connection task |
+| `crates/asterisk-rs-agi/src/handler.rs` | AgiHandler trait definition |
+| `crates/asterisk-rs-agi/src/server.rs` | FastAGI server accept loop |
+| `crates/asterisk-rs-ari/src/client.rs` | AriClient REST + WebSocket API |
+| `crates/asterisk-rs-ari/src/event.rs` | AriEvent serde-tagged enum + supporting types |
+| `crates/asterisk-rs-ari/src/resources/channel.rs` | ChannelHandle + OriginateParams |
 | `crates/asterisk-rs/src/lib.rs` | Umbrella crate feature-gated re-exports |
 | `deny.toml` | License and security policy for dependencies |
 
@@ -245,12 +245,12 @@ Tests are co-located with source:
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `asterisk-ami/src/codec.rs` | 7 | Banner parsing, encode/decode, partial messages, size guard |
-| `asterisk-ami/src/response.rs` | 6 | Response parsing, PendingActions lifecycle |
-| `asterisk-ami/src/event.rs` | 3 | Event parsing, unknown events, non-event filtering |
-| `asterisk-agi/src/response.rs` | 7 | AGI response codes, data/endpos parsing |
-| `asterisk-agi/src/command.rs` | 5 | Command formatting, quoting, escaping |
-| `asterisk-ari/src/event.rs` | 4 | JSON deserialization, optional fields, unknown types |
+| `asterisk-rs-ami/src/codec.rs` | 7 | Banner parsing, encode/decode, partial messages, size guard |
+| `asterisk-rs-ami/src/response.rs` | 6 | Response parsing, PendingActions lifecycle |
+| `asterisk-rs-ami/src/event.rs` | 3 | Event parsing, unknown events, non-event filtering |
+| `asterisk-rs-agi/src/response.rs` | 7 | AGI response codes, data/endpos parsing |
+| `asterisk-rs-agi/src/command.rs` | 5 | Command formatting, quoting, escaping |
+| `asterisk-rs-ari/src/event.rs` | 4 | JSON deserialization, optional fields, unknown types |
 
 ### Test Patterns
 
@@ -273,10 +273,10 @@ Tests are co-located with source:
 cargo test --workspace --all-features
 
 # specific crate
-cargo test -p asterisk-ami
+cargo test -p asterisk-rs-ami
 
 # specific test
-cargo test -p asterisk-ami codec::tests::decode_banner_and_response
+cargo test -p asterisk-rs-ami codec::tests::decode_banner_and_response
 ```
 
 ### Examples
@@ -285,11 +285,11 @@ Located in each crate's `examples/` directory (not workspace root):
 
 | Example | Crate | Demonstrates |
 |---------|-------|-------------|
-| `ami_originate.rs` | asterisk-ami | Builder, OriginateAction, response handling |
-| `ami_events.rs` | asterisk-ami | Event subscription loop |
-| `agi_server.rs` | asterisk-agi | AgiHandler impl, channel operations |
-| `ari_stasis_app.rs` | asterisk-ari | Stasis event loop, ChannelHandle |
-| `ari_bridge.rs` | asterisk-ari | Bridge creation, channel origination |
+| `ami_originate.rs` | asterisk-rs-ami | Builder, OriginateAction, response handling |
+| `ami_events.rs` | asterisk-rs-ami | Event subscription loop |
+| `agi_server.rs` | asterisk-rs-agi | AgiHandler impl, channel operations |
+| `ari_stasis_app.rs` | asterisk-rs-ari | Stasis event loop, ChannelHandle |
+| `ari_bridge.rs` | asterisk-rs-ari | Bridge creation, channel origination |
 
 All examples require a running Asterisk instance and use `tracing_subscriber` (dev-dependency).
 

@@ -16,12 +16,12 @@ workspace = true
 
 [dependencies]
 asterisk-rs-core = { path = "../asterisk-rs-core", version = "0.1.0" }
-asterisk-ami = { path = "../asterisk-ami", version = "0.1.0", optional = true }
-asterisk-agi = { path = "../asterisk-agi", version = "0.1.0", optional = true }
-asterisk-ari = { path = "../asterisk-ari", version = "0.1.0", optional = true }
+asterisk-rs-ami = { path = "../asterisk-rs-ami", version = "0.1.0", optional = true }
+asterisk-rs-agi = { path = "../asterisk-rs-agi", version = "0.1.0", optional = true }
+asterisk-rs-ari = { path = "../asterisk-rs-ari", version = "0.1.0", optional = true }
 
 [features]
 default = ["ami", "agi", "ari"]
-ami = ["dep:asterisk-ami"]
-agi = ["dep:asterisk-agi"]
-ari = ["dep:asterisk-ari"]
+ami = ["dep:asterisk-rs-ami"]
+agi = ["dep:asterisk-rs-agi"]
+ari = ["dep:asterisk-rs-ari"]

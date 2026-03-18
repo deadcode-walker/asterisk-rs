@@ -1,4 +1,4 @@
-use asterisk_agi::{AgiChannel, AgiHandler, AgiRequest, AgiServer};
+use asterisk_rs_agi::{AgiChannel, AgiHandler, AgiRequest, AgiServer};
 
 struct MyHandler;
 
@@ -7,7 +7,7 @@ impl AgiHandler for MyHandler {
         &self,
         request: AgiRequest,
         mut channel: AgiChannel,
-    ) -> asterisk_agi::error::Result<()> {
+    ) -> asterisk_rs_agi::error::Result<()> {
         tracing::info!(channel = ?request.channel(), "new AGI session");
         channel.answer().await?;
         channel.verbose("Hello from Rust AGI!", 1).await?;

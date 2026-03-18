@@ -1,17 +1,17 @@
 ami:
   - changed-files:
       - any-glob-to-any-file:
-          - crates/asterisk-ami/**
+          - crates/asterisk-rs-ami/**
 
 agi:
   - changed-files:
       - any-glob-to-any-file:
-          - crates/asterisk-agi/**
+          - crates/asterisk-rs-agi/**
 
 ari:
   - changed-files:
       - any-glob-to-any-file:
-          - crates/asterisk-ari/**
+          - crates/asterisk-rs-ari/**
 
 core:
   - changed-files:

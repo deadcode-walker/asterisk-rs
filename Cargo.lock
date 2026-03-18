@@ -3,7 +3,17 @@
 version = 3
 
 [[package]]
-name = "asterisk-agi"
+name = "asterisk-rs"
+version = "0.1.0"
+dependencies = [
+ "asterisk-rs-agi",
+ "asterisk-rs-ami",
+ "asterisk-rs-ari",
+ "asterisk-rs-core",
+]
+
+[[package]]
+name = "asterisk-rs-agi"
 version = "0.1.0"
 dependencies = [
  "asterisk-rs-core",
@@ -15,7 +25,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "asterisk-ami"
+name = "asterisk-rs-ami"
 version = "0.1.0"
 dependencies = [
  "asterisk-rs-core",
@@ -31,7 +41,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "asterisk-ari"
+name = "asterisk-rs-ari"
 version = "0.1.0"
 dependencies = [
  "asterisk-rs-core",
@@ -46,16 +56,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
-]
-
-[[package]]
-name = "asterisk-rs"
-version = "0.1.0"
-dependencies = [
- "asterisk-agi",
- "asterisk-ami",
- "asterisk-ari",
- "asterisk-rs-core",
 ]
 
 [[package]]

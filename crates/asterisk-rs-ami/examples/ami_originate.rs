@@ -5,8 +5,8 @@
 //!
 //! Usage: cargo run --example ami_originate
 
-use asterisk_ami::action::OriginateAction;
-use asterisk_ami::AmiClient;
+use asterisk_rs_ami::action::OriginateAction;
+use asterisk_rs_ami::AmiClient;
 use std::time::Duration;
 
 #[tokio::main]

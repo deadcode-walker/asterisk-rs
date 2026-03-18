@@ -20,9 +20,9 @@ shared types and error handling in `asterisk-rs-core`.
 |---|---|
 | `asterisk-rs` | Umbrella crate, re-exports all protocols under feature flags |
 | `asterisk-rs-core` | Shared error types, event bus, reconnection policy |
-| `asterisk-ami` | AMI client: typed actions, events, codec, reconnection |
-| `asterisk-agi` | FastAGI server: handler trait, typed commands |
-| `asterisk-ari` | ARI client: REST + WebSocket, typed events, resource handles |
+| `asterisk-rs-ami` | AMI client: typed actions, events, codec, reconnection |
+| `asterisk-rs-agi` | FastAGI server: handler trait, typed commands |
+| `asterisk-rs-ari` | ARI client: REST + WebSocket, typed events, resource handles |
 
 ## Quick Start
 
@@ -65,9 +65,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 | Protocol | Port | Transport | Crate |
 |---|---|---|---|
-| AMI | 5038 | TCP | `asterisk-ami` |
-| AGI | 4573 | TCP (FastAGI) | `asterisk-agi` |
-| ARI | 8088 | HTTP + WebSocket | `asterisk-ari` |
+| AMI | 5038 | TCP | `asterisk-rs-ami` |
+| AGI | 4573 | TCP (FastAGI) | `asterisk-rs-agi` |
+| ARI | 8088 | HTTP + WebSocket | `asterisk-rs-ari` |
 
 ## MSRV
 

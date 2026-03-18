@@ -4,10 +4,10 @@
 //!
 //! Usage: cargo run --example ari_bridge
 
-use asterisk_ari::config::AriConfigBuilder;
-use asterisk_ari::resources::bridge::{self, BridgeHandle};
-use asterisk_ari::resources::channel::{self, OriginateParams};
-use asterisk_ari::AriClient;
+use asterisk_rs_ari::config::AriConfigBuilder;
+use asterisk_rs_ari::resources::bridge::{self, BridgeHandle};
+use asterisk_rs_ari::resources::channel::{self, OriginateParams};
+use asterisk_rs_ari::AriClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

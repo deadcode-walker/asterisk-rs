@@ -1,9 +1,9 @@
 ---
 description: "Asterisk protocol domain knowledge. Read when working on AMI, AGI, or ARI code."
 globs:
-  - "crates/asterisk-ami/**"
-  - "crates/asterisk-agi/**"
-  - "crates/asterisk-ari/**"
+  - "crates/asterisk-rs-ami/**"
+  - "crates/asterisk-rs-agi/**"
+  - "crates/asterisk-rs-ari/**"
 ---
 
 # Asterisk Protocols
