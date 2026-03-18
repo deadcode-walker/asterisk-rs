@@ -1,0 +1,21 @@
+[package]
+name = "asterisk-rs"
+version = "0.1.0"
+description = "Production Rust client for Asterisk AMI, AGI, and ARI"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[lints]
+workspace = true
+
+[dependencies]
+asterisk-rs-core = { path = "../asterisk-rs-core", version = "0.1.0" }
+
+[features]
+default = []

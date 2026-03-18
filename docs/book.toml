@@ -1,0 +1,14 @@
+[book]
+title = "asterisk-rs"
+description = "Production Rust client for Asterisk AMI, AGI, and ARI"
+authors = ["asterisk-rs contributors"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "rust"
+git-repository-url = "https://github.com/deadcode-walker/asterisk-rs"
+edit-url-template = "https://github.com/deadcode-walker/asterisk-rs/edit/main/docs/{path}"
