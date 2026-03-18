@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `asterisk-rs-ami`: AMI client with typed events and actions covering the full Asterisk 23 protocol surface, MD5 challenge-response auth, automatic reconnection with re-authentication
 - `asterisk-rs-ami`: event-collecting actions (`send_collecting`) for multi-event responses (Status, QueueStatus, CoreShowChannels, etc.)
 - `asterisk-rs-ami`: filtered event subscriptions, command output capture for `Response: Follows`, connect timeout
+- `asterisk-rs-ami`: channel variable extraction -- `ChanVariable(name)` headers parsed into dedicated `HashMap` on `RawAmiMessage` and `AmiResponse`, accessible via `get_variable()`
+- `asterisk-rs-ami`: keep-alive ping loop -- configurable periodic `PingAction` via `AmiClientBuilder::ping_interval()` to detect dead TCP connections early
 - `asterisk-rs-agi`: FastAGI TCP server with handler trait (RPITIT), all AGI commands with typed async methods, configurable concurrency, graceful shutdown
 - `asterisk-rs-ari`: ARI REST client with WebSocket event listener, typed events with metadata (application, timestamp, asterisk_id), resource handles, system management endpoints
 - `asterisk-rs-ari`: filtered subscriptions, URL-safe query encoding, HTTP timeouts, WebSocket lifecycle management

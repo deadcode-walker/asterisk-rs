@@ -17,12 +17,12 @@ asterisk-rs (umbrella, feature-gated re-exports)
   |     types.rs    -- domain constants (HangupCause, ChannelState, DeviceState, etc.)
   |
   +-- asterisk-rs-ami (TCP client, port 5038)
-  |     codec.rs      -- tokio-util Decoder/Encoder for Key: Value\r\n\r\n framing
+  |     codec.rs      -- tokio-util Decoder/Encoder for Key: Value\r\n\r\n framing + ChanVariable extraction
   |     action.rs     -- AmiAction trait + typed action structs for all Asterisk 23 actions
   |     response.rs   -- AmiResponse, EventListResponse, PendingActions (ActionID correlation)
   |     event.rs      -- AmiEvent enum (typed variants + Unknown), implements core::Event
-  |     connection.rs -- ConnectionManager: background task, reconnect loop, message dispatch
-  |     client.rs     -- AmiClient builder, send_action<A>, MD5 challenge-response auth
+  |     connection.rs -- ConnectionManager: background task, reconnect loop, message dispatch, keep-alive ping
+  |     client.rs     -- AmiClient builder, send_action<A>, MD5 challenge-response auth, ping_interval config
   |
   +-- asterisk-rs-agi (TCP server, port 4573)
   |     server.rs     -- AgiServer<H: AgiHandler>: TCP listener, Semaphore concurrency
@@ -124,7 +124,7 @@ Each crate re-exports `pub type Result<T> = std::result::Result<T, XxxError>;`.
 
 All clients and servers use builder pattern for configuration:
 
-- `AmiClient::builder().host().port().credentials().build().await?` -- connect + login
+- `AmiClient::builder().host().port().credentials().ping_interval().build().await?` -- connect + login
 - `AgiServer::builder().bind().handler().max_connections().build().await?` -- bind listener, returns `(AgiServer, ShutdownHandle)`
 - `AriConfigBuilder::new("app_name").host().port().username().password().build()?` -- then `AriClient::connect(config).await?`
 
@@ -146,6 +146,8 @@ AMI and ARI use `ReconnectPolicy` from core:
 - `ReconnectPolicy::none()` -- no retry
 
 Background tasks manage reconnection state machine: `Disconnected -> Connecting -> Connected -> Reconnecting`.
+
+AMI supports optional keep-alive pings via `AmiClientBuilder::ping_interval(Duration)`. When configured, the connection task sends periodic `PingAction` to detect dead TCP connections early. Disabled by default.
 
 ### Handle Pattern (ARI)
 
@@ -188,6 +190,10 @@ pub trait AgiHandler: Send + Sync + 'static {
 ### Credentials Safety
 
 `Credentials` has a custom `Debug` impl that redacts the secret field. Never derive `Debug` on types containing credentials.
+
+### Channel Variables
+
+AMI events carry channel variables as `ChanVariable(name): value` headers on the wire. The codec extracts these into `RawAmiMessage.channel_variables: HashMap<String, String>` (separate from regular headers). Accessible via `get_variable(name)` on both `RawAmiMessage` and `AmiResponse`. Not propagated to typed `AmiEvent` variants.
 
 ## Important Files
 
@@ -247,8 +253,8 @@ Tests are co-located with source:
 | File | Tests | Coverage |
 |------|-------|----------|
 | `asterisk-rs-core` (all) | 19 | EventBus, ReconnectPolicy, Credentials, domain types |
-| `asterisk-rs-ami/src/codec.rs` | 8 | Banner parsing, encode/decode, partial messages, size guard |
-| `asterisk-rs-ami/src/response.rs` | 8 | Response parsing, PendingActions lifecycle |
+| `asterisk-rs-ami/src/codec.rs` | 12 | Banner parsing, encode/decode, partial messages, size guard, channel variable extraction |
+| `asterisk-rs-ami/src/response.rs` | 9 | Response parsing, PendingActions lifecycle, channel variable propagation |
 | `asterisk-rs-ami/src/event.rs` | 10 | Event parsing, unknown events, non-event filtering |
 | `asterisk-rs-ami/src/action.rs` | 12 | Action formatting, header construction |
 | `asterisk-rs-agi/src/response.rs` | 7 | AGI response codes, data/endpos parsing |

@@ -46,9 +46,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - MD5 challenge-response and plaintext authentication
 - Automatic reconnection with re-authentication on every reconnect
 - Command output capture for `Response: Follows` responses
+- Channel variable extraction -- `ChanVariable(name)` headers parsed into a dedicated map
+- Keep-alive ping loop -- configurable periodic heartbeat to detect dead connections
 - Domain types for hangup causes, channel states, device states, and more
 - `#[non_exhaustive]` enums -- new variants won't break your code
-- Configurable timeouts, backoff, and event buffer size
+- Configurable timeouts, backoff, ping interval, and event buffer size
 
 ## Documentation
 
