@@ -1,7 +1,3 @@
-#![cfg(feature = "integration")]
-
-mod common;
-
 use std::time::Duration;
 
 use asterisk_rs_agi::channel::AgiChannel;
@@ -11,6 +7,7 @@ use asterisk_rs_agi::server::AgiServer;
 use asterisk_rs_ami::action::OriginateAction;
 use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_core::config::ReconnectPolicy;
+use asterisk_rs_tests::helpers::*;
 use tokio::sync::mpsc;
 
 /// data captured by the test handler
@@ -66,7 +63,7 @@ impl AgiHandler for IntegrationHandler {
 
 #[tokio::test]
 async fn real_agi_session() {
-    common::init_tracing();
+    init_tracing();
 
     let (tx, mut rx) = mpsc::channel::<AgiSessionCapture>(1);
     let handler = IntegrationHandler { tx };
@@ -84,8 +81,8 @@ async fn real_agi_session() {
     // connect to AMI and originate a call to extension 200 which triggers
     // AGI(agi://host.docker.internal:4573)
     let ami = AmiClient::builder()
-        .host(common::ami_host())
-        .port(common::ami_port())
+        .host(ami_host())
+        .port(ami_port())
         .credentials("testadmin", "testsecret")
         .reconnect(ReconnectPolicy::none())
         .timeout(Duration::from_secs(10))

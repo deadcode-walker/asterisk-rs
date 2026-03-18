@@ -1,7 +1,3 @@
-#![cfg(feature = "integration")]
-
-mod common;
-
 use std::time::Duration;
 
 use asterisk_rs_ami::action::OriginateAction;
@@ -9,12 +5,13 @@ use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_ari::config::AriConfigBuilder;
 use asterisk_rs_ari::{AriClient, AriEvent};
 use asterisk_rs_core::config::ReconnectPolicy;
+use asterisk_rs_tests::helpers::*;
 
 /// build an ARI client connected to the test Asterisk instance
 async fn connect_ari() -> AriClient {
     let config = AriConfigBuilder::new("test-app")
-        .host(common::ari_host())
-        .port(common::ari_port())
+        .host(ari_host())
+        .port(ari_port())
         .username("testuser")
         .password("testpass")
         .reconnect(ReconnectPolicy::exponential(
@@ -32,8 +29,8 @@ async fn connect_ari() -> AriClient {
 /// build an AMI client for triggering calls
 async fn connect_ami() -> AmiClient {
     AmiClient::builder()
-        .host(common::ami_host())
-        .port(common::ami_port())
+        .host(ami_host())
+        .port(ami_port())
         .credentials("testadmin", "testsecret")
         .reconnect(ReconnectPolicy::none())
         .timeout(Duration::from_secs(10))
@@ -48,7 +45,7 @@ async fn connect_ami() -> AmiClient {
 
 #[tokio::test]
 async fn connect_and_get_asterisk_info() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect_ari().await;
 
@@ -71,7 +68,7 @@ async fn connect_and_get_asterisk_info() {
 
 #[tokio::test]
 async fn list_channels() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect_ari().await;
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -88,7 +85,7 @@ async fn list_channels() {
 
 #[tokio::test]
 async fn list_bridges() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect_ari().await;
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -102,7 +99,7 @@ async fn list_bridges() {
 
 #[tokio::test]
 async fn stasis_event_from_originate() {
-    common::init_tracing();
+    init_tracing();
 
     let ari = connect_ari().await;
     let mut sub = ari.subscribe();
@@ -168,7 +165,7 @@ async fn stasis_event_from_originate() {
 
 #[tokio::test]
 async fn channel_answer_and_hangup_via_ari() {
-    common::init_tracing();
+    init_tracing();
 
     let ari = connect_ari().await;
     let mut sub = ari.subscribe();
@@ -245,7 +242,7 @@ async fn channel_answer_and_hangup_via_ari() {
 
 #[tokio::test]
 async fn bridge_create_add_channels_destroy() {
-    common::init_tracing();
+    init_tracing();
 
     let ari = connect_ari().await;
     let mut sub = ari.subscribe();
@@ -342,7 +339,7 @@ async fn bridge_create_add_channels_destroy() {
 
 #[tokio::test]
 async fn channel_dtmf_via_ari() {
-    common::init_tracing();
+    init_tracing();
 
     let ari = connect_ari().await;
     let mut sub = ari.subscribe();
@@ -414,7 +411,7 @@ async fn channel_dtmf_via_ari() {
 
 #[tokio::test]
 async fn channel_variable_via_ari() {
-    common::init_tracing();
+    init_tracing();
 
     let ari = connect_ari().await;
     let mut sub = ari.subscribe();

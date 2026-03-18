@@ -1,19 +1,16 @@
-#![cfg(feature = "integration")]
-
-mod common;
-
 use std::time::Duration;
 
 use asterisk_rs_ami::action::{OriginateAction, StatusAction};
 use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_ami::AmiEvent;
 use asterisk_rs_core::config::ReconnectPolicy;
+use asterisk_rs_tests::helpers::*;
 
 /// build an AMI client connected to the test Asterisk instance
 async fn connect() -> AmiClient {
     AmiClient::builder()
-        .host(common::ami_host())
-        .port(common::ami_port())
+        .host(ami_host())
+        .port(ami_port())
         .credentials("testadmin", "testsecret")
         .reconnect(ReconnectPolicy::none())
         .timeout(Duration::from_secs(10))
@@ -28,7 +25,7 @@ async fn connect() -> AmiClient {
 
 #[tokio::test]
 async fn connect_authenticate_and_ping() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
     let response = client.ping().await.expect("ping failed");
@@ -40,7 +37,7 @@ async fn connect_authenticate_and_ping() {
 
 #[tokio::test]
 async fn cli_command() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
     let response = client
@@ -63,7 +60,7 @@ async fn cli_command() {
 
 #[tokio::test]
 async fn status_collecting() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
 
@@ -90,7 +87,7 @@ async fn status_collecting() {
 
 #[tokio::test]
 async fn originate_to_invalid_extension() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
 
@@ -125,12 +122,12 @@ async fn originate_to_invalid_extension() {
 
 #[tokio::test]
 async fn reconnect_after_connection_drop() {
-    common::init_tracing();
+    init_tracing();
 
     // connect with reconnect enabled
     let client = AmiClient::builder()
-        .host(common::ami_host())
-        .port(common::ami_port())
+        .host(ami_host())
+        .port(ami_port())
         .credentials("testadmin", "testsecret")
         .reconnect(ReconnectPolicy::exponential(
             Duration::from_millis(500),
@@ -168,7 +165,7 @@ async fn reconnect_after_connection_drop() {
 
 #[tokio::test]
 async fn full_event_sequence_from_originate() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
     let mut sub = client.subscribe();
@@ -245,7 +242,7 @@ async fn full_event_sequence_from_originate() {
 
 #[tokio::test]
 async fn channel_variables_in_originate() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
     let mut sub = client.subscribe();
@@ -307,7 +304,7 @@ async fn channel_variables_in_originate() {
 
 #[tokio::test]
 async fn originate_busy_extension() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
     let mut sub = client.subscribe();
@@ -357,7 +354,7 @@ async fn originate_busy_extension() {
 
 #[tokio::test]
 async fn originate_congestion_extension() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
     let mut sub = client.subscribe();
@@ -406,7 +403,7 @@ async fn originate_congestion_extension() {
 
 #[tokio::test]
 async fn concurrent_stress_50_pings() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
 
@@ -437,7 +434,7 @@ async fn concurrent_stress_50_pings() {
 
 #[tokio::test]
 async fn hangup_live_channel() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
     let mut sub = client.subscribe();
@@ -505,7 +502,7 @@ async fn hangup_live_channel() {
 
 #[tokio::test]
 async fn setvar_getvar_on_live_channel() {
-    common::init_tracing();
+    init_tracing();
 
     let client = connect().await;
     let mut sub = client.subscribe();

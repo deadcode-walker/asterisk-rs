@@ -1,13 +1,11 @@
-mod common;
-mod mock;
-
 use std::time::Duration;
 
 use asterisk_rs_ari::config::AriConfigBuilder;
 use asterisk_rs_ari::{AriClient, AriError};
 use asterisk_rs_core::config::ReconnectPolicy;
 
-use mock::ari_server::MockAriServerBuilder;
+use asterisk_rs_tests::mock::ari_server::MockAriServerBuilder;
+use asterisk_rs_tests::helpers::init_tracing;
 
 /// build an ARI client pointed at the mock server
 async fn connect_to_mock(port: u16) -> AriClient {
@@ -27,7 +25,7 @@ async fn connect_to_mock(port: u16) -> AriClient {
 
 #[tokio::test]
 async fn connect_and_disconnect() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new().start().await;
     let client = connect_to_mock(server.port()).await;
@@ -37,7 +35,7 @@ async fn connect_and_disconnect() {
 
 #[tokio::test]
 async fn get_request() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new()
         .route(
@@ -66,7 +64,7 @@ async fn get_request() {
 
 #[tokio::test]
 async fn post_request() {
-    common::init_tracing();
+    init_tracing();
 
     let body = r#"{"id":"chan-1","name":"SIP/100-0001","state":"Ring"}"#;
     let server = MockAriServerBuilder::new()
@@ -88,7 +86,7 @@ async fn post_request() {
 
 #[tokio::test]
 async fn delete_request() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new()
         .route("DELETE", "/ari/channels/chan-1", 204, "")
@@ -107,7 +105,7 @@ async fn delete_request() {
 
 #[tokio::test]
 async fn api_error_handling() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new()
         .route(
@@ -142,7 +140,7 @@ async fn api_error_handling() {
 
 #[tokio::test]
 async fn websocket_events() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new().start().await;
     let client = connect_to_mock(server.port()).await;
@@ -188,7 +186,7 @@ async fn websocket_events() {
 
 #[tokio::test]
 async fn unregistered_route_returns_404() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new().start().await;
     let client = connect_to_mock(server.port()).await;
@@ -209,7 +207,7 @@ async fn unregistered_route_returns_404() {
 
 #[tokio::test]
 async fn put_request() {
-    common::init_tracing();
+    init_tracing();
 
     let body = r#"{"id":"bridge-1","bridge_type":"mixing"}"#;
     let server = MockAriServerBuilder::new()
@@ -232,7 +230,7 @@ async fn put_request() {
 
 #[tokio::test]
 async fn filtered_subscription() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new().start().await;
     let client = connect_to_mock(server.port()).await;
@@ -301,7 +299,7 @@ async fn filtered_subscription() {
 
 #[tokio::test]
 async fn channel_handle_answer_and_hangup() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new()
         .route("POST", "/ari/channels/chan-1/answer", 204, "")
@@ -321,7 +319,7 @@ async fn channel_handle_answer_and_hangup() {
 
 #[tokio::test]
 async fn channel_handle_hold_mute_dtmf() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new()
         .route("POST", "/ari/channels/chan-1/hold", 204, "")
@@ -347,7 +345,7 @@ async fn channel_handle_hold_mute_dtmf() {
 
 #[tokio::test]
 async fn channel_handle_variables() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new()
         .route(
@@ -382,7 +380,7 @@ async fn channel_handle_variables() {
 
 #[tokio::test]
 async fn bridge_handle_lifecycle() {
-    common::init_tracing();
+    init_tracing();
 
     let bridge_json = r#"{"id":"br-1","bridge_type":"mixing","technology":"simple_bridge","channels":[]}"#;
 
@@ -429,7 +427,7 @@ async fn bridge_handle_lifecycle() {
 
 #[tokio::test]
 async fn post_empty_returns_ok() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new()
         .route("POST", "/ari/channels/chan-1/answer", 204, "")
@@ -448,7 +446,7 @@ async fn post_empty_returns_ok() {
 
 #[tokio::test]
 async fn put_empty_returns_ok() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new()
         .route("PUT", "/ari/channels/chan-1/something", 204, "")
@@ -467,7 +465,7 @@ async fn put_empty_returns_ok() {
 
 #[tokio::test]
 async fn disconnect_stops_ws_listener() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new().start().await;
     let client = connect_to_mock(server.port()).await;
@@ -514,7 +512,7 @@ async fn disconnect_stops_ws_listener() {
 
 #[tokio::test]
 async fn channel_handle_play_returns_playback() {
-    common::init_tracing();
+    init_tracing();
 
     let playback_json = r#"{"id":"pb-1","media_uri":"sound:hello","target_uri":"channel:chan-1","state":"queued"}"#;
 
@@ -537,7 +535,7 @@ async fn channel_handle_play_returns_playback() {
 
 #[tokio::test]
 async fn multiple_websocket_events_in_sequence() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAriServerBuilder::new().start().await;
     let client = connect_to_mock(server.port()).await;

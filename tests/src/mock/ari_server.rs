@@ -66,6 +66,12 @@ pub struct MockAriServerBuilder {
     routes: HashMap<(String, String), MockRoute>,
 }
 
+impl Default for MockAriServerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockAriServerBuilder {
     pub fn new() -> Self {
         Self {
@@ -230,10 +236,11 @@ async fn handle_http(mut stream: TcpStream, state: Arc<ServerState>) {
         "Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close",
         route.body.len(),
     );
-    let response =
-        format!("HTTP/1.1 {status} {reason}\r\n{headers}\r\n\r\n{body}",
-            status = route.status, body = route.body,
-        );
+    let response = format!(
+        "HTTP/1.1 {status} {reason}\r\n{headers}\r\n\r\n{body}",
+        status = route.status,
+        body = route.body,
+    );
 
     let _ = stream.write_all(response.as_bytes()).await;
 }

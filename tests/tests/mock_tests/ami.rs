@@ -1,15 +1,13 @@
-mod common;
-mod mock;
-
 use std::time::Duration;
 
 use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_core::config::ReconnectPolicy;
-use mock::ami_server::{get_header, handle_login, MockAmiServer};
+use asterisk_rs_tests::mock::ami_server::{get_header, handle_login, MockAmiServer};
+use asterisk_rs_tests::helpers::init_tracing;
 
 #[tokio::test]
 async fn connect_and_login() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -43,7 +41,7 @@ async fn connect_and_login() {
 
 #[tokio::test]
 async fn login_rejected() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -89,7 +87,7 @@ async fn login_rejected() {
 
 #[tokio::test]
 async fn send_ping() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -140,7 +138,7 @@ async fn send_ping() {
 
 #[tokio::test]
 async fn send_action_timeout() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -185,7 +183,7 @@ async fn send_action_timeout() {
 
 #[tokio::test]
 async fn receive_events() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -235,7 +233,7 @@ async fn receive_events() {
 
 #[tokio::test]
 async fn graceful_disconnect() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -288,7 +286,7 @@ async fn graceful_disconnect() {
 
 #[tokio::test]
 async fn concurrent_actions() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -357,7 +355,7 @@ async fn concurrent_actions() {
 
 #[tokio::test]
 async fn md5_challenge_auth() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -427,7 +425,7 @@ async fn md5_challenge_auth() {
 
 #[tokio::test]
 async fn plaintext_fallback() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -492,7 +490,7 @@ async fn plaintext_fallback() {
 
 #[tokio::test]
 async fn command_response() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -570,7 +568,7 @@ async fn command_response() {
 
 #[tokio::test]
 async fn reconnect_disabled() {
-    common::init_tracing();
+    init_tracing();
 
     // no server running — connection should fail immediately with ReconnectPolicy::none()
     let result = AmiClient::builder()
@@ -590,7 +588,7 @@ async fn reconnect_disabled() {
 
 #[tokio::test]
 async fn filtered_subscription() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -653,7 +651,7 @@ async fn filtered_subscription() {
 
 #[tokio::test]
 async fn send_collecting_event_list() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -758,7 +756,7 @@ async fn send_collecting_event_list() {
 
 #[tokio::test]
 async fn channel_variables_in_response() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -816,7 +814,7 @@ async fn channel_variables_in_response() {
 
 #[tokio::test]
 async fn reconnect_on_disconnect() {
-    common::init_tracing();
+    init_tracing();
 
     // single listener that will accept two connections:
     // first: login then crash. second: login then handle ping.
@@ -949,7 +947,7 @@ async fn reconnect_on_disconnect() {
 
 #[tokio::test]
 async fn builder_missing_credentials() {
-    common::init_tracing();
+    init_tracing();
 
     let result = AmiClient::builder()
         .host("127.0.0.1")
@@ -965,7 +963,7 @@ async fn builder_missing_credentials() {
 
 #[tokio::test]
 async fn connection_state_transitions() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -1013,7 +1011,7 @@ async fn connection_state_transitions() {
 
 #[tokio::test]
 async fn concurrent_stress_50_actions() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -1081,7 +1079,7 @@ async fn concurrent_stress_50_actions() {
 
 #[tokio::test]
 async fn connection_drop_cancels_pending_actions() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -1115,7 +1113,7 @@ async fn connection_drop_cancels_pending_actions() {
 
 #[tokio::test]
 async fn multiple_subscribers_all_receive() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -1178,7 +1176,7 @@ async fn multiple_subscribers_all_receive() {
 
 #[tokio::test]
 async fn ping_interval_sends_periodic_pings() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();
@@ -1254,7 +1252,7 @@ async fn ping_interval_sends_periodic_pings() {
 
 #[tokio::test]
 async fn send_on_disconnected_client_returns_error() {
-    common::init_tracing();
+    init_tracing();
 
     let server = MockAmiServer::start().await;
     let port = server.port();

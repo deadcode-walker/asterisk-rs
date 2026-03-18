@@ -1,6 +1,3 @@
-mod common;
-mod mock;
-
 use std::time::Duration;
 
 use asterisk_rs_agi::channel::AgiChannel;
@@ -8,8 +5,9 @@ use asterisk_rs_agi::error::AgiError;
 use asterisk_rs_agi::handler::AgiHandler;
 use asterisk_rs_agi::request::AgiRequest;
 use asterisk_rs_agi::server::AgiServer;
-use mock::agi_client::{free_port, standard_env, MockAgiClient};
+use asterisk_rs_tests::mock::agi_client::{free_port, standard_env, MockAgiClient};
 use tokio::sync::mpsc;
+use asterisk_rs_tests::helpers::init_tracing;
 
 // ---------------------------------------------------------------------------
 // handlers
@@ -153,7 +151,7 @@ async fn spawn_server<H: AgiHandler>(
 
 #[tokio::test]
 async fn server_accepts_connection() {
-    common::init_tracing();
+    init_tracing();
 
     let (handle, shutdown, addr) = spawn_server(AnswerAndHangup, None).await;
     let env = standard_env();
@@ -182,7 +180,7 @@ async fn server_accepts_connection() {
 
 #[tokio::test]
 async fn handler_receives_request() {
-    common::init_tracing();
+    init_tracing();
 
     let (tx, mut rx) = mpsc::channel::<CapturedSession>(1);
     let handler = CapturingHandler { tx };
@@ -214,7 +212,7 @@ async fn handler_receives_request() {
 
 #[tokio::test]
 async fn handler_sends_commands() {
-    common::init_tracing();
+    init_tracing();
 
     let (handle, shutdown, addr) = spawn_server(AnswerAndHangup, None).await;
     let env = standard_env();
@@ -242,7 +240,7 @@ async fn handler_sends_commands() {
 
 #[tokio::test]
 async fn channel_hungup_detection() {
-    common::init_tracing();
+    init_tracing();
 
     let (tx, mut rx) = mpsc::channel::<String>(1);
     let handler = HangupDetector { tx };
@@ -281,7 +279,7 @@ async fn channel_hungup_detection() {
 
 #[tokio::test]
 async fn shutdown_handle() {
-    common::init_tracing();
+    init_tracing();
 
     let (handle, shutdown, _addr) = spawn_server(AnswerAndHangup, None).await;
 
@@ -297,7 +295,7 @@ async fn shutdown_handle() {
 
 #[tokio::test]
 async fn max_connections_enforced() {
-    common::init_tracing();
+    init_tracing();
 
     // gate mechanism: handler blocks until watch is set to true
     let (ready_tx, mut ready_rx) = mpsc::channel::<()>(2);
@@ -357,7 +355,7 @@ async fn max_connections_enforced() {
 
 #[tokio::test]
 async fn concurrent_sessions() {
-    common::init_tracing();
+    init_tracing();
 
     let (tx, mut rx) = mpsc::channel::<CapturedSession>(3);
     let handler = CapturingHandler { tx };
@@ -400,7 +398,7 @@ async fn concurrent_sessions() {
 
 #[tokio::test]
 async fn commands_with_arguments() {
-    common::init_tracing();
+    init_tracing();
 
     // handler that exercises several command types with arguments
     struct MultiCommandHandler;
@@ -497,7 +495,7 @@ async fn commands_with_arguments() {
 
 #[tokio::test]
 async fn all_say_commands() {
-    common::init_tracing();
+    init_tracing();
 
     struct SayHandler;
 
@@ -552,7 +550,7 @@ async fn all_say_commands() {
 
 #[tokio::test]
 async fn database_operations() {
-    common::init_tracing();
+    init_tracing();
 
     struct DbHandler;
 
@@ -599,7 +597,7 @@ async fn database_operations() {
 
 #[tokio::test]
 async fn channel_info_commands() {
-    common::init_tracing();
+    init_tracing();
 
     struct ChannelInfoHandler;
 
@@ -651,7 +649,7 @@ async fn channel_info_commands() {
 
 #[tokio::test]
 async fn variable_and_expression_commands() {
-    common::init_tracing();
+    init_tracing();
 
     struct VarHandler {
         tx: mpsc::Sender<String>,
@@ -716,7 +714,7 @@ async fn variable_and_expression_commands() {
 
 #[tokio::test]
 async fn error_response_510_invalid_command() {
-    common::init_tracing();
+    init_tracing();
 
     struct RawCommandHandler {
         tx: mpsc::Sender<u16>,
@@ -759,7 +757,7 @@ async fn error_response_510_invalid_command() {
 
 #[tokio::test]
 async fn error_response_520_usage() {
-    common::init_tracing();
+    init_tracing();
 
     struct UsageErrorHandler {
         tx: mpsc::Sender<u16>,
@@ -801,7 +799,7 @@ async fn error_response_520_usage() {
 
 #[tokio::test]
 async fn speech_commands() {
-    common::init_tracing();
+    init_tracing();
 
     struct SpeechHandler;
 
@@ -868,7 +866,7 @@ async fn speech_commands() {
 
 #[tokio::test]
 async fn gosub_with_and_without_args() {
-    common::init_tracing();
+    init_tracing();
 
     struct GosubHandler;
 
@@ -905,7 +903,7 @@ async fn gosub_with_and_without_args() {
 
 #[tokio::test]
 async fn record_file_with_options() {
-    common::init_tracing();
+    init_tracing();
 
     struct RecordHandler;
 

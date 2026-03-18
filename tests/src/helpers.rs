@@ -4,12 +4,10 @@ pub fn init_tracing() {
 }
 
 /// read test config from environment or use defaults
-#[allow(dead_code)]
 pub fn ami_host() -> String {
     std::env::var("ASTERISK_AMI_HOST").unwrap_or_else(|_| "127.0.0.1".into())
 }
 
-#[allow(dead_code)]
 pub fn ami_port() -> u16 {
     std::env::var("ASTERISK_AMI_PORT")
         .ok()
@@ -17,12 +15,10 @@ pub fn ami_port() -> u16 {
         .unwrap_or(5038)
 }
 
-#[allow(dead_code)]
 pub fn ari_host() -> String {
     std::env::var("ASTERISK_ARI_HOST").unwrap_or_else(|_| "127.0.0.1".into())
 }
 
-#[allow(dead_code)]
 pub fn ari_port() -> u16 {
     std::env::var("ASTERISK_ARI_PORT")
         .ok()
