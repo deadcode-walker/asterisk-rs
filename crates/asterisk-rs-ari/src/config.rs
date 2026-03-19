@@ -5,6 +5,19 @@ use url::Url;
 
 use crate::error::{AriError, Result};
 
+/// transport mode for ARI client communication
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TransportMode {
+    /// separate HTTP for REST + WebSocket for events (default)
+    #[default]
+    Http,
+    /// unified WebSocket for both REST and events
+    ///
+    /// requires Asterisk 20.14.0+ / 21.9.0+ / 22.4.0+
+    WebSocket,
+}
+
 /// ARI connection configuration
 #[derive(Debug, Clone)]
 pub struct AriConfig {
@@ -14,6 +27,7 @@ pub struct AriConfig {
     pub app_name: String,
     pub ws_url: Url,
     pub reconnect_policy: ReconnectPolicy,
+    pub transport_mode: TransportMode,
 }
 
 /// builder for constructing an [`AriConfig`] with validation
@@ -25,6 +39,7 @@ pub struct AriConfigBuilder {
     app_name: String,
     secure: bool,
     reconnect_policy: ReconnectPolicy,
+    transport_mode: TransportMode,
 }
 
 impl AriConfigBuilder {
@@ -37,6 +52,7 @@ impl AriConfigBuilder {
             app_name: app_name.into(),
             secure: false,
             reconnect_policy: ReconnectPolicy::default(),
+            transport_mode: TransportMode::default(),
         }
     }
 
@@ -75,6 +91,15 @@ impl AriConfigBuilder {
         self
     }
 
+    /// select the transport mode for REST communication
+    ///
+    /// [`TransportMode::Http`] (default) uses separate HTTP + WebSocket connections.
+    /// [`TransportMode::WebSocket`] sends REST requests over the event WebSocket.
+    pub fn transport(mut self, mode: TransportMode) -> Self {
+        self.transport_mode = mode;
+        self
+    }
+
     /// build the config, constructing base and websocket URLs
     ///
     /// fails if app_name is empty or URLs cannot be parsed
@@ -106,6 +131,28 @@ impl AriConfigBuilder {
             app_name: self.app_name,
             ws_url,
             reconnect_policy: self.reconnect_policy,
+            transport_mode: self.transport_mode,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_transport_mode_default_is_http() {
+        assert_eq!(TransportMode::default(), TransportMode::Http);
+    }
+
+    #[test]
+    fn test_builder_with_transport_mode() {
+        let config = AriConfigBuilder::new("test")
+            .username("admin")
+            .password("secret")
+            .transport(TransportMode::WebSocket)
+            .build()
+            .expect("should build config");
+        assert_eq!(config.transport_mode, TransportMode::WebSocket);
     }
 }
