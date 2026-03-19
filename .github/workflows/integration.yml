@@ -20,8 +20,9 @@ jobs:
          - name: Start Asterisk
            run: |
               docker run -d --name asterisk \
-                -p 5038:5038 -p 8088:8088 \
+                --network host \
                 -v ${{ github.workspace }}/tests/asterisk/conf:/etc/asterisk \
+                --add-host host.docker.internal:host-gateway \
                 --health-cmd "asterisk -rx 'core show version'" \
                 --health-interval 5s \
                 --health-timeout 3s \
