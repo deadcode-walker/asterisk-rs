@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- *(ami)* OriginateResponse event no longer swallowed as action response
+
+
+### Testing
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Fixed
+- *(ami)* OriginateResponse event no longer swallowed as action response
+
+
 ### Added
 - *(ari,ami)* added resource factory pattern and PBX abstraction
 - *(ari,ami)* added ExternalMediaParams, expanded OriginateParams, added CallTracker
