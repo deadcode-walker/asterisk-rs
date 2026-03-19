@@ -32,7 +32,10 @@ jobs:
    release-plz-pr:
       name: Release PR
       runs-on: ubuntu-latest
-      if: ${{ github.repository_owner == 'deadcode-walker' }}
+      # skip when the push is the release PR merge itself — prevents loop
+      if: >-
+         ${{ github.repository_owner == 'deadcode-walker'
+         && !startsWith(github.event.head_commit.message, 'chore: release') }}
       concurrency:
          group: release-plz-${{ github.ref }}
          cancel-in-progress: false
