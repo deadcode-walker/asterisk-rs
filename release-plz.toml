@@ -9,8 +9,6 @@ git_tag_enable = false
 # enable dependency updates in release PRs
 dependencies_update = true
 
-# only release when the release PR is merged, not on every push
-release_always = false
 
 # only prepare releases when meaningful commits land
 release_commits = "^(feat|fix|refactor|perf).*"
