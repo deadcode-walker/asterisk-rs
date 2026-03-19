@@ -11,6 +11,8 @@ pub mod resources;
 pub(crate) mod transport;
 pub mod websocket;
 pub mod pending;
+pub mod media;
+pub mod server;
 pub(crate) mod ws_transport;
 
 pub use client::AriClient;
