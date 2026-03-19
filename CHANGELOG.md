@@ -8,6 +8,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- *(ari,ami)* added resource factory pattern and PBX abstraction
+- *(ari,ami)* added ExternalMediaParams, expanded OriginateParams, added CallTracker
+- *(ari)* added outbound WebSocket server and media channel driver
+- *(ari)* added REST-over-WebSocket transport mode
+
+
+### Changed
+- *(tests)* moved inline tests to dedicated /tests/ crate
+
+
+### Fixed
+- resolved clippy warnings, fmt, and adapted existing tests
+
+
+### Other
+- cargo fmt
+- consolidated releases, CI fixes, documentation updates
+
+
+### Testing
+- added comprehensive tests for all new features
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Added
+- *(ari)* added outbound WebSocket server and media channel driver
+- *(ari,ami)* added resource factory pattern and PBX abstraction
+- *(ari)* added REST-over-WebSocket transport mode
+- *(ari,ami)* added ExternalMediaParams, expanded OriginateParams, added CallTracker
+
+
+### Changed
+- *(tests)* moved inline tests to dedicated /tests/ crate
+
+
+### Fixed
+- resolved clippy warnings, fmt, and adapted existing tests
+
+
+### Other
+- consolidated releases, CI fixes, documentation updates
+
+
+### Testing
+- added comprehensive tests for all new features
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Added
+- *(ari,ami)* added resource factory pattern and PBX abstraction
+- *(ari,ami)* added ExternalMediaParams, expanded OriginateParams, added CallTracker
+
+
+### Changed
+- *(tests)* moved inline tests to dedicated /tests/ crate
+
+
+### Other
+- cargo fmt
+
+
+### Testing
+- added comprehensive tests for all new features
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Added
 
 - `asterisk-rs-core`: shared error types, event bus with filtered subscriptions, reconnection policy, credentials with secret redaction
 - `asterisk-rs-core`: typed domain constants -- hangup causes, channel states, device states, dial statuses, CDR dispositions, peer statuses, queue strategies, extension states, AGI status codes
