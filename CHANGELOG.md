@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(ami)* OriginateResponse event no longer swallowed as action response
 
 
+### Other
+- release ([#11](https://github.com/deadcode-walker/asterisk-rs/pull/11))
+
+
+### Testing
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Fixed
+- *(ami)* OriginateResponse event no longer swallowed as action response
+
+
+### Other
+- release ([#11](https://github.com/deadcode-walker/asterisk-rs/pull/11))
+
+
+### Fixed
+- *(ami)* OriginateResponse event no longer swallowed as action response
+
+
 ### Testing
 - restructure test architecture + add massive coverage
 - add 120 unit tests across all crates (Wave 1)
