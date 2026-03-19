@@ -107,7 +107,7 @@
 | `list()` | list all bridges |
 | `get()` | get details for a specific bridge |
 
-### Channel (`ChannelHandle`, 30 operations)
+### Channel (`ChannelHandle`, 32 operations)
 
 | Method | Description |
 |--------|-------------|
@@ -137,10 +137,12 @@
 | `get()` | get details for a specific channel |
 | `originate()` | originate a new channel |
 | `create()` | create a channel without dialing it |
+| `external_media()` | start an external media session |
 | `list()` | list all active channels |
 | `get()` | get details for a specific channel |
 | `originate()` | originate a new channel |
 | `create()` | create a channel without dialing it |
+| `external_media()` | start an external media session |
 
 ### Device State (4 operations)
 

@@ -8,6 +8,7 @@ asterisk-rs is a Rust workspace providing async clients for the three Asterisk P
 
 ```
 asterisk-rs (umbrella, feature-gated re-exports)
+  |  pbx.rs        -- Pbx high-level call abstraction wrapping AmiClient + CallTracker
   |
   +-- asterisk-rs-core (shared foundation)
   |     error.rs    -- Error, ConnectionError, AuthError, TimeoutError, ProtocolError
@@ -23,6 +24,7 @@ asterisk-rs (umbrella, feature-gated re-exports)
   |     event.rs      -- AmiEvent enum (typed variants + Unknown), implements core::Event
   |     connection.rs -- ConnectionManager: background task, reconnect loop, message dispatch, keep-alive ping
   |     client.rs     -- AmiClient builder, send_action<A>, MD5 challenge-response auth, ping_interval config
+  |     tracker.rs    -- CallTracker: correlates AMI events by UniqueID into CompletedCall records
   |
   +-- asterisk-rs-agi (TCP server, port 4573)
   |     server.rs     -- AgiServer<H: AgiHandler>: TCP listener, Semaphore concurrency
@@ -33,13 +35,17 @@ asterisk-rs (umbrella, feature-gated re-exports)
   |     response.rs   -- AgiResponse: parse "200 result=X (data) endpos=N"
   |
   +-- asterisk-rs-ari (HTTP + WebSocket, port 8088)
-        client.rs     -- AriClient: reqwest REST + WsEventListener, Basic Auth
-        config.rs     -- AriConfigBuilder: constructs base_url + ws_url
-        websocket.rs  -- WsEventListener: background task, reconnect, JSON deserialization
+        client.rs     -- AriClient: transport-abstracted REST + event subscription
+        config.rs     -- AriConfigBuilder: base_url, ws_url, TransportMode (Http|WebSocket)
+        transport.rs  -- TransportInner enum (HttpTransport | WsTransport), TransportResponse
+        ws_transport.rs -- WsTransport: unified REST + events over single WebSocket, request correlation
+        websocket.rs  -- WsEventListener: background task for event-only WS (HTTP transport mode)
         event.rs      -- AriEvent enum (serde tagged on "type"), AriMessage wrapper with metadata
+        pending.rs    -- PendingChannel/Bridge/Playback: race-free resource creation with pre-event subscription
+        server.rs     -- AriServer: outbound WebSocket server accepting connections from Asterisk 22+
+        media.rs      -- MediaChannel: chan_websocket audio exchange, MediaEvent/MediaCommand typed protocol
         resources/    -- Handle pattern: ChannelHandle, BridgeHandle, PlaybackHandle, RecordingHandle
-                         + free functions (list, get, create, originate) per resource
-```
+                         + free functions (list, get, create, originate, external_media) per resource
 
 **Dependency direction**: protocol crates depend on core; umbrella depends on all. Protocol crates never depend on each other.
 
@@ -134,9 +140,45 @@ All clients and servers use builder pattern for configuration:
 
 - `AmiClient::builder().host().port().credentials().ping_interval().build().await?` -- connect + login
 - `AgiServer::builder().bind().handler().max_connections().build().await?` -- bind listener, returns `(AgiServer, ShutdownHandle)`
-- `AriConfigBuilder::new("app_name").host().port().username().password().build()?` -- then `AriClient::connect(config).await?`
+- `AriConfigBuilder::new("app_name").host().port().username().password().transport(TransportMode::WebSocket).build()?` -- then `AriClient::connect(config).await?`
+- `AriServer::builder().bind(addr).build().await?` -- returns `(AriServer, ShutdownHandle)` for outbound WS
+- `ExternalMediaParams::new(app, host, format).encapsulation("rtp").transport("udp")` -- typed external media params
 
 Builders validate required fields in `.build()` and return `Result`.
+
+### Transport Modes (ARI)
+
+ARI supports two transport modes selected via `AriConfigBuilder::transport()`:
+- `TransportMode::Http` (default) -- separate HTTP for REST + WebSocket for events
+- `TransportMode::WebSocket` -- unified WebSocket for both REST and events (requires Asterisk 20.14.0+)
+
+### Resource Factory (ARI)
+
+Solves the race condition between originate and event subscription:
+```rust
+let pending = client.channel(); // pre-generates channel ID, subscribes to events
+let (handle, events) = pending.originate(params).await?; // StasisStart guaranteed buffered
+```
+
+Also available: `client.bridge()`, `client.playback()`.
+
+### Call Tracker (AMI)
+
+`CallTracker` correlates AMI events by UniqueID into `CompletedCall` records:
+```rust
+let (tracker, mut rx) = client.call_tracker();
+let call = rx.recv().await; // CompletedCall with channel, unique_id, cause, events
+```
+
+### PBX Abstraction (umbrella)
+
+High-level call management wrapping AmiClient + CallTracker:
+```rust
+let pbx = Pbx::new(client);
+let call = pbx.dial("SIP/100", "SIP/200", None).await?;
+call.wait_for_answer(Duration::from_secs(30)).await?;
+call.hangup().await?;
+```
 
 ### Event System
 
@@ -215,9 +257,16 @@ AMI events carry channel variables as `ChanVariable(name): value` headers on the
 | `crates/asterisk-rs-ami/src/connection.rs` | AMI background connection task |
 | `crates/asterisk-rs-agi/src/handler.rs` | AgiHandler trait definition |
 | `crates/asterisk-rs-agi/src/server.rs` | FastAGI server accept loop |
-| `crates/asterisk-rs-ari/src/client.rs` | AriClient REST + WebSocket API |
+| `crates/asterisk-rs-ari/src/client.rs` | AriClient transport-abstracted REST API |
+| `crates/asterisk-rs-ari/src/transport.rs` | Transport abstraction: HttpTransport, WsTransport dispatch |
+| `crates/asterisk-rs-ari/src/ws_transport.rs` | Unified WebSocket transport with REST request correlation |
 | `crates/asterisk-rs-ari/src/event.rs` | AriEvent serde-tagged enum + supporting types |
-| `crates/asterisk-rs-ari/src/resources/channel.rs` | ChannelHandle + OriginateParams |
+| `crates/asterisk-rs-ari/src/pending.rs` | PendingChannel/Bridge/Playback race-free resource factory |
+| `crates/asterisk-rs-ari/src/server.rs` | AriServer outbound WebSocket (Asterisk connects to app) |
+| `crates/asterisk-rs-ari/src/media.rs` | MediaChannel for chan_websocket audio exchange |
+| `crates/asterisk-rs-ari/src/resources/channel.rs` | ChannelHandle, OriginateParams, ExternalMediaParams |
+| `crates/asterisk-rs-ami/src/tracker.rs` | CallTracker: AMI event correlation by UniqueID |
+| `crates/asterisk-rs/src/pbx.rs` | Pbx high-level call abstraction (dial, hangup, wait_for_answer) |
 | `crates/asterisk-rs/src/lib.rs` | Umbrella crate feature-gated re-exports |
 | `deny.toml` | License and security policy for dependencies |
 
@@ -258,9 +307,9 @@ All tests live in the external `tests/` crate (no `#[cfg(test)]` in production c
 
 | Binary | Tests | What |
 |--------|-------|------|
-| `unit` | ~839 | Pure data: codec, serialization, types, events, actions, responses |
-| `mock_integration` | ~198 | Mock servers: connection lifecycle, protocol exchanges, adversarial inputs |
-| `live_integration` | ~69 | Real Asterisk (Docker): full protocol coverage across AMI, AGI, ARI |
+| `unit` | ~880 | Pure data: codec, serialization, types, events, actions, responses, media protocol |
+| `mock_integration` | ~210 | Mock servers: connection lifecycle, protocol exchanges, resource factory, media channel |
+| `live_integration` | ~73 | Real Asterisk (Docker): full protocol coverage across AMI, AGI, ARI + tracker, transport |
 
 ### Test Infrastructure (`tests/src/mock/`)
 
