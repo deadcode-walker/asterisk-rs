@@ -1,5 +1,7 @@
 //! channel operations — originate, answer, hangup, dtmf, hold, mute, etc.
 
+use std::collections::HashMap;
+
 use crate::client::{url_encode, AriClient};
 use crate::error::Result;
 use crate::event::{Channel, LiveRecording, Playback};
@@ -22,6 +24,88 @@ pub struct OriginateParams {
     pub caller_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<i32>,
+    #[serde(rename = "channelId", skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+    #[serde(rename = "otherChannelId", skip_serializing_if = "Option::is_none")]
+    pub other_channel_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub originator: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub formats: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variables: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// parameters for starting an external media session
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ExternalMediaParams {
+    pub app: String,
+    pub external_host: String,
+    pub format: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encapsulation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    #[serde(rename = "channelId", skip_serializing_if = "Option::is_none")]
+    pub channel_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variables: Option<HashMap<String, String>>,
+}
+
+impl ExternalMediaParams {
+    pub fn new(
+        app: impl Into<String>,
+        external_host: impl Into<String>,
+        format: impl Into<String>,
+    ) -> Self {
+        Self {
+            app: app.into(),
+            external_host: external_host.into(),
+            format: format.into(),
+            encapsulation: None,
+            transport: None,
+            connection_type: None,
+            direction: None,
+            channel_id: None,
+            variables: None,
+        }
+    }
+
+    pub fn encapsulation(mut self, encapsulation: impl Into<String>) -> Self {
+        self.encapsulation = Some(encapsulation.into());
+        self
+    }
+
+    pub fn transport(mut self, transport: impl Into<String>) -> Self {
+        self.transport = Some(transport.into());
+        self
+    }
+
+    pub fn connection_type(mut self, connection_type: impl Into<String>) -> Self {
+        self.connection_type = Some(connection_type.into());
+        self
+    }
+
+    pub fn direction(mut self, direction: impl Into<String>) -> Self {
+        self.direction = Some(direction.into());
+        self
+    }
+
+    pub fn channel_id(mut self, channel_id: impl Into<String>) -> Self {
+        self.channel_id = Some(channel_id.into());
+        self
+    }
+
+    pub fn variables(mut self, variables: HashMap<String, String>) -> Self {
+        self.variables = Some(variables);
+        self
+    }
 }
 
 /// ari channel variable response
@@ -277,23 +361,8 @@ impl ChannelHandle {
     }
 
     /// start an external media session
-    pub async fn external_media(
-        &self,
-        app: &str,
-        external_host: &str,
-        format: &str,
-    ) -> Result<Channel> {
-        self.client
-            .post(
-                "/channels/externalMedia",
-                &serde_json::json!({
-                    "app": app,
-                    "external_host": external_host,
-                    "format": format,
-                    "channelId": self.id,
-                }),
-            )
-            .await
+    pub async fn external_media(&self, params: &ExternalMediaParams) -> Result<Channel> {
+        self.client.post("/channels/externalMedia", params).await
     }
 }
 /// list all active channels
@@ -322,4 +391,102 @@ pub async fn create(client: &AriClient, endpoint: &str, app: &str) -> Result<Cha
             }),
         )
         .await
+}
+
+/// start an external media session
+pub async fn external_media(client: &AriClient, params: &ExternalMediaParams) -> Result<Channel> {
+    client.post("/channels/externalMedia", params).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_external_media_params_new() {
+        let params = ExternalMediaParams::new("myapp", "192.168.1.1:8000", "ulaw");
+        assert_eq!(params.app, "myapp");
+        assert_eq!(params.external_host, "192.168.1.1:8000");
+        assert_eq!(params.format, "ulaw");
+        assert!(params.encapsulation.is_none());
+        assert!(params.transport.is_none());
+        assert!(params.connection_type.is_none());
+        assert!(params.direction.is_none());
+        assert!(params.channel_id.is_none());
+        assert!(params.variables.is_none());
+    }
+
+    #[test]
+    fn test_external_media_params_builder() {
+        let vars = HashMap::from([("key".to_string(), "val".to_string())]);
+        let params = ExternalMediaParams::new("app", "host:1234", "slin16")
+            .encapsulation("rtp")
+            .transport("udp")
+            .connection_type("client")
+            .direction("both")
+            .channel_id("chan-123")
+            .variables(vars.clone());
+        assert_eq!(params.encapsulation.as_deref(), Some("rtp"));
+        assert_eq!(params.transport.as_deref(), Some("udp"));
+        assert_eq!(params.connection_type.as_deref(), Some("client"));
+        assert_eq!(params.direction.as_deref(), Some("both"));
+        assert_eq!(params.channel_id.as_deref(), Some("chan-123"));
+        assert_eq!(params.variables, Some(vars));
+    }
+
+    #[test]
+    fn test_external_media_params_serialization() {
+        let params = ExternalMediaParams::new("app", "host:1234", "ulaw")
+            .channel_id("ext-1");
+        let json = serde_json::to_value(&params).expect("serialization should succeed");
+        assert_eq!(json["app"], "app");
+        assert_eq!(json["external_host"], "host:1234");
+        assert_eq!(json["format"], "ulaw");
+        assert_eq!(json["channelId"], "ext-1");
+        // optional fields omitted when none
+        assert!(json.get("encapsulation").is_none());
+        assert!(json.get("transport").is_none());
+        assert!(json.get("variables").is_none());
+    }
+
+    #[test]
+    fn test_originate_params_new_fields() {
+        let vars = HashMap::from([("CALLERID(name)".to_string(), "Test".to_string())]);
+        let params = OriginateParams {
+            endpoint: "PJSIP/100".to_string(),
+            channel_id: Some("chan-orig".to_string()),
+            other_channel_id: Some("chan-other".to_string()),
+            originator: Some("orig-chan".to_string()),
+            formats: Some("ulaw,alaw".to_string()),
+            variables: Some(vars),
+            label: Some("my-label".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&params).expect("serialization should succeed");
+        assert_eq!(json["channelId"], "chan-orig");
+        assert_eq!(json["otherChannelId"], "chan-other");
+        assert_eq!(json["originator"], "orig-chan");
+        assert_eq!(json["formats"], "ulaw,alaw");
+        assert_eq!(json["variables"]["CALLERID(name)"], "Test");
+        assert_eq!(json["label"], "my-label");
+    }
+
+    #[test]
+    fn test_originate_params_skip_none() {
+        let params = OriginateParams {
+            endpoint: "PJSIP/200".to_string(),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&params).expect("serialization should succeed");
+        assert_eq!(json["endpoint"], "PJSIP/200");
+        // all optional fields should be absent
+        assert!(json.get("channelId").is_none());
+        assert!(json.get("otherChannelId").is_none());
+        assert!(json.get("originator").is_none());
+        assert!(json.get("formats").is_none());
+        assert!(json.get("variables").is_none());
+        assert!(json.get("label").is_none());
+        assert!(json.get("extension").is_none());
+        assert!(json.get("timeout").is_none());
+    }
 }

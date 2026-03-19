@@ -31,8 +31,10 @@ pub mod connection;
 pub mod error;
 pub mod event;
 pub mod response;
+pub mod tracker;
 
 pub use client::{AmiClient, AmiClientBuilder};
 pub use error::AmiError;
 pub use event::AmiEvent;
 pub use response::EventListResponse;
+pub use tracker::{CallTracker, CompletedCall};

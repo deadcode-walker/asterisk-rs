@@ -82,6 +82,16 @@ impl AmiClient {
         self.event_bus.subscribe()
     }
 
+    /// create a call tracker that correlates events into call lifecycle objects
+    pub fn call_tracker(
+        &self,
+    ) -> (
+        crate::tracker::CallTracker,
+        tokio::sync::mpsc::Receiver<crate::tracker::CompletedCall>,
+    ) {
+        crate::tracker::CallTracker::new(self.subscribe())
+    }
+
     /// send an action that returns its results as a list of events
     ///
     /// actions like `Status`, `CoreShowChannels`, `QueueStatus`, etc.
