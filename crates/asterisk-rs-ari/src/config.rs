@@ -135,24 +135,3 @@ impl AriConfigBuilder {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_transport_mode_default_is_http() {
-        assert_eq!(TransportMode::default(), TransportMode::Http);
-    }
-
-    #[test]
-    fn test_builder_with_transport_mode() {
-        let config = AriConfigBuilder::new("test")
-            .username("admin")
-            .password("secret")
-            .transport(TransportMode::WebSocket)
-            .build()
-            .expect("should build config");
-        assert_eq!(config.transport_mode, TransportMode::WebSocket);
-    }
-}

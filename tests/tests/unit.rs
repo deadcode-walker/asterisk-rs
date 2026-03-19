@@ -8,4 +8,6 @@ mod unit {
     pub mod ami_response;
     pub mod ari;
     pub mod core_tests;
+    pub mod ami_tracker;
+    pub mod pbx;
 }

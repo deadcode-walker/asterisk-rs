@@ -14,6 +14,7 @@ asterisk-rs-ami = { path = "../crates/asterisk-rs-ami" }
 asterisk-rs-agi = { path = "../crates/asterisk-rs-agi" }
 asterisk-rs-ari = { path = "../crates/asterisk-rs-ari" }
 asterisk-rs-core = { path = "../crates/asterisk-rs-core" }
+asterisk-rs = { path = "../crates/asterisk-rs", features = ["ami"] }
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true, features = ["codec"] }
 futures-util.workspace = true

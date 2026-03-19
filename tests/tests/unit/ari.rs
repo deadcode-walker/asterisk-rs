@@ -20,6 +20,11 @@ use asterisk_rs_ari::resources::sound::{Sound, SoundFormat};
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_core::error::{AuthError, ConnectionError};
 use std::time::Duration;
+use asterisk_rs_ari::config::TransportMode;
+use asterisk_rs_ari::media::{MediaCommand, MediaEvent};
+use asterisk_rs_ari::resources::channel::ExternalMediaParams;
+use asterisk_rs_ari::server::AriServerBuilder;
+use std::collections::HashMap;
 
 // ── config tests (12 migrated) ──────────────────────────────────────────────
 
@@ -1987,4 +1992,318 @@ fn application_move_failed_no_args() {
         }
         other => panic!("expected ApplicationMoveFailed, got {other:?}"),
     }
+}
+
+// ── transport mode tests (migrated from config.rs) ────────────────────────
+
+#[test]
+fn transport_mode_default_is_http() {
+    assert_eq!(TransportMode::default(), TransportMode::Http);
+}
+
+#[test]
+fn builder_with_transport_mode() {
+    let config = AriConfigBuilder::new("test")
+        .username("admin")
+        .password("secret")
+        .transport(TransportMode::WebSocket)
+        .build()
+        .expect("should build config");
+    assert_eq!(config.transport_mode, TransportMode::WebSocket);
+}
+
+// ── external media / originate params tests (migrated from channel.rs) ────
+
+#[test]
+fn external_media_params_new() {
+    let params = ExternalMediaParams::new("myapp", "192.168.1.1:8000", "ulaw");
+    assert_eq!(params.app, "myapp");
+    assert_eq!(params.external_host, "192.168.1.1:8000");
+    assert_eq!(params.format, "ulaw");
+    assert!(params.encapsulation.is_none());
+    assert!(params.transport.is_none());
+    assert!(params.connection_type.is_none());
+    assert!(params.direction.is_none());
+    assert!(params.channel_id.is_none());
+    assert!(params.variables.is_none());
+}
+
+#[test]
+fn external_media_params_builder() {
+    let vars = HashMap::from([("key".to_string(), "val".to_string())]);
+    let params = ExternalMediaParams::new("app", "host:1234", "slin16")
+        .encapsulation("rtp")
+        .transport("udp")
+        .connection_type("client")
+        .direction("both")
+        .channel_id("chan-123")
+        .variables(vars.clone());
+    assert_eq!(params.encapsulation.as_deref(), Some("rtp"));
+    assert_eq!(params.transport.as_deref(), Some("udp"));
+    assert_eq!(params.connection_type.as_deref(), Some("client"));
+    assert_eq!(params.direction.as_deref(), Some("both"));
+    assert_eq!(params.channel_id.as_deref(), Some("chan-123"));
+    assert_eq!(params.variables, Some(vars));
+}
+
+#[test]
+fn external_media_params_serialization() {
+    let params = ExternalMediaParams::new("app", "host:1234", "ulaw").channel_id("ext-1");
+    let json = serde_json::to_value(&params).expect("serialization should succeed");
+    assert_eq!(json["app"], "app");
+    assert_eq!(json["external_host"], "host:1234");
+    assert_eq!(json["format"], "ulaw");
+    assert_eq!(json["channelId"], "ext-1");
+    // optional fields omitted when none
+    assert!(json.get("encapsulation").is_none());
+    assert!(json.get("transport").is_none());
+    assert!(json.get("variables").is_none());
+}
+
+#[test]
+fn originate_params_new_fields() {
+    let vars = HashMap::from([("CALLERID(name)".to_string(), "Test".to_string())]);
+    let params = OriginateParams {
+        endpoint: "PJSIP/100".to_string(),
+        channel_id: Some("chan-orig".to_string()),
+        other_channel_id: Some("chan-other".to_string()),
+        originator: Some("orig-chan".to_string()),
+        formats: Some("ulaw,alaw".to_string()),
+        variables: Some(vars),
+        label: Some("my-label".to_string()),
+        ..Default::default()
+    };
+    let json = serde_json::to_value(&params).expect("serialization should succeed");
+    assert_eq!(json["channelId"], "chan-orig");
+    assert_eq!(json["otherChannelId"], "chan-other");
+    assert_eq!(json["originator"], "orig-chan");
+    assert_eq!(json["formats"], "ulaw,alaw");
+    assert_eq!(json["variables"]["CALLERID(name)"], "Test");
+    assert_eq!(json["label"], "my-label");
+}
+
+#[test]
+fn originate_params_skip_none() {
+    let params = OriginateParams {
+        endpoint: "PJSIP/200".to_string(),
+        ..Default::default()
+    };
+    let json = serde_json::to_value(&params).expect("serialization should succeed");
+    assert_eq!(json["endpoint"], "PJSIP/200");
+    // all optional fields should be absent
+    assert!(json.get("channelId").is_none());
+    assert!(json.get("otherChannelId").is_none());
+    assert!(json.get("originator").is_none());
+    assert!(json.get("formats").is_none());
+    assert!(json.get("variables").is_none());
+    assert!(json.get("label").is_none());
+    assert!(json.get("extension").is_none());
+    assert!(json.get("timeout").is_none());
+}
+
+// ── media channel tests (migrated from media.rs) ──────────────────────────
+
+#[test]
+fn media_command_answer_serialization() {
+    let json = serde_json::to_string(&MediaCommand::Answer).expect("serialize answer");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse answer json");
+    assert_eq!(parsed["command"], "ANSWER");
+}
+
+#[test]
+fn media_command_hangup_with_cause() {
+    let cmd = MediaCommand::Hangup { cause: Some(16) };
+    let json = serde_json::to_string(&cmd).expect("serialize hangup");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse hangup json");
+    assert_eq!(parsed["command"], "HANGUP");
+    assert_eq!(parsed["cause"], 16);
+}
+
+#[test]
+fn media_command_hangup_without_cause() {
+    let cmd = MediaCommand::Hangup { cause: None };
+    let json = serde_json::to_string(&cmd).expect("serialize hangup no cause");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse hangup json");
+    assert_eq!(parsed["command"], "HANGUP");
+    assert!(parsed.get("cause").is_none());
+}
+
+#[test]
+fn media_command_stop_buffering_with_correlation_id() {
+    let cmd = MediaCommand::StopMediaBuffering {
+        correlation_id: Some("req-42".to_string()),
+    };
+    let json = serde_json::to_string(&cmd).expect("serialize stop buffering");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("parse stop buffering json");
+    assert_eq!(parsed["command"], "STOP_MEDIA_BUFFERING");
+    assert_eq!(parsed["correlation_id"], "req-42");
+}
+
+#[test]
+fn media_event_media_start_deserialization() {
+    let json = r#"{
+        "event": "MEDIA_START",
+        "connection_id": "abc-123",
+        "channel": "WebSocket/ws-00000001",
+        "channel_id": "chan-001",
+        "format": "ulaw",
+        "optimal_frame_size": 160,
+        "ptime": 20,
+        "channel_variables": {"CALLERID(num)": "1234"}
+    }"#;
+
+    let event: MediaEvent = serde_json::from_str(json).expect("deserialize MEDIA_START");
+    match event {
+        MediaEvent::MediaStart {
+            connection_id,
+            channel,
+            channel_id,
+            format,
+            optimal_frame_size,
+            ptime,
+            channel_variables,
+        } => {
+            assert_eq!(connection_id, "abc-123");
+            assert_eq!(channel, "WebSocket/ws-00000001");
+            assert_eq!(channel_id, "chan-001");
+            assert_eq!(format, "ulaw");
+            assert_eq!(optimal_frame_size, 160);
+            assert_eq!(ptime, 20);
+            assert_eq!(
+                channel_variables.get("CALLERID(num)"),
+                Some(&"1234".to_string())
+            );
+        }
+        other => panic!("expected MediaStart, got {other:?}"),
+    }
+}
+
+#[test]
+fn media_event_dtmf_deserialization() {
+    let json = r#"{"event": "DTMF_END", "digit": "5", "duration_ms": 120}"#;
+    let event: MediaEvent = serde_json::from_str(json).expect("deserialize DTMF_END");
+    match event {
+        MediaEvent::DtmfEnd { digit, duration_ms } => {
+            assert_eq!(digit, "5");
+            assert_eq!(duration_ms, 120);
+        }
+        other => panic!("expected DtmfEnd, got {other:?}"),
+    }
+}
+
+#[test]
+fn media_event_xoff_deserialization() {
+    let json = r#"{"event": "MEDIA_XOFF"}"#;
+    let event: MediaEvent = serde_json::from_str(json).expect("deserialize MEDIA_XOFF");
+    assert!(matches!(event, MediaEvent::MediaXoff));
+}
+
+#[test]
+fn media_event_status_deserialization() {
+    let json = r#"{
+        "event": "STATUS",
+        "channel": "WebSocket/ws-00000001",
+        "format": "ulaw",
+        "queue_size": 5,
+        "buffering_active": true,
+        "media_paused": false
+    }"#;
+    let event: MediaEvent = serde_json::from_str(json).expect("deserialize STATUS");
+    match event {
+        MediaEvent::Status {
+            channel,
+            format,
+            queue_size,
+            buffering_active,
+            media_paused,
+        } => {
+            assert_eq!(channel, "WebSocket/ws-00000001");
+            assert_eq!(format, "ulaw");
+            assert_eq!(queue_size, 5);
+            assert!(buffering_active);
+            assert!(!media_paused);
+        }
+        other => panic!("expected Status, got {other:?}"),
+    }
+}
+
+#[test]
+fn media_event_buffering_completed_with_correlation() {
+    let json = r#"{"event": "MEDIA_BUFFERING_COMPLETED", "correlation_id": "req-42"}"#;
+    let event: MediaEvent =
+        serde_json::from_str(json).expect("deserialize MEDIA_BUFFERING_COMPLETED");
+    match event {
+        MediaEvent::MediaBufferingCompleted { correlation_id } => {
+            assert_eq!(correlation_id.as_deref(), Some("req-42"));
+        }
+        other => panic!("expected MediaBufferingCompleted, got {other:?}"),
+    }
+}
+
+#[test]
+fn media_event_queue_drained_deserialization() {
+    let json = r#"{"event": "QUEUE_DRAINED"}"#;
+    let event: MediaEvent = serde_json::from_str(json).expect("deserialize QUEUE_DRAINED");
+    assert!(matches!(event, MediaEvent::QueueDrained));
+}
+
+#[test]
+fn media_start_without_channel_variables() {
+    // channel_variables should default to empty map when absent
+    let json = r#"{
+        "event": "MEDIA_START",
+        "connection_id": "abc-123",
+        "channel": "WebSocket/ws-00000001",
+        "channel_id": "chan-001",
+        "format": "ulaw",
+        "optimal_frame_size": 160,
+        "ptime": 20
+    }"#;
+    let event: MediaEvent =
+        serde_json::from_str(json).expect("deserialize MEDIA_START without vars");
+    match event {
+        MediaEvent::MediaStart {
+            channel_variables, ..
+        } => {
+            assert!(channel_variables.is_empty());
+        }
+        other => panic!("expected MediaStart, got {other:?}"),
+    }
+}
+
+// ── outbound ws server tests (migrated from server.rs) ─────────────────────
+
+#[tokio::test]
+async fn server_binds_to_port() {
+    // port 0 lets the OS pick an available port
+    let (server, handle) = AriServerBuilder::new()
+        .bind(([127, 0, 0, 1], 0).into())
+        .build()
+        .await
+        .expect("should bind to ephemeral port");
+
+    let addr = server.local_addr().expect("should have local address");
+    assert_eq!(addr.ip(), std::net::Ipv4Addr::LOCALHOST);
+    assert_ne!(addr.port(), 0, "OS should assign a real port");
+
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn shutdown_handle_stops_server() {
+    let (server, handle) = AriServerBuilder::new()
+        .bind(([127, 0, 0, 1], 0).into())
+        .build()
+        .await
+        .expect("should bind");
+
+    handle.shutdown();
+
+    // run should return promptly after shutdown
+    let result = tokio::time::timeout(Duration::from_secs(2), server.run(|_session| async {}))
+        .await
+        .expect("server should stop within timeout");
+
+    assert!(result.is_ok());
 }

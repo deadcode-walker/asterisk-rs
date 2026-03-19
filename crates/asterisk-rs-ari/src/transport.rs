@@ -127,34 +127,3 @@ fn parse_method(method: &str) -> Result<reqwest::Method> {
         ))),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_method_valid() {
-        assert_eq!(
-            parse_method("GET").expect("should parse GET"),
-            reqwest::Method::GET
-        );
-        assert_eq!(
-            parse_method("POST").expect("should parse POST"),
-            reqwest::Method::POST
-        );
-        assert_eq!(
-            parse_method("PUT").expect("should parse PUT"),
-            reqwest::Method::PUT
-        );
-        assert_eq!(
-            parse_method("DELETE").expect("should parse DELETE"),
-            reqwest::Method::DELETE
-        );
-    }
-
-    #[test]
-    fn test_parse_method_invalid() {
-        let err = parse_method("PATCH").expect_err("should reject PATCH");
-        assert!(matches!(err, AriError::WebSocket(_)));
-    }
-}

@@ -76,6 +76,7 @@ dependencies = [
 name = "asterisk-rs-tests"
 version = "0.0.0"
 dependencies = [
+ "asterisk-rs",
  "asterisk-rs-agi",
  "asterisk-rs-ami",
  "asterisk-rs-ari",
