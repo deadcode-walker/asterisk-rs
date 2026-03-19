@@ -436,8 +436,7 @@ mod tests {
 
     #[test]
     fn test_external_media_params_serialization() {
-        let params = ExternalMediaParams::new("app", "host:1234", "ulaw")
-            .channel_id("ext-1");
+        let params = ExternalMediaParams::new("app", "host:1234", "ulaw").channel_id("ext-1");
         let json = serde_json::to_value(&params).expect("serialization should succeed");
         assert_eq!(json["app"], "app");
         assert_eq!(json["external_host"], "host:1234");

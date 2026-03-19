@@ -78,8 +78,7 @@ impl PendingChannel {
         let id = generate_pending_id("channel");
         let filter_id = id.clone();
         let events = client.subscribe_filtered(move |msg| {
-            event_channel_id(&msg.event)
-                .is_some_and(|ch_id| ch_id == filter_id)
+            event_channel_id(&msg.event).is_some_and(|ch_id| ch_id == filter_id)
         });
 
         Self { id, client, events }
@@ -127,8 +126,7 @@ impl PendingBridge {
         let id = generate_pending_id("bridge");
         let filter_id = id.clone();
         let events = client.subscribe_filtered(move |msg| {
-            event_bridge_id(&msg.event)
-                .is_some_and(|br_id| br_id == filter_id)
+            event_bridge_id(&msg.event).is_some_and(|br_id| br_id == filter_id)
         });
 
         Self { id, client, events }
@@ -176,8 +174,7 @@ impl PendingPlayback {
         let id = generate_pending_id("playback");
         let filter_id = id.clone();
         let events = client.subscribe_filtered(move |msg| {
-            event_playback_id(&msg.event)
-                .is_some_and(|pb_id| pb_id == filter_id)
+            event_playback_id(&msg.event).is_some_and(|pb_id| pb_id == filter_id)
         });
 
         Self { id, events }
@@ -231,11 +228,13 @@ mod tests {
         let id1 = generate_pending_id("x");
         let id2 = generate_pending_id("x");
 
-        let n1: u64 = id1.strip_prefix("x-pending-")
+        let n1: u64 = id1
+            .strip_prefix("x-pending-")
             .expect("should have prefix")
             .parse()
             .expect("suffix should be numeric");
-        let n2: u64 = id2.strip_prefix("x-pending-")
+        let n2: u64 = id2
+            .strip_prefix("x-pending-")
             .expect("should have prefix")
             .parse()
             .expect("suffix should be numeric");
@@ -250,9 +249,24 @@ mod tests {
         let b = generate_pending_id("bridge");
         let c = generate_pending_id("playback");
 
-        let na: u64 = a.split('-').last().expect("has suffix").parse().expect("numeric");
-        let nb: u64 = b.split('-').last().expect("has suffix").parse().expect("numeric");
-        let nc: u64 = c.split('-').last().expect("has suffix").parse().expect("numeric");
+        let na: u64 = a
+            .split('-')
+            .next_back()
+            .expect("has suffix")
+            .parse()
+            .expect("numeric");
+        let nb: u64 = b
+            .split('-')
+            .next_back()
+            .expect("has suffix")
+            .parse()
+            .expect("numeric");
+        let nc: u64 = c
+            .split('-')
+            .next_back()
+            .expect("has suffix")
+            .parse()
+            .expect("numeric");
 
         assert!(nb > na, "bridge counter should be after channel");
         assert!(nc > nb, "playback counter should be after bridge");

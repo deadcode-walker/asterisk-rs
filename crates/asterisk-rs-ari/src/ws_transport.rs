@@ -253,7 +253,7 @@ async fn handle_connection(
                             }
                         };
                         pending.insert(cmd.request_id, cmd.response_tx);
-                        if let Err(e) = write.send(Message::Text(json.into())).await {
+                        if let Err(e) = write.send(Message::Text(json)).await {
                             tracing::warn!(error = %e, "failed to send REST request");
                             pending.clear();
                             return Err(false);

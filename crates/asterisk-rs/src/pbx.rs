@@ -221,10 +221,7 @@ mod tests {
             .caller_id("Test <1234>")
             .timeout_ms(30000);
 
-        assert_eq!(
-            opts.caller_id.as_deref(),
-            Some("Test <1234>")
-        );
+        assert_eq!(opts.caller_id.as_deref(), Some("Test <1234>"));
         assert_eq!(opts.timeout_ms, Some(30000));
     }
 
@@ -240,9 +237,6 @@ mod tests {
             cause: 16,
             cause_txt: "Normal Clearing".to_owned(),
         };
-        assert_eq!(
-            err.to_string(),
-            "call failed: 16 (Normal Clearing)"
-        );
+        assert_eq!(err.to_string(), "call failed: 16 (Normal Clearing)");
     }
 }

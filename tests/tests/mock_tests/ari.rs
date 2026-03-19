@@ -939,8 +939,13 @@ async fn channel_handle_external_media() {
     let client = connect_to_mock(server.port()).await;
     let handle = asterisk_rs_ari::resources::channel::ChannelHandle::new("ch-1", client.clone());
 
+    let params = asterisk_rs_ari::resources::channel::ExternalMediaParams::new(
+        "test-app",
+        "192.168.1.1:10000",
+        "ulaw",
+    );
     let chan = handle
-        .external_media("test-app", "192.168.1.1:10000", "ulaw")
+        .external_media(&params)
         .await
         .expect("external_media failed");
 
@@ -2873,8 +2878,8 @@ async fn rest_malformed_json_body() {
     let result = client.get::<serde_json::Value>("bad/json").await;
 
     match result {
-        Err(AriError::Http(_)) => { /* expected: reqwest json parse failure */ }
-        Err(other) => panic!("expected AriError::Http, got: {other:?}"),
+        Err(AriError::Json(_)) => { /* expected: serde json parse failure */ }
+        Err(other) => panic!("expected AriError::Json, got: {other:?}"),
         Ok(val) => panic!("expected json parse error, got success: {val:?}"),
     }
 

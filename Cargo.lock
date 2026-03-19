@@ -10,6 +10,8 @@ dependencies = [
  "asterisk-rs-ami",
  "asterisk-rs-ari",
  "asterisk-rs-core",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

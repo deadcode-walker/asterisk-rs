@@ -155,11 +155,7 @@ impl AriSession {
     }
 
     /// send a POST request with a JSON body over this session's websocket
-    pub async fn post<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        body: &impl Serialize,
-    ) -> Result<T> {
+    pub async fn post<T: DeserializeOwned>(&self, path: &str, body: &impl Serialize) -> Result<T> {
         let json = serde_json::to_string(body).map_err(AriError::Json)?;
         let resp = self.raw_request("POST", path, Some(json)).await?;
         let body = resp.body.ok_or_else(|| AriError::Api {
@@ -176,11 +172,7 @@ impl AriSession {
     }
 
     /// send a PUT request with a JSON body over this session's websocket
-    pub async fn put<T: DeserializeOwned>(
-        &self,
-        path: &str,
-        body: &impl Serialize,
-    ) -> Result<T> {
+    pub async fn put<T: DeserializeOwned>(&self, path: &str, body: &impl Serialize) -> Result<T> {
         let json = serde_json::to_string(body).map_err(AriError::Json)?;
         let resp = self.raw_request("PUT", path, Some(json)).await?;
         let body = resp.body.ok_or_else(|| AriError::Api {
@@ -203,10 +195,7 @@ impl AriSession {
     }
 
     /// send a DELETE request and deserialize the response body
-    pub async fn delete_with_response<T: DeserializeOwned>(
-        &self,
-        path: &str,
-    ) -> Result<T> {
+    pub async fn delete_with_response<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let resp = self.raw_request("DELETE", path, None).await?;
         let body = resp.body.ok_or_else(|| AriError::Api {
             status: resp.status,
@@ -260,10 +249,7 @@ pub struct AriServer {
 impl std::fmt::Debug for AriServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AriServer")
-            .field(
-                "local_addr",
-                &self.listener.local_addr().ok(),
-            )
+            .field("local_addr", &self.listener.local_addr().ok())
             .finish_non_exhaustive()
     }
 }
@@ -423,7 +409,7 @@ async fn session_loop(
                             }
                         };
                         pending.insert(cmd.request_id, cmd.response_tx);
-                        if let Err(e) = write.send(Message::Text(json.into())).await {
+                        if let Err(e) = write.send(Message::Text(json)).await {
                             tracing::warn!(error = %e, "failed to send REST request");
                             return;
                         }
@@ -485,10 +471,7 @@ mod tests {
     #[test]
     fn test_server_builder_default_addr() {
         let builder = AriServerBuilder::new();
-        assert_eq!(
-            builder.bind_addr,
-            SocketAddr::from(([0, 0, 0, 0], 8765))
-        );
+        assert_eq!(builder.bind_addr, SocketAddr::from(([0, 0, 0, 0], 8765)));
     }
 
     #[tokio::test]
@@ -518,12 +501,9 @@ mod tests {
         handle.shutdown();
 
         // run should return promptly after shutdown
-        let result = tokio::time::timeout(
-            Duration::from_secs(2),
-            server.run(|_session| async {}),
-        )
-        .await
-        .expect("server should stop within timeout");
+        let result = tokio::time::timeout(Duration::from_secs(2), server.run(|_session| async {}))
+            .await
+            .expect("server should stop within timeout");
 
         assert!(result.is_ok());
     }

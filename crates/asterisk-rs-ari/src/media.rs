@@ -152,9 +152,8 @@ impl std::fmt::Debug for MediaChannel {
 }
 
 /// type alias for an outbound (client-initiated) websocket stream
-type OutboundWsStream = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type OutboundWsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// type alias for an accepted (server-side) websocket stream over raw TCP
 type AcceptedWsStream = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
@@ -357,7 +356,7 @@ async fn media_loop<S>(
                         }
                     }
                     Some(Ok(Message::Binary(data))) => {
-                        if audio_tx.send(data.into()).await.is_err() {
+                        if audio_tx.send(data).await.is_err() {
                             // receiver dropped
                             return;
                         }
@@ -378,13 +377,13 @@ async fn media_loop<S>(
             cmd = command_rx.recv() => {
                 match cmd {
                     Some(InternalCmd::Audio(data)) => {
-                        if let Err(e) = write.send(Message::Binary(data.into())).await {
+                        if let Err(e) = write.send(Message::Binary(data)).await {
                             tracing::warn!(error = %e, "failed to send audio frame");
                             return;
                         }
                     }
                     Some(InternalCmd::Command(json)) => {
-                        if let Err(e) = write.send(Message::Text(json.into())).await {
+                        if let Err(e) = write.send(Message::Text(json)).await {
                             tracing::warn!(error = %e, "failed to send media command");
                             return;
                         }
@@ -410,8 +409,7 @@ mod tests {
     #[test]
     fn test_media_command_answer_serialization() {
         let json = serde_json::to_string(&MediaCommand::Answer).expect("serialize answer");
-        let parsed: serde_json::Value =
-            serde_json::from_str(&json).expect("parse answer json");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse answer json");
         assert_eq!(parsed["command"], "ANSWER");
     }
 
@@ -419,8 +417,7 @@ mod tests {
     fn test_media_command_hangup_with_cause() {
         let cmd = MediaCommand::Hangup { cause: Some(16) };
         let json = serde_json::to_string(&cmd).expect("serialize hangup");
-        let parsed: serde_json::Value =
-            serde_json::from_str(&json).expect("parse hangup json");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse hangup json");
         assert_eq!(parsed["command"], "HANGUP");
         assert_eq!(parsed["cause"], 16);
     }
@@ -429,8 +426,7 @@ mod tests {
     fn test_media_command_hangup_without_cause() {
         let cmd = MediaCommand::Hangup { cause: None };
         let json = serde_json::to_string(&cmd).expect("serialize hangup no cause");
-        let parsed: serde_json::Value =
-            serde_json::from_str(&json).expect("parse hangup json");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse hangup json");
         assert_eq!(parsed["command"], "HANGUP");
         assert!(parsed.get("cause").is_none());
     }
@@ -460,8 +456,7 @@ mod tests {
             "channel_variables": {"CALLERID(num)": "1234"}
         }"#;
 
-        let event: MediaEvent =
-            serde_json::from_str(json).expect("deserialize MEDIA_START");
+        let event: MediaEvent = serde_json::from_str(json).expect("deserialize MEDIA_START");
         match event {
             MediaEvent::MediaStart {
                 connection_id,
@@ -490,13 +485,9 @@ mod tests {
     #[test]
     fn test_media_event_dtmf_deserialization() {
         let json = r#"{"event": "DTMF_END", "digit": "5", "duration_ms": 120}"#;
-        let event: MediaEvent =
-            serde_json::from_str(json).expect("deserialize DTMF_END");
+        let event: MediaEvent = serde_json::from_str(json).expect("deserialize DTMF_END");
         match event {
-            MediaEvent::DtmfEnd {
-                digit,
-                duration_ms,
-            } => {
+            MediaEvent::DtmfEnd { digit, duration_ms } => {
                 assert_eq!(digit, "5");
                 assert_eq!(duration_ms, 120);
             }
@@ -507,8 +498,7 @@ mod tests {
     #[test]
     fn test_media_event_xoff_deserialization() {
         let json = r#"{"event": "MEDIA_XOFF"}"#;
-        let event: MediaEvent =
-            serde_json::from_str(json).expect("deserialize MEDIA_XOFF");
+        let event: MediaEvent = serde_json::from_str(json).expect("deserialize MEDIA_XOFF");
         assert!(matches!(event, MediaEvent::MediaXoff));
     }
 
@@ -522,8 +512,7 @@ mod tests {
             "buffering_active": true,
             "media_paused": false
         }"#;
-        let event: MediaEvent =
-            serde_json::from_str(json).expect("deserialize STATUS");
+        let event: MediaEvent = serde_json::from_str(json).expect("deserialize STATUS");
         match event {
             MediaEvent::Status {
                 channel,
@@ -544,8 +533,7 @@ mod tests {
 
     #[test]
     fn test_media_event_buffering_completed_with_correlation() {
-        let json =
-            r#"{"event": "MEDIA_BUFFERING_COMPLETED", "correlation_id": "req-42"}"#;
+        let json = r#"{"event": "MEDIA_BUFFERING_COMPLETED", "correlation_id": "req-42"}"#;
         let event: MediaEvent =
             serde_json::from_str(json).expect("deserialize MEDIA_BUFFERING_COMPLETED");
         match event {
@@ -559,8 +547,7 @@ mod tests {
     #[test]
     fn test_media_event_queue_drained_deserialization() {
         let json = r#"{"event": "QUEUE_DRAINED"}"#;
-        let event: MediaEvent =
-            serde_json::from_str(json).expect("deserialize QUEUE_DRAINED");
+        let event: MediaEvent = serde_json::from_str(json).expect("deserialize QUEUE_DRAINED");
         assert!(matches!(event, MediaEvent::QueueDrained));
     }
 

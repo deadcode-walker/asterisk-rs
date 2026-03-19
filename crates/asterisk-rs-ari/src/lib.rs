@@ -7,12 +7,12 @@ pub mod client;
 pub mod config;
 pub mod error;
 pub mod event;
+pub mod media;
+pub mod pending;
 pub mod resources;
+pub mod server;
 pub(crate) mod transport;
 pub mod websocket;
-pub mod pending;
-pub mod media;
-pub mod server;
 pub(crate) mod ws_transport;
 
 pub use client::AriClient;

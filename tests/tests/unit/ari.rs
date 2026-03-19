@@ -1761,6 +1761,7 @@ fn serialize_originate_params_full() {
         app_args: Some("arg1,arg2".to_owned()),
         caller_id: Some("\"Test\" <1000>".to_owned()),
         timeout: Some(30),
+        ..Default::default()
     };
     let json = serde_json::to_string(&params).expect("ser");
     assert!(json.contains("\"endpoint\":\"PJSIP/100\""));
