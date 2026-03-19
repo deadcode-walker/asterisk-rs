@@ -3081,4 +3081,3 @@ impl AmiAction for JabberSendAction {
         ]
     }
 }
-

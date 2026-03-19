@@ -4,12 +4,19 @@ use asterisk_rs_ami::action::*;
 
 /// helper to extract a header value from a RawAmiMessage
 fn get_header(msg: &asterisk_rs_ami::codec::RawAmiMessage, key: &str) -> Option<String> {
-    msg.headers.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+    msg.headers
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.clone())
 }
 
 /// helper to collect all values for a given header key
 fn get_all_headers(msg: &asterisk_rs_ami::codec::RawAmiMessage, key: &str) -> Vec<String> {
-    msg.headers.iter().filter(|(k, _)| k == key).map(|(_, v)| v.clone()).collect()
+    msg.headers
+        .iter()
+        .filter(|(k, _)| k == key)
+        .map(|(_, v)| v.clone())
+        .collect()
 }
 
 #[test]
@@ -25,7 +32,10 @@ fn next_action_id_returns_unique_ids() {
 #[test]
 fn next_action_id_is_numeric() {
     let id = next_action_id();
-    assert!(id.parse::<u64>().is_ok(), "action ID should be a numeric string");
+    assert!(
+        id.parse::<u64>().is_ok(),
+        "action ID should be a numeric string"
+    );
 }
 
 #[test]
@@ -114,7 +124,10 @@ fn confbridge_list_rooms_action_headers() {
     assert_eq!(action.action_name(), "ConfbridgeListRooms");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("ConfbridgeListRooms".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("ConfbridgeListRooms".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
@@ -134,7 +147,10 @@ fn pjsip_show_endpoints_action_headers() {
     assert_eq!(action.action_name(), "PJSIPShowEndpoints");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("PJSIPShowEndpoints".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("PJSIPShowEndpoints".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
@@ -144,7 +160,10 @@ fn pjsip_show_registrations_inbound_action_headers() {
     assert_eq!(action.action_name(), "PJSIPShowRegistrationsInbound");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("PJSIPShowRegistrationsInbound".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("PJSIPShowRegistrationsInbound".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
@@ -154,7 +173,10 @@ fn pjsip_show_registrations_outbound_action_headers() {
     assert_eq!(action.action_name(), "PJSIPShowRegistrationsOutbound");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("PJSIPShowRegistrationsOutbound".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("PJSIPShowRegistrationsOutbound".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
@@ -194,7 +216,10 @@ fn extension_state_list_action_headers() {
     assert_eq!(action.action_name(), "ExtensionStateList");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("ExtensionStateList".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("ExtensionStateList".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
@@ -224,7 +249,10 @@ fn voicemail_users_list_action_headers() {
     assert_eq!(action.action_name(), "VoicemailUsersList");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("VoicemailUsersList".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("VoicemailUsersList".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
@@ -344,17 +372,26 @@ fn bridge_technology_list_action_headers() {
     assert_eq!(action.action_name(), "BridgeTechnologyList");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("BridgeTechnologyList".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("BridgeTechnologyList".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
 #[test]
 fn pjsip_show_reg_inbound_contact_statuses_action_headers() {
     let action = PJSIPShowRegistrationInboundContactStatusesAction;
-    assert_eq!(action.action_name(), "PJSIPShowRegistrationInboundContactStatuses");
+    assert_eq!(
+        action.action_name(),
+        "PJSIPShowRegistrationInboundContactStatuses"
+    );
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("PJSIPShowRegistrationInboundContactStatuses".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("PJSIPShowRegistrationInboundContactStatuses".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
@@ -364,7 +401,10 @@ fn pjsip_show_resource_lists_action_headers() {
     assert_eq!(action.action_name(), "PJSIPShowResourceLists");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("PJSIPShowResourceLists".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("PJSIPShowResourceLists".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
@@ -374,7 +414,10 @@ fn pjsip_show_subscriptions_inbound_action_headers() {
     assert_eq!(action.action_name(), "PJSIPShowSubscriptionsInbound");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("PJSIPShowSubscriptionsInbound".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("PJSIPShowSubscriptionsInbound".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
@@ -384,7 +427,10 @@ fn pjsip_show_subscriptions_outbound_action_headers() {
     assert_eq!(action.action_name(), "PJSIPShowSubscriptionsOutbound");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("PJSIPShowSubscriptionsOutbound".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("PJSIPShowSubscriptionsOutbound".into())
+    );
     assert_eq!(get_header(&msg, "ActionID"), Some(id));
 }
 
@@ -433,7 +479,10 @@ fn core_show_channel_map_action_headers() {
     assert_eq!(action.action_name(), "CoreShowChannelMap");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("CoreShowChannelMap".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("CoreShowChannelMap".into())
+    );
     assert_eq!(get_header(&msg, "Channel"), Some("SIP/100-0001".into()));
 }
 
@@ -451,9 +500,7 @@ fn events_action_headers() {
 
 #[test]
 fn wait_event_action_headers() {
-    let action = WaitEventAction {
-        timeout: 30,
-    };
+    let action = WaitEventAction { timeout: 30 };
     assert_eq!(action.action_name(), "WaitEvent");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
@@ -787,7 +834,10 @@ fn confbridge_stop_record_action_headers() {
     assert_eq!(action.action_name(), "ConfbridgeStopRecord");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("ConfbridgeStopRecord".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("ConfbridgeStopRecord".into())
+    );
     assert_eq!(get_header(&msg, "Conference"), Some("100".into()));
 }
 
@@ -800,7 +850,10 @@ fn confbridge_set_single_video_src_action_headers() {
     assert_eq!(action.action_name(), "ConfbridgeSetSingleVideoSrc");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("ConfbridgeSetSingleVideoSrc".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("ConfbridgeSetSingleVideoSrc".into())
+    );
     assert_eq!(get_header(&msg, "Conference"), Some("100".into()));
     assert_eq!(get_header(&msg, "Channel"), Some("PJSIP/200-0001".into()));
 }
@@ -912,7 +965,10 @@ fn presence_state_action_headers() {
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
     assert_eq!(get_header(&msg, "Action"), Some("PresenceState".into()));
-    assert_eq!(get_header(&msg, "Provider"), Some("CustomPresence:100".into()));
+    assert_eq!(
+        get_header(&msg, "Provider"),
+        Some("CustomPresence:100".into())
+    );
 }
 
 #[test]
@@ -926,7 +982,10 @@ fn dialplan_extension_add_action_headers() {
     assert_eq!(action.action_name(), "DialplanExtensionAdd");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("DialplanExtensionAdd".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("DialplanExtensionAdd".into())
+    );
     assert_eq!(get_header(&msg, "Context"), Some("default".into()));
     assert_eq!(get_header(&msg, "Extension"), Some("100".into()));
     assert_eq!(get_header(&msg, "Priority"), Some("1".into()));
@@ -942,7 +1001,10 @@ fn local_optimize_away_action_headers() {
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
     assert_eq!(get_header(&msg, "Action"), Some("LocalOptimizeAway".into()));
-    assert_eq!(get_header(&msg, "Channel"), Some("Local/100@default-0001".into()));
+    assert_eq!(
+        get_header(&msg, "Channel"),
+        Some("Local/100@default-0001".into())
+    );
 }
 
 #[test]
@@ -1002,7 +1064,10 @@ fn voicemail_user_status_action_headers() {
     assert_eq!(action.action_name(), "VoicemailUserStatus");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("VoicemailUserStatus".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("VoicemailUserStatus".into())
+    );
     assert_eq!(get_header(&msg, "Context"), Some("default".into()));
     assert_eq!(get_header(&msg, "Mailbox"), Some("100".into()));
 }
@@ -1016,7 +1081,10 @@ fn voicemail_box_summary_action_headers() {
     assert_eq!(action.action_name(), "VoicemailBoxSummary");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("VoicemailBoxSummary".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("VoicemailBoxSummary".into())
+    );
     assert_eq!(get_header(&msg, "Context"), Some("default".into()));
     assert_eq!(get_header(&msg, "Mailbox"), Some("100".into()));
 }
@@ -1165,10 +1233,7 @@ fn pri_debug_file_set_action_headers() {
 
 #[test]
 fn pri_debug_set_action_headers() {
-    let action = PRIDebugSetAction {
-        span: 1,
-        level: 4,
-    };
+    let action = PRIDebugSetAction { span: 1, level: 4 };
     assert_eq!(action.action_name(), "PRIDebugSet");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
@@ -1185,8 +1250,14 @@ fn bridge_technology_suspend_action_headers() {
     assert_eq!(action.action_name(), "BridgeTechnologySuspend");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("BridgeTechnologySuspend".into()));
-    assert_eq!(get_header(&msg, "BridgeTechnology"), Some("simple_bridge".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("BridgeTechnologySuspend".into())
+    );
+    assert_eq!(
+        get_header(&msg, "BridgeTechnology"),
+        Some("simple_bridge".into())
+    );
 }
 
 #[test]
@@ -1197,8 +1268,14 @@ fn bridge_technology_unsuspend_action_headers() {
     assert_eq!(action.action_name(), "BridgeTechnologyUnsuspend");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("BridgeTechnologyUnsuspend".into()));
-    assert_eq!(get_header(&msg, "BridgeTechnology"), Some("simple_bridge".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("BridgeTechnologyUnsuspend".into())
+    );
+    assert_eq!(
+        get_header(&msg, "BridgeTechnology"),
+        Some("simple_bridge".into())
+    );
 }
 
 #[test]
@@ -1211,7 +1288,10 @@ fn queue_change_priority_caller_action_headers() {
     assert_eq!(action.action_name(), "QueueChangePriorityCaller");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("QueueChangePriorityCaller".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("QueueChangePriorityCaller".into())
+    );
     assert_eq!(get_header(&msg, "Queue"), Some("support".into()));
     assert_eq!(get_header(&msg, "Caller"), Some("PJSIP/100-0001".into()));
     assert_eq!(get_header(&msg, "Priority"), Some("5".into()));
@@ -1226,7 +1306,10 @@ fn queue_member_ring_in_use_action_headers() {
     assert_eq!(action.action_name(), "QueueMemberRingInUse");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("QueueMemberRingInUse".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("QueueMemberRingInUse".into())
+    );
     assert_eq!(get_header(&msg, "Interface"), Some("PJSIP/100".into()));
     assert_eq!(get_header(&msg, "RingInUse"), Some("true".into()));
 }
@@ -1252,7 +1335,10 @@ fn queue_withdraw_caller_action_headers() {
     assert_eq!(action.action_name(), "QueueWithdrawCaller");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("QueueWithdrawCaller".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("QueueWithdrawCaller".into())
+    );
     assert_eq!(get_header(&msg, "Queue"), Some("support".into()));
     assert_eq!(get_header(&msg, "Caller"), Some("PJSIP/100-0001".into()));
 }
@@ -1265,7 +1351,10 @@ fn sorcery_memory_cache_expire_action_headers() {
     assert_eq!(action.action_name(), "SorceryMemoryCacheExpire");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("SorceryMemoryCacheExpire".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("SorceryMemoryCacheExpire".into())
+    );
     assert_eq!(get_header(&msg, "Cache"), Some("contacts".into()));
 }
 
@@ -1278,7 +1367,10 @@ fn sorcery_memory_cache_expire_object_action_headers() {
     assert_eq!(action.action_name(), "SorceryMemoryCacheExpireObject");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("SorceryMemoryCacheExpireObject".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("SorceryMemoryCacheExpireObject".into())
+    );
     assert_eq!(get_header(&msg, "Cache"), Some("contacts".into()));
     assert_eq!(get_header(&msg, "Object"), Some("obj-1".into()));
 }
@@ -1291,7 +1383,10 @@ fn sorcery_memory_cache_populate_action_headers() {
     assert_eq!(action.action_name(), "SorceryMemoryCachePopulate");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("SorceryMemoryCachePopulate".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("SorceryMemoryCachePopulate".into())
+    );
     assert_eq!(get_header(&msg, "Cache"), Some("contacts".into()));
 }
 
@@ -1303,7 +1398,10 @@ fn sorcery_memory_cache_stale_action_headers() {
     assert_eq!(action.action_name(), "SorceryMemoryCacheStale");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("SorceryMemoryCacheStale".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("SorceryMemoryCacheStale".into())
+    );
     assert_eq!(get_header(&msg, "Cache"), Some("contacts".into()));
 }
 
@@ -1316,7 +1414,10 @@ fn sorcery_memory_cache_stale_object_action_headers() {
     assert_eq!(action.action_name(), "SorceryMemoryCacheStaleObject");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("SorceryMemoryCacheStaleObject".into()));
+    assert_eq!(
+        get_header(&msg, "Action"),
+        Some("SorceryMemoryCacheStaleObject".into())
+    );
     assert_eq!(get_header(&msg, "Cache"), Some("contacts".into()));
     assert_eq!(get_header(&msg, "Object"), Some("obj-1".into()));
 }
@@ -1361,7 +1462,10 @@ fn command_action_headers() {
     assert_eq!(action.action_name(), "Command");
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Action"), Some("Command".into()));
-    assert_eq!(get_header(&msg, "Command"), Some("core show channels".into()));
+    assert_eq!(
+        get_header(&msg, "Command"),
+        Some("core show channels".into())
+    );
 }
 
 #[test]
@@ -1423,7 +1527,9 @@ fn set_var_action_without_channel() {
 
 #[test]
 fn status_action_with_channel() {
-    let action = StatusAction { channel: Some("PJSIP/100-0001".into()) };
+    let action = StatusAction {
+        channel: Some("PJSIP/100-0001".into()),
+    };
     assert_eq!(action.action_name(), "Status");
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Channel"), Some("PJSIP/100-0001".into()));
@@ -1460,7 +1566,9 @@ fn filter_action_without_filter() {
 
 #[test]
 fn reload_action_with_module() {
-    let action = ReloadAction { module: Some("chan_pjsip.so".into()) };
+    let action = ReloadAction {
+        module: Some("chan_pjsip.so".into()),
+    };
     assert_eq!(action.action_name(), "Reload");
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Module"), Some("chan_pjsip.so".into()));
@@ -1477,7 +1585,10 @@ fn reload_action_without_module() {
 fn user_event_action_headers() {
     let action = UserEventAction {
         user_event: "MyEvent".into(),
-        headers: vec![("Key1".into(), "Val1".into()), ("Key2".into(), "Val2".into())],
+        headers: vec![
+            ("Key1".into(), "Val1".into()),
+            ("Key2".into(), "Val2".into()),
+        ],
     };
     assert_eq!(action.action_name(), "UserEvent");
     let (_, msg) = action.to_message();
@@ -1531,7 +1642,10 @@ fn agi_action_with_command_id() {
     assert_eq!(action.action_name(), "AGI");
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Channel"), Some("PJSIP/100-0001".into()));
-    assert_eq!(get_header(&msg, "Command"), Some("EXEC Playback hello-world".into()));
+    assert_eq!(
+        get_header(&msg, "Command"),
+        Some("EXEC Playback hello-world".into())
+    );
     assert_eq!(get_header(&msg, "CommandID"), Some("cmd-1".into()));
 }
 
@@ -1684,7 +1798,10 @@ fn queue_status_action_all_fields() {
 
 #[test]
 fn queue_status_action_empty() {
-    let action = QueueStatusAction { queue: None, member: None };
+    let action = QueueStatusAction {
+        queue: None,
+        member: None,
+    };
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Queue"), None);
     assert_eq!(get_header(&msg, "Member"), None);
@@ -1692,7 +1809,9 @@ fn queue_status_action_empty() {
 
 #[test]
 fn queue_summary_action_with_queue() {
-    let action = QueueSummaryAction { queue: Some("support".into()) };
+    let action = QueueSummaryAction {
+        queue: Some("support".into()),
+    };
     assert_eq!(action.action_name(), "QueueSummary");
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Queue"), Some("support".into()));
@@ -1724,7 +1843,10 @@ fn queue_reload_action_all_fields() {
 #[test]
 fn queue_reload_action_empty() {
     let action = QueueReloadAction {
-        queue: None, members: None, rules: None, parameters: None,
+        queue: None,
+        members: None,
+        rules: None,
+        parameters: None,
     };
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Queue"), None);
@@ -1733,7 +1855,9 @@ fn queue_reload_action_empty() {
 
 #[test]
 fn queue_reset_action_with_queue() {
-    let action = QueueResetAction { queue: Some("support".into()) };
+    let action = QueueResetAction {
+        queue: Some("support".into()),
+    };
     assert_eq!(action.action_name(), "QueueReset");
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Queue"), Some("support".into()));
@@ -1825,7 +1949,9 @@ fn confbridge_start_record_action_without_file() {
 
 #[test]
 fn parked_calls_action_with_lot() {
-    let action = ParkedCallsAction { parking_lot: Some("default".into()) };
+    let action = ParkedCallsAction {
+        parking_lot: Some("default".into()),
+    };
     assert_eq!(action.action_name(), "ParkedCalls");
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "ParkingLot"), Some("default".into()));
@@ -1903,7 +2029,10 @@ fn show_dial_plan_action_all_fields() {
 
 #[test]
 fn show_dial_plan_action_empty() {
-    let action = ShowDialPlanAction { extension: None, context: None };
+    let action = ShowDialPlanAction {
+        extension: None,
+        context: None,
+    };
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Extension"), None);
     assert_eq!(get_header(&msg, "Context"), None);
@@ -2045,7 +2174,10 @@ fn voicemail_refresh_action_all() {
 
 #[test]
 fn voicemail_refresh_action_empty() {
-    let action = VoicemailRefreshAction { context: None, mailbox: None };
+    let action = VoicemailRefreshAction {
+        context: None,
+        mailbox: None,
+    };
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Context"), None);
     assert_eq!(get_header(&msg, "Mailbox"), None);
@@ -2053,7 +2185,9 @@ fn voicemail_refresh_action_empty() {
 
 #[test]
 fn meetme_list_action_with_conference() {
-    let action = MeetmeListAction { conference: Some("100".into()) };
+    let action = MeetmeListAction {
+        conference: Some("100".into()),
+    };
     assert_eq!(action.action_name(), "MeetmeList");
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Conference"), Some("100".into()));
@@ -2080,7 +2214,10 @@ fn agent_logoff_action_with_soft() {
 
 #[test]
 fn agent_logoff_action_without_soft() {
-    let action = AgentLogoffAction { agent: "1001".into(), soft: None };
+    let action = AgentLogoffAction {
+        agent: "1001".into(),
+        soft: None,
+    };
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Soft"), None);
 }
@@ -2112,7 +2249,9 @@ fn play_mf_action_without_duration() {
 
 #[test]
 fn dahdi_show_channels_action_with_channel() {
-    let action = DAHDIShowChannelsAction { dahdi_channel: Some("1".into()) };
+    let action = DAHDIShowChannelsAction {
+        dahdi_channel: Some("1".into()),
+    };
     assert_eq!(action.action_name(), "DAHDIShowChannels");
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "DAHDIChannel"), Some("1".into()));
@@ -2120,7 +2259,9 @@ fn dahdi_show_channels_action_with_channel() {
 
 #[test]
 fn dahdi_show_channels_action_without_channel() {
-    let action = DAHDIShowChannelsAction { dahdi_channel: None };
+    let action = DAHDIShowChannelsAction {
+        dahdi_channel: None,
+    };
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "DAHDIChannel"), None);
 }
@@ -2262,8 +2403,7 @@ fn originate_action_all_options() {
 
 #[test]
 fn originate_action_async_false_omits_header() {
-    let action = OriginateAction::new("PJSIP/100")
-        .async_originate(false);
+    let action = OriginateAction::new("PJSIP/100").async_originate(false);
     let (_, msg) = action.to_message();
     // async_ is false by default, so Async header should not be present
     assert_eq!(get_header(&msg, "Async"), None);
@@ -2285,7 +2425,10 @@ fn originate_action_direct_construction() {
         variables: vec![],
     };
     let (_, msg) = action.to_message();
-    assert_eq!(get_header(&msg, "Channel"), Some("SIP/trunk/5551234".into()));
+    assert_eq!(
+        get_header(&msg, "Channel"),
+        Some("SIP/trunk/5551234".into())
+    );
     assert_eq!(get_header(&msg, "CallerID"), Some("5559999".into()));
     assert_eq!(get_header(&msg, "Async"), Some("true".into()));
 }
@@ -2400,7 +2543,10 @@ fn park_action_all_options() {
         .parking_lot("default");
     let (_, msg) = action.to_message();
     assert_eq!(get_header(&msg, "Timeout"), Some("30".into()));
-    assert_eq!(get_header(&msg, "AnnounceChannel"), Some("PJSIP/200-0001".into()));
+    assert_eq!(
+        get_header(&msg, "AnnounceChannel"),
+        Some("PJSIP/200-0001".into())
+    );
     assert_eq!(get_header(&msg, "ParkingLot"), Some("default".into()));
 }
 
@@ -2429,4 +2575,3 @@ fn to_message_output_and_channel_variables_empty() {
     assert!(msg.output.is_empty());
     assert!(msg.channel_variables.is_empty());
 }
-

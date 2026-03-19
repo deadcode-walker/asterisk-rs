@@ -7,7 +7,10 @@ use std::collections::HashMap;
 /// build a raw message from header pairs
 fn raw(headers: &[(&str, &str)]) -> RawAmiMessage {
     RawAmiMessage {
-        headers: headers.iter().map(|(k, v)| ((*k).into(), (*v).into())).collect(),
+        headers: headers
+            .iter()
+            .map(|(k, v)| ((*k).into(), (*v).into()))
+            .collect(),
         output: vec![],
         channel_variables: HashMap::new(),
     }
@@ -17,10 +20,27 @@ fn raw(headers: &[(&str, &str)]) -> RawAmiMessage {
 
 #[test]
 fn parse_new_channel() {
-    let msg = raw(&[("Event", "Newchannel"), ("Channel", "PJSIP/100-0001"), ("ChannelState", "0"), ("ChannelStateDesc", "Down"), ("CallerIDNum", "100"), ("CallerIDName", "Alice"), ("Uniqueid", "1234.1"), ("Linkedid", "1234.1")]);
+    let msg = raw(&[
+        ("Event", "Newchannel"),
+        ("Channel", "PJSIP/100-0001"),
+        ("ChannelState", "0"),
+        ("ChannelStateDesc", "Down"),
+        ("CallerIDNum", "100"),
+        ("CallerIDName", "Alice"),
+        ("Uniqueid", "1234.1"),
+        ("Linkedid", "1234.1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::NewChannel { channel, channel_state, channel_state_desc, caller_id_num, unique_id, linked_id, .. } => {
+        AmiEvent::NewChannel {
+            channel,
+            channel_state,
+            channel_state_desc,
+            caller_id_num,
+            unique_id,
+            linked_id,
+            ..
+        } => {
             assert_eq!(channel, "PJSIP/100-0001");
             assert_eq!(channel_state, "0");
             assert_eq!(channel_state_desc, "Down");
@@ -34,10 +54,21 @@ fn parse_new_channel() {
 
 #[test]
 fn parse_hangup() {
-    let msg = raw(&[("Event", "Hangup"), ("Channel", "SIP/100-0001"), ("Uniqueid", "1234.5"), ("Cause", "16"), ("Cause-txt", "Normal Clearing")]);
+    let msg = raw(&[
+        ("Event", "Hangup"),
+        ("Channel", "SIP/100-0001"),
+        ("Uniqueid", "1234.5"),
+        ("Cause", "16"),
+        ("Cause-txt", "Normal Clearing"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Hangup { channel, cause, cause_txt, .. } => {
+        AmiEvent::Hangup {
+            channel,
+            cause,
+            cause_txt,
+            ..
+        } => {
             assert_eq!(channel, "SIP/100-0001");
             assert_eq!(cause, 16);
             assert_eq!(cause_txt, "Normal Clearing");
@@ -48,10 +79,21 @@ fn parse_hangup() {
 
 #[test]
 fn parse_newstate() {
-    let msg = raw(&[("Event", "Newstate"), ("Channel", "PJSIP/100-0001"), ("ChannelState", "6"), ("ChannelStateDesc", "Up"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "Newstate"),
+        ("Channel", "PJSIP/100-0001"),
+        ("ChannelState", "6"),
+        ("ChannelStateDesc", "Up"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Newstate { channel, channel_state, channel_state_desc, .. } => {
+        AmiEvent::Newstate {
+            channel,
+            channel_state,
+            channel_state_desc,
+            ..
+        } => {
             assert_eq!(channel, "PJSIP/100-0001");
             assert_eq!(channel_state, "6");
             assert_eq!(channel_state_desc, "Up");
@@ -62,10 +104,23 @@ fn parse_newstate() {
 
 #[test]
 fn parse_dial_begin() {
-    let msg = raw(&[("Event", "DialBegin"), ("Channel", "PJSIP/100-0001"), ("DestChannel", "PJSIP/200-0002"), ("DialString", "200"), ("Uniqueid", "u1"), ("DestUniqueid", "u2")]);
+    let msg = raw(&[
+        ("Event", "DialBegin"),
+        ("Channel", "PJSIP/100-0001"),
+        ("DestChannel", "PJSIP/200-0002"),
+        ("DialString", "200"),
+        ("Uniqueid", "u1"),
+        ("DestUniqueid", "u2"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::DialBegin { channel, destination, dial_string, dest_unique_id, .. } => {
+        AmiEvent::DialBegin {
+            channel,
+            destination,
+            dial_string,
+            dest_unique_id,
+            ..
+        } => {
             assert_eq!(channel, "PJSIP/100-0001");
             assert_eq!(destination, "PJSIP/200-0002");
             assert_eq!(dial_string, "200");
@@ -77,10 +132,21 @@ fn parse_dial_begin() {
 
 #[test]
 fn parse_dial_end() {
-    let msg = raw(&[("Event", "DialEnd"), ("Channel", "PJSIP/100-0001"), ("DestChannel", "PJSIP/200-0002"), ("DialStatus", "ANSWER"), ("Uniqueid", "u1"), ("DestUniqueid", "u2")]);
+    let msg = raw(&[
+        ("Event", "DialEnd"),
+        ("Channel", "PJSIP/100-0001"),
+        ("DestChannel", "PJSIP/200-0002"),
+        ("DialStatus", "ANSWER"),
+        ("Uniqueid", "u1"),
+        ("DestUniqueid", "u2"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::DialEnd { dial_status, dest_unique_id, .. } => {
+        AmiEvent::DialEnd {
+            dial_status,
+            dest_unique_id,
+            ..
+        } => {
             assert_eq!(dial_status, "ANSWER");
             assert_eq!(dest_unique_id, "u2");
         }
@@ -90,10 +156,18 @@ fn parse_dial_end() {
 
 #[test]
 fn parse_dtmf_begin() {
-    let msg = raw(&[("Event", "DTMFBegin"), ("Channel", "PJSIP/100-0001"), ("Digit", "5"), ("Direction", "Received"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "DTMFBegin"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Digit", "5"),
+        ("Direction", "Received"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::DtmfBegin { digit, direction, .. } => {
+        AmiEvent::DtmfBegin {
+            digit, direction, ..
+        } => {
             assert_eq!(digit, "5");
             assert_eq!(direction, "Received");
         }
@@ -103,10 +177,22 @@ fn parse_dtmf_begin() {
 
 #[test]
 fn parse_dtmf_end() {
-    let msg = raw(&[("Event", "DTMFEnd"), ("Channel", "PJSIP/100-0001"), ("Digit", "5"), ("DurationMs", "120"), ("Direction", "Received"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "DTMFEnd"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Digit", "5"),
+        ("DurationMs", "120"),
+        ("Direction", "Received"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::DtmfEnd { digit, duration_ms, direction, .. } => {
+        AmiEvent::DtmfEnd {
+            digit,
+            duration_ms,
+            direction,
+            ..
+        } => {
             assert_eq!(digit, "5");
             assert_eq!(duration_ms, 120);
             assert_eq!(direction, "Received");
@@ -129,10 +215,20 @@ fn parse_fully_booted() {
 
 #[test]
 fn parse_peer_status() {
-    let msg = raw(&[("Event", "PeerStatus"), ("ChannelType", "PJSIP"), ("Peer", "PJSIP/100"), ("PeerStatus", "Reachable")]);
+    let msg = raw(&[
+        ("Event", "PeerStatus"),
+        ("ChannelType", "PJSIP"),
+        ("Peer", "PJSIP/100"),
+        ("PeerStatus", "Reachable"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::PeerStatus { channel_type, peer, peer_status, .. } => {
+        AmiEvent::PeerStatus {
+            channel_type,
+            peer,
+            peer_status,
+            ..
+        } => {
             assert_eq!(channel_type, "PJSIP");
             assert_eq!(peer, "PJSIP/100");
             assert_eq!(peer_status, "Reachable");
@@ -145,10 +241,18 @@ fn parse_peer_status() {
 
 #[test]
 fn parse_bridge_create() {
-    let msg = raw(&[("Event", "BridgeCreate"), ("BridgeUniqueid", "br-1"), ("BridgeType", "basic")]);
+    let msg = raw(&[
+        ("Event", "BridgeCreate"),
+        ("BridgeUniqueid", "br-1"),
+        ("BridgeType", "basic"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::BridgeCreate { bridge_unique_id, bridge_type, .. } => {
+        AmiEvent::BridgeCreate {
+            bridge_unique_id,
+            bridge_type,
+            ..
+        } => {
             assert_eq!(bridge_unique_id, "br-1");
             assert_eq!(bridge_type, "basic");
         }
@@ -161,7 +265,9 @@ fn parse_bridge_destroy() {
     let msg = raw(&[("Event", "BridgeDestroy"), ("BridgeUniqueid", "br-1")]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::BridgeDestroy { bridge_unique_id, .. } => {
+        AmiEvent::BridgeDestroy {
+            bridge_unique_id, ..
+        } => {
             assert_eq!(bridge_unique_id, "br-1");
         }
         other => panic!("expected BridgeDestroy, got {other:?}"),
@@ -170,10 +276,19 @@ fn parse_bridge_destroy() {
 
 #[test]
 fn parse_bridge_enter() {
-    let msg = raw(&[("Event", "BridgeEnter"), ("BridgeUniqueid", "br-1"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "BridgeEnter"),
+        ("BridgeUniqueid", "br-1"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::BridgeEnter { bridge_unique_id, channel, .. } => {
+        AmiEvent::BridgeEnter {
+            bridge_unique_id,
+            channel,
+            ..
+        } => {
             assert_eq!(bridge_unique_id, "br-1");
             assert_eq!(channel, "PJSIP/100-0001");
         }
@@ -183,10 +298,19 @@ fn parse_bridge_enter() {
 
 #[test]
 fn parse_bridge_leave() {
-    let msg = raw(&[("Event", "BridgeLeave"), ("BridgeUniqueid", "br-1"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "BridgeLeave"),
+        ("BridgeUniqueid", "br-1"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::BridgeLeave { bridge_unique_id, channel, .. } => {
+        AmiEvent::BridgeLeave {
+            bridge_unique_id,
+            channel,
+            ..
+        } => {
             assert_eq!(bridge_unique_id, "br-1");
             assert_eq!(channel, "PJSIP/100-0001");
         }
@@ -196,10 +320,19 @@ fn parse_bridge_leave() {
 
 #[test]
 fn parse_bridge_merge() {
-    let msg = raw(&[("Event", "BridgeMerge"), ("BridgeUniqueid", "br-1"), ("BridgeType", "basic"), ("ToBridgeUniqueid", "br-2")]);
+    let msg = raw(&[
+        ("Event", "BridgeMerge"),
+        ("BridgeUniqueid", "br-1"),
+        ("BridgeType", "basic"),
+        ("ToBridgeUniqueid", "br-2"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::BridgeMerge { bridge_unique_id, to_bridge_unique_id, .. } => {
+        AmiEvent::BridgeMerge {
+            bridge_unique_id,
+            to_bridge_unique_id,
+            ..
+        } => {
             assert_eq!(bridge_unique_id, "br-1");
             assert_eq!(to_bridge_unique_id, "br-2");
         }
@@ -209,10 +342,19 @@ fn parse_bridge_merge() {
 
 #[test]
 fn parse_bridge_info_channel() {
-    let msg = raw(&[("Event", "BridgeInfoChannel"), ("BridgeUniqueid", "br-1"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "BridgeInfoChannel"),
+        ("BridgeUniqueid", "br-1"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::BridgeInfoChannel { bridge_unique_id, channel, .. } => {
+        AmiEvent::BridgeInfoChannel {
+            bridge_unique_id,
+            channel,
+            ..
+        } => {
             assert_eq!(bridge_unique_id, "br-1");
             assert_eq!(channel, "PJSIP/100-0001");
         }
@@ -225,7 +367,9 @@ fn parse_bridge_info_complete() {
     let msg = raw(&[("Event", "BridgeInfoComplete"), ("BridgeUniqueid", "br-1")]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::BridgeInfoComplete { bridge_unique_id, .. } => {
+        AmiEvent::BridgeInfoComplete {
+            bridge_unique_id, ..
+        } => {
             assert_eq!(bridge_unique_id, "br-1");
         }
         other => panic!("expected BridgeInfoComplete, got {other:?}"),
@@ -234,10 +378,18 @@ fn parse_bridge_info_complete() {
 
 #[test]
 fn parse_bridge_video_source_update() {
-    let msg = raw(&[("Event", "BridgeVideoSourceUpdate"), ("BridgeUniqueid", "br-1"), ("BridgeVideoSourceUniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "BridgeVideoSourceUpdate"),
+        ("BridgeUniqueid", "br-1"),
+        ("BridgeVideoSourceUniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::BridgeVideoSourceUpdate { bridge_unique_id, bridge_video_source_unique_id, .. } => {
+        AmiEvent::BridgeVideoSourceUpdate {
+            bridge_unique_id,
+            bridge_video_source_unique_id,
+            ..
+        } => {
             assert_eq!(bridge_unique_id, "br-1");
             assert_eq!(bridge_video_source_unique_id, "u1");
         }
@@ -249,10 +401,18 @@ fn parse_bridge_video_source_update() {
 
 #[test]
 fn parse_var_set() {
-    let msg = raw(&[("Event", "VarSet"), ("Channel", "PJSIP/100-0001"), ("Variable", "DIALSTATUS"), ("Value", "ANSWER"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "VarSet"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Variable", "DIALSTATUS"),
+        ("Value", "ANSWER"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::VarSet { variable, value, .. } => {
+        AmiEvent::VarSet {
+            variable, value, ..
+        } => {
             assert_eq!(variable, "DIALSTATUS");
             assert_eq!(value, "ANSWER");
         }
@@ -262,7 +422,12 @@ fn parse_var_set() {
 
 #[test]
 fn parse_hold() {
-    let msg = raw(&[("Event", "Hold"), ("Channel", "PJSIP/200-0002"), ("Uniqueid", "u1"), ("MusicClass", "default")]);
+    let msg = raw(&[
+        ("Event", "Hold"),
+        ("Channel", "PJSIP/200-0002"),
+        ("Uniqueid", "u1"),
+        ("MusicClass", "default"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::Hold { channel, .. } => {
@@ -274,7 +439,11 @@ fn parse_hold() {
 
 #[test]
 fn parse_hold_without_music_class() {
-    let msg = raw(&[("Event", "Hold"), ("Channel", "PJSIP/200-0002"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "Hold"),
+        ("Channel", "PJSIP/200-0002"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::Hold { music_class, .. } => assert!(music_class.is_none()),
@@ -284,10 +453,16 @@ fn parse_hold_without_music_class() {
 
 #[test]
 fn parse_unhold() {
-    let msg = raw(&[("Event", "Unhold"), ("Channel", "PJSIP/200-0002"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "Unhold"),
+        ("Channel", "PJSIP/200-0002"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Unhold { channel, unique_id, .. } => {
+        AmiEvent::Unhold {
+            channel, unique_id, ..
+        } => {
             assert_eq!(channel, "PJSIP/200-0002");
             assert_eq!(unique_id, "u1");
         }
@@ -297,7 +472,12 @@ fn parse_unhold() {
 
 #[test]
 fn parse_hangup_request() {
-    let msg = raw(&[("Event", "HangupRequest"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Cause", "16")]);
+    let msg = raw(&[
+        ("Event", "HangupRequest"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Cause", "16"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::HangupRequest { cause, .. } => {
@@ -309,7 +489,12 @@ fn parse_hangup_request() {
 
 #[test]
 fn parse_soft_hangup_request() {
-    let msg = raw(&[("Event", "SoftHangupRequest"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Cause", "32")]);
+    let msg = raw(&[
+        ("Event", "SoftHangupRequest"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Cause", "32"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::SoftHangupRequest { cause, .. } => {
@@ -321,10 +506,25 @@ fn parse_soft_hangup_request() {
 
 #[test]
 fn parse_new_exten() {
-    let msg = raw(&[("Event", "NewExten"), ("Channel", "PJSIP/100-0001"), ("Context", "default"), ("Extension", "200"), ("Priority", "1"), ("Application", "Dial"), ("AppData", "PJSIP/200"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "NewExten"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Context", "default"),
+        ("Extension", "200"),
+        ("Priority", "1"),
+        ("Application", "Dial"),
+        ("AppData", "PJSIP/200"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::NewExten { context, extension, priority, application, .. } => {
+        AmiEvent::NewExten {
+            context,
+            extension,
+            priority,
+            application,
+            ..
+        } => {
             assert_eq!(context, "default");
             assert_eq!(extension, "200");
             assert_eq!(priority, 1);
@@ -336,10 +536,22 @@ fn parse_new_exten() {
 
 #[test]
 fn parse_new_callerid() {
-    let msg = raw(&[("Event", "NewCallerid"), ("Channel", "PJSIP/100-0001"), ("CallerIDNum", "100"), ("CallerIDName", "Alice"), ("Uniqueid", "u1"), ("CID-CallingPres", "0 (Presentation Allowed)")]);
+    let msg = raw(&[
+        ("Event", "NewCallerid"),
+        ("Channel", "PJSIP/100-0001"),
+        ("CallerIDNum", "100"),
+        ("CallerIDName", "Alice"),
+        ("Uniqueid", "u1"),
+        ("CID-CallingPres", "0 (Presentation Allowed)"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::NewCallerid { caller_id_num, caller_id_name, cid_calling_pres, .. } => {
+        AmiEvent::NewCallerid {
+            caller_id_num,
+            caller_id_name,
+            cid_calling_pres,
+            ..
+        } => {
             assert_eq!(caller_id_num, "100");
             assert_eq!(caller_id_name, "Alice");
             assert_eq!(cid_calling_pres, "0 (Presentation Allowed)");
@@ -350,10 +562,20 @@ fn parse_new_callerid() {
 
 #[test]
 fn parse_new_connected_line() {
-    let msg = raw(&[("Event", "NewConnectedLine"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("ConnectedLineNum", "200"), ("ConnectedLineName", "Bob")]);
+    let msg = raw(&[
+        ("Event", "NewConnectedLine"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("ConnectedLineNum", "200"),
+        ("ConnectedLineName", "Bob"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::NewConnectedLine { connected_line_num, connected_line_name, .. } => {
+        AmiEvent::NewConnectedLine {
+            connected_line_num,
+            connected_line_name,
+            ..
+        } => {
             assert_eq!(connected_line_num, "200");
             assert_eq!(connected_line_name, "Bob");
         }
@@ -363,10 +585,20 @@ fn parse_new_connected_line() {
 
 #[test]
 fn parse_new_account_code() {
-    let msg = raw(&[("Event", "NewAccountCode"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("AccountCode", "new-acct"), ("OldAccountCode", "old-acct")]);
+    let msg = raw(&[
+        ("Event", "NewAccountCode"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("AccountCode", "new-acct"),
+        ("OldAccountCode", "old-acct"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::NewAccountCode { account_code, old_account_code, .. } => {
+        AmiEvent::NewAccountCode {
+            account_code,
+            old_account_code,
+            ..
+        } => {
             assert_eq!(account_code, "new-acct");
             assert_eq!(old_account_code, "old-acct");
         }
@@ -376,10 +608,17 @@ fn parse_new_account_code() {
 
 #[test]
 fn parse_rename() {
-    let msg = raw(&[("Event", "Rename"), ("Channel", "PJSIP/100-0001"), ("Newname", "PJSIP/100-0001<MASQ>"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "Rename"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Newname", "PJSIP/100-0001<MASQ>"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Rename { channel, new_name, .. } => {
+        AmiEvent::Rename {
+            channel, new_name, ..
+        } => {
             assert_eq!(channel, "PJSIP/100-0001");
             assert_eq!(new_name, "PJSIP/100-0001<MASQ>");
         }
@@ -389,10 +628,18 @@ fn parse_rename() {
 
 #[test]
 fn parse_originate_response() {
-    let msg = raw(&[("Event", "OriginateResponse"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Response", "Success"), ("Reason", "4")]);
+    let msg = raw(&[
+        ("Event", "OriginateResponse"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Response", "Success"),
+        ("Reason", "4"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::OriginateResponse { response, reason, .. } => {
+        AmiEvent::OriginateResponse {
+            response, reason, ..
+        } => {
             assert_eq!(response, "Success");
             assert_eq!(reason, "4");
         }
@@ -402,10 +649,21 @@ fn parse_originate_response() {
 
 #[test]
 fn parse_dial_state() {
-    let msg = raw(&[("Event", "DialState"), ("Channel", "PJSIP/100-0001"), ("DestChannel", "PJSIP/200-0002"), ("DialStatus", "RINGING"), ("Uniqueid", "u1"), ("DestUniqueid", "u2")]);
+    let msg = raw(&[
+        ("Event", "DialState"),
+        ("Channel", "PJSIP/100-0001"),
+        ("DestChannel", "PJSIP/200-0002"),
+        ("DialStatus", "RINGING"),
+        ("Uniqueid", "u1"),
+        ("DestUniqueid", "u2"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::DialState { dial_status, dest_unique_id, .. } => {
+        AmiEvent::DialState {
+            dial_status,
+            dest_unique_id,
+            ..
+        } => {
             assert_eq!(dial_status, "RINGING");
             assert_eq!(dest_unique_id, "u2");
         }
@@ -415,7 +673,11 @@ fn parse_dial_state() {
 
 #[test]
 fn parse_flash() {
-    let msg = raw(&[("Event", "Flash"), ("Channel", "DAHDI/1-1"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "Flash"),
+        ("Channel", "DAHDI/1-1"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::Flash { channel, .. } => {
@@ -427,7 +689,11 @@ fn parse_flash() {
 
 #[test]
 fn parse_wink() {
-    let msg = raw(&[("Event", "Wink"), ("Channel", "DAHDI/1-1"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "Wink"),
+        ("Channel", "DAHDI/1-1"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::Wink { channel, .. } => {
@@ -448,7 +714,12 @@ fn parse_user_event() {
     ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::UserEvent { channel, unique_id, user_event, .. } => {
+        AmiEvent::UserEvent {
+            channel,
+            unique_id,
+            user_event,
+            ..
+        } => {
             assert_eq!(channel.as_deref(), Some("PJSIP/100-0001"));
             assert_eq!(unique_id.as_deref(), Some("u1"));
             assert_eq!(user_event, "MyCustomEvent");
@@ -462,7 +733,9 @@ fn parse_user_event_without_channel() {
     let msg = raw(&[("Event", "UserEvent"), ("UserEvent", "Ping")]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::UserEvent { channel, unique_id, .. } => {
+        AmiEvent::UserEvent {
+            channel, unique_id, ..
+        } => {
             assert!(channel.is_none());
             assert!(unique_id.is_none());
         }
@@ -474,10 +747,22 @@ fn parse_user_event_without_channel() {
 
 #[test]
 fn parse_attended_transfer() {
-    let msg = raw(&[("Event", "AttendedTransfer"), ("Result", "Success"), ("TransfererChannel", "PJSIP/100-0001"), ("TransfererUniqueid", "u1"), ("TransfereeChannel", "PJSIP/200-0002"), ("TransfereeUniqueid", "u2")]);
+    let msg = raw(&[
+        ("Event", "AttendedTransfer"),
+        ("Result", "Success"),
+        ("TransfererChannel", "PJSIP/100-0001"),
+        ("TransfererUniqueid", "u1"),
+        ("TransfereeChannel", "PJSIP/200-0002"),
+        ("TransfereeUniqueid", "u2"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AttendedTransfer { result, transferer_channel, transferee_channel, .. } => {
+        AmiEvent::AttendedTransfer {
+            result,
+            transferer_channel,
+            transferee_channel,
+            ..
+        } => {
             assert_eq!(result, "Success");
             assert_eq!(transferer_channel, "PJSIP/100-0001");
             assert_eq!(transferee_channel, "PJSIP/200-0002");
@@ -488,10 +773,22 @@ fn parse_attended_transfer() {
 
 #[test]
 fn parse_blind_transfer() {
-    let msg = raw(&[("Event", "BlindTransfer"), ("Result", "Success"), ("TransfererChannel", "PJSIP/100-0001"), ("TransfererUniqueid", "u1"), ("Extension", "300"), ("Context", "default")]);
+    let msg = raw(&[
+        ("Event", "BlindTransfer"),
+        ("Result", "Success"),
+        ("TransfererChannel", "PJSIP/100-0001"),
+        ("TransfererUniqueid", "u1"),
+        ("Extension", "300"),
+        ("Context", "default"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::BlindTransfer { result, extension, context, .. } => {
+        AmiEvent::BlindTransfer {
+            result,
+            extension,
+            context,
+            ..
+        } => {
             assert_eq!(result, "Success");
             assert_eq!(extension, "300");
             assert_eq!(context, "default");
@@ -504,7 +801,13 @@ fn parse_blind_transfer() {
 
 #[test]
 fn parse_local_bridge() {
-    let msg = raw(&[("Event", "LocalBridge"), ("Channel", "Local/100@default-0001"), ("Uniqueid", "u1"), ("Context", "default"), ("Exten", "100")]);
+    let msg = raw(&[
+        ("Event", "LocalBridge"),
+        ("Channel", "Local/100@default-0001"),
+        ("Uniqueid", "u1"),
+        ("Context", "default"),
+        ("Exten", "100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::LocalBridge { context, exten, .. } => {
@@ -517,10 +820,20 @@ fn parse_local_bridge() {
 
 #[test]
 fn parse_local_optimization_begin() {
-    let msg = raw(&[("Event", "LocalOptimizationBegin"), ("Channel", "Local/100@default-0001"), ("Uniqueid", "u1"), ("SourceUniqueid", "s1"), ("DestUniqueid", "d1")]);
+    let msg = raw(&[
+        ("Event", "LocalOptimizationBegin"),
+        ("Channel", "Local/100@default-0001"),
+        ("Uniqueid", "u1"),
+        ("SourceUniqueid", "s1"),
+        ("DestUniqueid", "d1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::LocalOptimizationBegin { source_unique_id, dest_unique_id, .. } => {
+        AmiEvent::LocalOptimizationBegin {
+            source_unique_id,
+            dest_unique_id,
+            ..
+        } => {
             assert_eq!(source_unique_id, "s1");
             assert_eq!(dest_unique_id, "d1");
         }
@@ -530,7 +843,11 @@ fn parse_local_optimization_begin() {
 
 #[test]
 fn parse_local_optimization_end() {
-    let msg = raw(&[("Event", "LocalOptimizationEnd"), ("Channel", "Local/100@default-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "LocalOptimizationEnd"),
+        ("Channel", "Local/100@default-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::LocalOptimizationEnd { channel, .. } => {
@@ -544,10 +861,26 @@ fn parse_local_optimization_end() {
 
 #[test]
 fn parse_cdr() {
-    let msg = raw(&[("Event", "Cdr"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Destination", "200"), ("Disposition", "ANSWERED"), ("Duration", "45"), ("BillableSeconds", "40"), ("AccountCode", "acct1"), ("Source", "100"), ("DestinationContext", "default")]);
+    let msg = raw(&[
+        ("Event", "Cdr"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Destination", "200"),
+        ("Disposition", "ANSWERED"),
+        ("Duration", "45"),
+        ("BillableSeconds", "40"),
+        ("AccountCode", "acct1"),
+        ("Source", "100"),
+        ("DestinationContext", "default"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Cdr { disposition, duration, billable_seconds, .. } => {
+        AmiEvent::Cdr {
+            disposition,
+            duration,
+            billable_seconds,
+            ..
+        } => {
             assert_eq!(disposition, "ANSWERED");
             assert_eq!(duration, 45);
             assert_eq!(billable_seconds, 40);
@@ -558,10 +891,22 @@ fn parse_cdr() {
 
 #[test]
 fn parse_cel() {
-    let msg = raw(&[("Event", "CEL"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("EventName", "CHAN_START"), ("AccountCode", "acct1"), ("ApplicationName", "Dial"), ("ApplicationData", "PJSIP/200")]);
+    let msg = raw(&[
+        ("Event", "CEL"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("EventName", "CHAN_START"),
+        ("AccountCode", "acct1"),
+        ("ApplicationName", "Dial"),
+        ("ApplicationData", "PJSIP/200"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Cel { event_name_cel, application_name, .. } => {
+        AmiEvent::Cel {
+            event_name_cel,
+            application_name,
+            ..
+        } => {
             assert_eq!(event_name_cel, "CHAN_START");
             assert_eq!(application_name, "Dial");
         }
@@ -573,10 +918,24 @@ fn parse_cel() {
 
 #[test]
 fn parse_queue_caller_abandon() {
-    let msg = raw(&[("Event", "QueueCallerAbandon"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Queue", "support"), ("Position", "2"), ("OriginalPosition", "1"), ("HoldTime", "30")]);
+    let msg = raw(&[
+        ("Event", "QueueCallerAbandon"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Queue", "support"),
+        ("Position", "2"),
+        ("OriginalPosition", "1"),
+        ("HoldTime", "30"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::QueueCallerAbandon { queue, position, original_position, hold_time, .. } => {
+        AmiEvent::QueueCallerAbandon {
+            queue,
+            position,
+            original_position,
+            hold_time,
+            ..
+        } => {
             assert_eq!(queue, "support");
             assert_eq!(position, 2);
             assert_eq!(original_position, 1);
@@ -588,10 +947,22 @@ fn parse_queue_caller_abandon() {
 
 #[test]
 fn parse_queue_caller_join() {
-    let msg = raw(&[("Event", "QueueCallerJoin"), ("Channel", "PJSIP/300-0003"), ("Uniqueid", "u1"), ("Queue", "support"), ("Position", "1"), ("Count", "3")]);
+    let msg = raw(&[
+        ("Event", "QueueCallerJoin"),
+        ("Channel", "PJSIP/300-0003"),
+        ("Uniqueid", "u1"),
+        ("Queue", "support"),
+        ("Position", "1"),
+        ("Count", "3"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::QueueCallerJoin { queue, position, count, .. } => {
+        AmiEvent::QueueCallerJoin {
+            queue,
+            position,
+            count,
+            ..
+        } => {
             assert_eq!(queue, "support");
             assert_eq!(position, 1);
             assert_eq!(count, 3);
@@ -602,10 +973,19 @@ fn parse_queue_caller_join() {
 
 #[test]
 fn parse_queue_caller_leave() {
-    let msg = raw(&[("Event", "QueueCallerLeave"), ("Channel", "PJSIP/300-0003"), ("Uniqueid", "u1"), ("Queue", "support"), ("Position", "2"), ("Count", "1")]);
+    let msg = raw(&[
+        ("Event", "QueueCallerLeave"),
+        ("Channel", "PJSIP/300-0003"),
+        ("Uniqueid", "u1"),
+        ("Queue", "support"),
+        ("Position", "2"),
+        ("Count", "1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::QueueCallerLeave { position, count, .. } => {
+        AmiEvent::QueueCallerLeave {
+            position, count, ..
+        } => {
             assert_eq!(position, 2);
             assert_eq!(count, 1);
         }
@@ -615,10 +995,25 @@ fn parse_queue_caller_leave() {
 
 #[test]
 fn parse_queue_member_added() {
-    let msg = raw(&[("Event", "QueueMemberAdded"), ("Queue", "support"), ("MemberName", "Agent/100"), ("Interface", "PJSIP/100"), ("StateInterface", "PJSIP/100"), ("Membership", "dynamic"), ("Penalty", "5"), ("Paused", "0")]);
+    let msg = raw(&[
+        ("Event", "QueueMemberAdded"),
+        ("Queue", "support"),
+        ("MemberName", "Agent/100"),
+        ("Interface", "PJSIP/100"),
+        ("StateInterface", "PJSIP/100"),
+        ("Membership", "dynamic"),
+        ("Penalty", "5"),
+        ("Paused", "0"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::QueueMemberAdded { queue, member_name, penalty, paused, .. } => {
+        AmiEvent::QueueMemberAdded {
+            queue,
+            member_name,
+            penalty,
+            paused,
+            ..
+        } => {
             assert_eq!(queue, "support");
             assert_eq!(member_name, "Agent/100");
             assert_eq!(penalty, 5);
@@ -630,10 +1025,17 @@ fn parse_queue_member_added() {
 
 #[test]
 fn parse_queue_member_removed() {
-    let msg = raw(&[("Event", "QueueMemberRemoved"), ("Queue", "support"), ("MemberName", "Agent/100"), ("Interface", "PJSIP/100")]);
+    let msg = raw(&[
+        ("Event", "QueueMemberRemoved"),
+        ("Queue", "support"),
+        ("MemberName", "Agent/100"),
+        ("Interface", "PJSIP/100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::QueueMemberRemoved { queue, member_name, .. } => {
+        AmiEvent::QueueMemberRemoved {
+            queue, member_name, ..
+        } => {
             assert_eq!(queue, "support");
             assert_eq!(member_name, "Agent/100");
         }
@@ -643,7 +1045,14 @@ fn parse_queue_member_removed() {
 
 #[test]
 fn parse_queue_member_pause() {
-    let msg = raw(&[("Event", "QueueMemberPause"), ("Queue", "support"), ("MemberName", "Agent/100"), ("Interface", "PJSIP/100"), ("Paused", "1"), ("Reason", "break")]);
+    let msg = raw(&[
+        ("Event", "QueueMemberPause"),
+        ("Queue", "support"),
+        ("MemberName", "Agent/100"),
+        ("Interface", "PJSIP/100"),
+        ("Paused", "1"),
+        ("Reason", "break"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::QueueMemberPause { paused, reason, .. } => {
@@ -656,10 +1065,22 @@ fn parse_queue_member_pause() {
 
 #[test]
 fn parse_queue_member_status() {
-    let msg = raw(&[("Event", "QueueMemberStatus"), ("Queue", "support"), ("MemberName", "Agent/100"), ("Interface", "PJSIP/100"), ("Status", "1"), ("Paused", "0"), ("CallsTaken", "10")]);
+    let msg = raw(&[
+        ("Event", "QueueMemberStatus"),
+        ("Queue", "support"),
+        ("MemberName", "Agent/100"),
+        ("Interface", "PJSIP/100"),
+        ("Status", "1"),
+        ("Paused", "0"),
+        ("CallsTaken", "10"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::QueueMemberStatus { status, calls_taken, .. } => {
+        AmiEvent::QueueMemberStatus {
+            status,
+            calls_taken,
+            ..
+        } => {
             assert_eq!(status, 1);
             assert_eq!(calls_taken, 10);
         }
@@ -669,7 +1090,13 @@ fn parse_queue_member_status() {
 
 #[test]
 fn parse_queue_member_penalty() {
-    let msg = raw(&[("Event", "QueueMemberPenalty"), ("Queue", "support"), ("MemberName", "Agent/100"), ("Interface", "PJSIP/100"), ("Penalty", "3")]);
+    let msg = raw(&[
+        ("Event", "QueueMemberPenalty"),
+        ("Queue", "support"),
+        ("MemberName", "Agent/100"),
+        ("Interface", "PJSIP/100"),
+        ("Penalty", "3"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::QueueMemberPenalty { penalty, .. } => {
@@ -681,7 +1108,13 @@ fn parse_queue_member_penalty() {
 
 #[test]
 fn parse_queue_member_ringinuse() {
-    let msg = raw(&[("Event", "QueueMemberRinginuse"), ("Queue", "support"), ("MemberName", "Agent/100"), ("Interface", "PJSIP/100"), ("Ringinuse", "1")]);
+    let msg = raw(&[
+        ("Event", "QueueMemberRinginuse"),
+        ("Queue", "support"),
+        ("MemberName", "Agent/100"),
+        ("Interface", "PJSIP/100"),
+        ("Ringinuse", "1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::QueueMemberRinginuse { ringinuse, .. } => {
@@ -693,10 +1126,29 @@ fn parse_queue_member_ringinuse() {
 
 #[test]
 fn parse_queue_params() {
-    let msg = raw(&[("Event", "QueueParams"), ("Queue", "support"), ("Max", "10"), ("Strategy", "ringall"), ("Calls", "5"), ("Holdtime", "30"), ("Talktime", "120"), ("Completed", "50"), ("Abandoned", "3")]);
+    let msg = raw(&[
+        ("Event", "QueueParams"),
+        ("Queue", "support"),
+        ("Max", "10"),
+        ("Strategy", "ringall"),
+        ("Calls", "5"),
+        ("Holdtime", "30"),
+        ("Talktime", "120"),
+        ("Completed", "50"),
+        ("Abandoned", "3"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::QueueParams { queue, max, strategy, calls, holdtime, completed, abandoned, .. } => {
+        AmiEvent::QueueParams {
+            queue,
+            max,
+            strategy,
+            calls,
+            holdtime,
+            completed,
+            abandoned,
+            ..
+        } => {
             assert_eq!(queue, "support");
             assert_eq!(max, 10);
             assert_eq!(strategy, "ringall");
@@ -711,10 +1163,25 @@ fn parse_queue_params() {
 
 #[test]
 fn parse_queue_entry() {
-    let msg = raw(&[("Event", "QueueEntry"), ("Queue", "support"), ("Position", "1"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("CallerIDNum", "100"), ("CallerIDName", "Alice"), ("Wait", "15")]);
+    let msg = raw(&[
+        ("Event", "QueueEntry"),
+        ("Queue", "support"),
+        ("Position", "1"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("CallerIDNum", "100"),
+        ("CallerIDName", "Alice"),
+        ("Wait", "15"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::QueueEntry { queue, position, caller_id_num, wait, .. } => {
+        AmiEvent::QueueEntry {
+            queue,
+            position,
+            caller_id_num,
+            wait,
+            ..
+        } => {
             assert_eq!(queue, "support");
             assert_eq!(position, 1);
             assert_eq!(caller_id_num, "100");
@@ -728,10 +1195,21 @@ fn parse_queue_entry() {
 
 #[test]
 fn parse_agent_called() {
-    let msg = raw(&[("Event", "AgentCalled"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Queue", "support"), ("Agent", "100"), ("DestinationChannel", "PJSIP/200-0002")]);
+    let msg = raw(&[
+        ("Event", "AgentCalled"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Queue", "support"),
+        ("Agent", "100"),
+        ("DestinationChannel", "PJSIP/200-0002"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AgentCalled { agent, destination_channel, .. } => {
+        AmiEvent::AgentCalled {
+            agent,
+            destination_channel,
+            ..
+        } => {
             assert_eq!(agent, "100");
             assert_eq!(destination_channel, "PJSIP/200-0002");
         }
@@ -741,10 +1219,22 @@ fn parse_agent_called() {
 
 #[test]
 fn parse_agent_connect() {
-    let msg = raw(&[("Event", "AgentConnect"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Queue", "support"), ("Agent", "100"), ("HoldTime", "15"), ("BridgeUniqueid", "br-1")]);
+    let msg = raw(&[
+        ("Event", "AgentConnect"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Queue", "support"),
+        ("Agent", "100"),
+        ("HoldTime", "15"),
+        ("BridgeUniqueid", "br-1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AgentConnect { hold_time, bridge_unique_id, .. } => {
+        AmiEvent::AgentConnect {
+            hold_time,
+            bridge_unique_id,
+            ..
+        } => {
             assert_eq!(hold_time, 15);
             assert_eq!(bridge_unique_id, "br-1");
         }
@@ -754,10 +1244,24 @@ fn parse_agent_connect() {
 
 #[test]
 fn parse_agent_complete() {
-    let msg = raw(&[("Event", "AgentComplete"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Queue", "support"), ("Agent", "100"), ("HoldTime", "10"), ("TalkTime", "60"), ("Reason", "caller")]);
+    let msg = raw(&[
+        ("Event", "AgentComplete"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Queue", "support"),
+        ("Agent", "100"),
+        ("HoldTime", "10"),
+        ("TalkTime", "60"),
+        ("Reason", "caller"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AgentComplete { hold_time, talk_time, reason, .. } => {
+        AmiEvent::AgentComplete {
+            hold_time,
+            talk_time,
+            reason,
+            ..
+        } => {
             assert_eq!(hold_time, 10);
             assert_eq!(talk_time, 60);
             assert_eq!(reason, "caller");
@@ -768,7 +1272,13 @@ fn parse_agent_complete() {
 
 #[test]
 fn parse_agent_dump() {
-    let msg = raw(&[("Event", "AgentDump"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Queue", "support"), ("Agent", "100")]);
+    let msg = raw(&[
+        ("Event", "AgentDump"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Queue", "support"),
+        ("Agent", "100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::AgentDump { agent, .. } => {
@@ -780,7 +1290,12 @@ fn parse_agent_dump() {
 
 #[test]
 fn parse_agent_login() {
-    let msg = raw(&[("Event", "AgentLogin"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Agent", "100")]);
+    let msg = raw(&[
+        ("Event", "AgentLogin"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Agent", "100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::AgentLogin { agent, .. } => {
@@ -792,10 +1307,16 @@ fn parse_agent_login() {
 
 #[test]
 fn parse_agent_logoff() {
-    let msg = raw(&[("Event", "AgentLogoff"), ("Agent", "100"), ("Logintime", "3600")]);
+    let msg = raw(&[
+        ("Event", "AgentLogoff"),
+        ("Agent", "100"),
+        ("Logintime", "3600"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AgentLogoff { agent, logintime, .. } => {
+        AmiEvent::AgentLogoff {
+            agent, logintime, ..
+        } => {
             assert_eq!(agent, "100");
             assert_eq!(logintime, 3600);
         }
@@ -805,7 +1326,14 @@ fn parse_agent_logoff() {
 
 #[test]
 fn parse_agent_ring_no_answer() {
-    let msg = raw(&[("Event", "AgentRingNoAnswer"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Queue", "support"), ("Agent", "100"), ("RingTime", "15")]);
+    let msg = raw(&[
+        ("Event", "AgentRingNoAnswer"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Queue", "support"),
+        ("Agent", "100"),
+        ("RingTime", "15"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::AgentRingNoAnswer { ring_time, .. } => {
@@ -826,7 +1354,12 @@ fn parse_agents() {
     ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Agents { agent, name, status, channel } => {
+        AmiEvent::Agents {
+            agent,
+            name,
+            status,
+            channel,
+        } => {
             assert_eq!(agent, "100");
             assert_eq!(name, "Agent Smith");
             assert_eq!(status, "AGENT_IDLE");
@@ -847,7 +1380,11 @@ fn parse_agents_complete() {
 
 #[test]
 fn parse_confbridge_start() {
-    let msg = raw(&[("Event", "ConfbridgeStart"), ("BridgeUniqueid", "br-1"), ("Conference", "conf-100")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeStart"),
+        ("BridgeUniqueid", "br-1"),
+        ("Conference", "conf-100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ConfbridgeStart { conference, .. } => {
@@ -859,7 +1396,11 @@ fn parse_confbridge_start() {
 
 #[test]
 fn parse_confbridge_end() {
-    let msg = raw(&[("Event", "ConfbridgeEnd"), ("BridgeUniqueid", "br-1"), ("Conference", "conf-100")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeEnd"),
+        ("BridgeUniqueid", "br-1"),
+        ("Conference", "conf-100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ConfbridgeEnd { conference, .. } => {
@@ -871,10 +1412,19 @@ fn parse_confbridge_end() {
 
 #[test]
 fn parse_confbridge_join() {
-    let msg = raw(&[("Event", "ConfbridgeJoin"), ("BridgeUniqueid", "br-1"), ("Conference", "conf-100"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Admin", "Yes")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeJoin"),
+        ("BridgeUniqueid", "br-1"),
+        ("Conference", "conf-100"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Admin", "Yes"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ConfbridgeJoin { conference, admin, .. } => {
+        AmiEvent::ConfbridgeJoin {
+            conference, admin, ..
+        } => {
             assert_eq!(conference, "conf-100");
             assert_eq!(admin, "Yes");
         }
@@ -884,7 +1434,13 @@ fn parse_confbridge_join() {
 
 #[test]
 fn parse_confbridge_leave() {
-    let msg = raw(&[("Event", "ConfbridgeLeave"), ("BridgeUniqueid", "br-1"), ("Conference", "conf-100"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeLeave"),
+        ("BridgeUniqueid", "br-1"),
+        ("Conference", "conf-100"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ConfbridgeLeave { conference, .. } => {
@@ -896,7 +1452,15 @@ fn parse_confbridge_leave() {
 
 #[test]
 fn parse_confbridge_list() {
-    let msg = raw(&[("Event", "ConfbridgeList"), ("BridgeUniqueid", "br-1"), ("Conference", "conf-100"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Admin", "No"), ("Muted", "No")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeList"),
+        ("BridgeUniqueid", "br-1"),
+        ("Conference", "conf-100"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Admin", "No"),
+        ("Muted", "No"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ConfbridgeList { admin, muted, .. } => {
@@ -909,7 +1473,13 @@ fn parse_confbridge_list() {
 
 #[test]
 fn parse_confbridge_mute() {
-    let msg = raw(&[("Event", "ConfbridgeMute"), ("BridgeUniqueid", "br-1"), ("Conference", "conf-100"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeMute"),
+        ("BridgeUniqueid", "br-1"),
+        ("Conference", "conf-100"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ConfbridgeMute { conference, .. } => {
@@ -921,7 +1491,13 @@ fn parse_confbridge_mute() {
 
 #[test]
 fn parse_confbridge_unmute() {
-    let msg = raw(&[("Event", "ConfbridgeUnmute"), ("BridgeUniqueid", "br-1"), ("Conference", "conf-100"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeUnmute"),
+        ("BridgeUniqueid", "br-1"),
+        ("Conference", "conf-100"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ConfbridgeUnmute { conference, .. } => {
@@ -933,7 +1509,14 @@ fn parse_confbridge_unmute() {
 
 #[test]
 fn parse_confbridge_talking() {
-    let msg = raw(&[("Event", "ConfbridgeTalking"), ("BridgeUniqueid", "br-1"), ("Conference", "conf-100"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("TalkingStatus", "on")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeTalking"),
+        ("BridgeUniqueid", "br-1"),
+        ("Conference", "conf-100"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("TalkingStatus", "on"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ConfbridgeTalking { talking_status, .. } => {
@@ -945,7 +1528,11 @@ fn parse_confbridge_talking() {
 
 #[test]
 fn parse_confbridge_record() {
-    let msg = raw(&[("Event", "ConfbridgeRecord"), ("BridgeUniqueid", "br-1"), ("Conference", "conf-100")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeRecord"),
+        ("BridgeUniqueid", "br-1"),
+        ("Conference", "conf-100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ConfbridgeRecord { conference, .. } => {
@@ -957,7 +1544,11 @@ fn parse_confbridge_record() {
 
 #[test]
 fn parse_confbridge_stop_record() {
-    let msg = raw(&[("Event", "ConfbridgeStopRecord"), ("BridgeUniqueid", "br-1"), ("Conference", "conf-100")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeStopRecord"),
+        ("BridgeUniqueid", "br-1"),
+        ("Conference", "conf-100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ConfbridgeStopRecord { conference, .. } => {
@@ -969,10 +1560,22 @@ fn parse_confbridge_stop_record() {
 
 #[test]
 fn parse_confbridge_list_rooms() {
-    let msg = raw(&[("Event", "ConfbridgeListRooms"), ("Conference", "conf-100"), ("Parties", "5"), ("Marked", "1"), ("Locked", "No")]);
+    let msg = raw(&[
+        ("Event", "ConfbridgeListRooms"),
+        ("Conference", "conf-100"),
+        ("Parties", "5"),
+        ("Marked", "1"),
+        ("Locked", "No"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ConfbridgeListRooms { conference, parties, marked, locked, .. } => {
+        AmiEvent::ConfbridgeListRooms {
+            conference,
+            parties,
+            marked,
+            locked,
+            ..
+        } => {
             assert_eq!(conference, "conf-100");
             assert_eq!(parties, 5);
             assert_eq!(marked, 1);
@@ -986,7 +1589,11 @@ fn parse_confbridge_list_rooms() {
 
 #[test]
 fn parse_mix_monitor_start() {
-    let msg = raw(&[("Event", "MixMonitorStart"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "MixMonitorStart"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::MixMonitorStart { channel, .. } => {
@@ -998,7 +1605,11 @@ fn parse_mix_monitor_start() {
 
 #[test]
 fn parse_mix_monitor_stop() {
-    let msg = raw(&[("Event", "MixMonitorStop"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "MixMonitorStop"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::MixMonitorStop { channel, .. } => {
@@ -1010,10 +1621,18 @@ fn parse_mix_monitor_stop() {
 
 #[test]
 fn parse_mix_monitor_mute() {
-    let msg = raw(&[("Event", "MixMonitorMute"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Direction", "read"), ("State", "1")]);
+    let msg = raw(&[
+        ("Event", "MixMonitorMute"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Direction", "read"),
+        ("State", "1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::MixMonitorMute { direction, state, .. } => {
+        AmiEvent::MixMonitorMute {
+            direction, state, ..
+        } => {
             assert_eq!(direction, "read");
             assert_eq!(state, "1");
         }
@@ -1025,7 +1644,12 @@ fn parse_mix_monitor_mute() {
 
 #[test]
 fn parse_music_on_hold_start() {
-    let msg = raw(&[("Event", "MusicOnHoldStart"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Class", "default")]);
+    let msg = raw(&[
+        ("Event", "MusicOnHoldStart"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Class", "default"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::MusicOnHoldStart { class, .. } => {
@@ -1037,7 +1661,11 @@ fn parse_music_on_hold_start() {
 
 #[test]
 fn parse_music_on_hold_stop() {
-    let msg = raw(&[("Event", "MusicOnHoldStop"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "MusicOnHoldStop"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::MusicOnHoldStop { channel, .. } => {
@@ -1051,10 +1679,23 @@ fn parse_music_on_hold_stop() {
 
 #[test]
 fn parse_parked_call() {
-    let msg = raw(&[("Event", "ParkedCall"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("ParkingLot", "default"), ("ParkingSpace", "701"), ("ParkerDialString", "PJSIP/100"), ("Timeout", "45")]);
+    let msg = raw(&[
+        ("Event", "ParkedCall"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("ParkingLot", "default"),
+        ("ParkingSpace", "701"),
+        ("ParkerDialString", "PJSIP/100"),
+        ("Timeout", "45"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ParkedCall { parking_lot, parking_space, timeout, .. } => {
+        AmiEvent::ParkedCall {
+            parking_lot,
+            parking_space,
+            timeout,
+            ..
+        } => {
             assert_eq!(parking_lot, "default");
             assert_eq!(parking_space, 701);
             assert_eq!(timeout, 45);
@@ -1065,7 +1706,13 @@ fn parse_parked_call() {
 
 #[test]
 fn parse_parked_call_give_up() {
-    let msg = raw(&[("Event", "ParkedCallGiveUp"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("ParkingLot", "default"), ("ParkingSpace", "701")]);
+    let msg = raw(&[
+        ("Event", "ParkedCallGiveUp"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("ParkingLot", "default"),
+        ("ParkingSpace", "701"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ParkedCallGiveUp { parking_space, .. } => {
@@ -1077,7 +1724,13 @@ fn parse_parked_call_give_up() {
 
 #[test]
 fn parse_parked_call_time_out() {
-    let msg = raw(&[("Event", "ParkedCallTimeOut"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("ParkingLot", "default"), ("ParkingSpace", "701")]);
+    let msg = raw(&[
+        ("Event", "ParkedCallTimeOut"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("ParkingLot", "default"),
+        ("ParkingSpace", "701"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ParkedCallTimeOut { parking_space, .. } => {
@@ -1089,10 +1742,21 @@ fn parse_parked_call_time_out() {
 
 #[test]
 fn parse_parked_call_swap() {
-    let msg = raw(&[("Event", "ParkedCallSwap"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("ParkingLot", "default"), ("ParkingSpace", "701"), ("ParkerChannel", "PJSIP/200-0002")]);
+    let msg = raw(&[
+        ("Event", "ParkedCallSwap"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("ParkingLot", "default"),
+        ("ParkingSpace", "701"),
+        ("ParkerChannel", "PJSIP/200-0002"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ParkedCallSwap { parking_space, parker_channel, .. } => {
+        AmiEvent::ParkedCallSwap {
+            parking_space,
+            parker_channel,
+            ..
+        } => {
             assert_eq!(parking_space, 701);
             assert_eq!(parker_channel, "PJSIP/200-0002");
         }
@@ -1102,10 +1766,21 @@ fn parse_parked_call_swap() {
 
 #[test]
 fn parse_unparked_call() {
-    let msg = raw(&[("Event", "UnParkedCall"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("ParkingLot", "default"), ("ParkingSpace", "701"), ("RetrieverChannel", "PJSIP/300-0003")]);
+    let msg = raw(&[
+        ("Event", "UnParkedCall"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("ParkingLot", "default"),
+        ("ParkingSpace", "701"),
+        ("RetrieverChannel", "PJSIP/300-0003"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::UnParkedCall { parking_space, retriever_channel, .. } => {
+        AmiEvent::UnParkedCall {
+            parking_space,
+            retriever_channel,
+            ..
+        } => {
             assert_eq!(parking_space, 701);
             assert_eq!(retriever_channel, "PJSIP/300-0003");
         }
@@ -1117,10 +1792,20 @@ fn parse_unparked_call() {
 
 #[test]
 fn parse_pickup() {
-    let msg = raw(&[("Event", "Pickup"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("TargetChannel", "PJSIP/200-0002"), ("TargetUniqueid", "u2")]);
+    let msg = raw(&[
+        ("Event", "Pickup"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("TargetChannel", "PJSIP/200-0002"),
+        ("TargetUniqueid", "u2"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Pickup { target_channel, target_unique_id, .. } => {
+        AmiEvent::Pickup {
+            target_channel,
+            target_unique_id,
+            ..
+        } => {
             assert_eq!(target_channel, "PJSIP/200-0002");
             assert_eq!(target_unique_id, "u2");
         }
@@ -1130,10 +1815,20 @@ fn parse_pickup() {
 
 #[test]
 fn parse_chan_spy_start() {
-    let msg = raw(&[("Event", "ChanSpyStart"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("SpyeeChannel", "PJSIP/200-0002"), ("SpyeeUniqueid", "u2")]);
+    let msg = raw(&[
+        ("Event", "ChanSpyStart"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("SpyeeChannel", "PJSIP/200-0002"),
+        ("SpyeeUniqueid", "u2"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ChanSpyStart { spy_channel, spy_unique_id, .. } => {
+        AmiEvent::ChanSpyStart {
+            spy_channel,
+            spy_unique_id,
+            ..
+        } => {
             assert_eq!(spy_channel, "PJSIP/200-0002");
             assert_eq!(spy_unique_id, "u2");
         }
@@ -1143,7 +1838,13 @@ fn parse_chan_spy_start() {
 
 #[test]
 fn parse_chan_spy_stop() {
-    let msg = raw(&[("Event", "ChanSpyStop"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("SpyeeChannel", "PJSIP/200-0002"), ("SpyeeUniqueid", "u2")]);
+    let msg = raw(&[
+        ("Event", "ChanSpyStop"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("SpyeeChannel", "PJSIP/200-0002"),
+        ("SpyeeUniqueid", "u2"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ChanSpyStop { spy_channel, .. } => {
@@ -1157,7 +1858,11 @@ fn parse_chan_spy_stop() {
 
 #[test]
 fn parse_channel_talking_start() {
-    let msg = raw(&[("Event", "ChannelTalkingStart"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "ChannelTalkingStart"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ChannelTalkingStart { channel, .. } => {
@@ -1169,7 +1874,12 @@ fn parse_channel_talking_start() {
 
 #[test]
 fn parse_channel_talking_stop() {
-    let msg = raw(&[("Event", "ChannelTalkingStop"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Duration", "120")]);
+    let msg = raw(&[
+        ("Event", "ChannelTalkingStop"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Duration", "120"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::ChannelTalkingStop { duration, .. } => {
@@ -1183,7 +1893,11 @@ fn parse_channel_talking_stop() {
 
 #[test]
 fn parse_device_state_change() {
-    let msg = raw(&[("Event", "DeviceStateChange"), ("Device", "PJSIP/100"), ("State", "NOT_INUSE")]);
+    let msg = raw(&[
+        ("Event", "DeviceStateChange"),
+        ("Device", "PJSIP/100"),
+        ("State", "NOT_INUSE"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::DeviceStateChange { device, state, .. } => {
@@ -1196,10 +1910,22 @@ fn parse_device_state_change() {
 
 #[test]
 fn parse_extension_status() {
-    let msg = raw(&[("Event", "ExtensionStatus"), ("Exten", "100"), ("Context", "default"), ("Hint", "PJSIP/100"), ("Status", "0"), ("StatusText", "Idle")]);
+    let msg = raw(&[
+        ("Event", "ExtensionStatus"),
+        ("Exten", "100"),
+        ("Context", "default"),
+        ("Hint", "PJSIP/100"),
+        ("Status", "0"),
+        ("StatusText", "Idle"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ExtensionStatus { exten, status, status_text, .. } => {
+        AmiEvent::ExtensionStatus {
+            exten,
+            status,
+            status_text,
+            ..
+        } => {
             assert_eq!(exten, "100");
             assert_eq!(status, 0);
             assert_eq!(status_text, "Idle");
@@ -1210,10 +1936,18 @@ fn parse_extension_status() {
 
 #[test]
 fn parse_presence_state_change() {
-    let msg = raw(&[("Event", "PresenceStateChange"), ("Presentity", "100@default"), ("Status", "available"), ("Subtype", ""), ("Message", "On the phone")]);
+    let msg = raw(&[
+        ("Event", "PresenceStateChange"),
+        ("Presentity", "100@default"),
+        ("Status", "available"),
+        ("Subtype", ""),
+        ("Message", "On the phone"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::PresenceStateChange { presentity, status, .. } => {
+        AmiEvent::PresenceStateChange {
+            presentity, status, ..
+        } => {
             assert_eq!(presentity, "100@default");
             assert_eq!(status, "available");
         }
@@ -1223,10 +1957,18 @@ fn parse_presence_state_change() {
 
 #[test]
 fn parse_presence_status() {
-    let msg = raw(&[("Event", "PresenceStatus"), ("Presentity", "100@default"), ("Status", "away"), ("Subtype", "meeting"), ("Message", "In meeting")]);
+    let msg = raw(&[
+        ("Event", "PresenceStatus"),
+        ("Presentity", "100@default"),
+        ("Status", "away"),
+        ("Subtype", "meeting"),
+        ("Message", "In meeting"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::PresenceStatus { status, message, .. } => {
+        AmiEvent::PresenceStatus {
+            status, message, ..
+        } => {
             assert_eq!(status, "away");
             assert_eq!(message, "In meeting");
         }
@@ -1238,10 +1980,20 @@ fn parse_presence_status() {
 
 #[test]
 fn parse_contact_status() {
-    let msg = raw(&[("Event", "ContactStatus"), ("URI", "sip:100@192.168.1.10:5060"), ("ContactStatus", "Created"), ("AOR", "100"), ("EndpointName", "100")]);
+    let msg = raw(&[
+        ("Event", "ContactStatus"),
+        ("URI", "sip:100@192.168.1.10:5060"),
+        ("ContactStatus", "Created"),
+        ("AOR", "100"),
+        ("EndpointName", "100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ContactStatus { uri, contact_status, .. } => {
+        AmiEvent::ContactStatus {
+            uri,
+            contact_status,
+            ..
+        } => {
             assert_eq!(uri, "sip:100@192.168.1.10:5060");
             assert_eq!(contact_status, "Created");
         }
@@ -1251,7 +2003,14 @@ fn parse_contact_status() {
 
 #[test]
 fn parse_registry() {
-    let msg = raw(&[("Event", "Registry"), ("ChannelType", "PJSIP"), ("Domain", "sip.example.com"), ("Username", "100"), ("Status", "Registered"), ("Cause", "")]);
+    let msg = raw(&[
+        ("Event", "Registry"),
+        ("ChannelType", "PJSIP"),
+        ("Domain", "sip.example.com"),
+        ("Username", "100"),
+        ("Status", "Registered"),
+        ("Cause", ""),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::Registry { domain, status, .. } => {
@@ -1266,10 +2025,21 @@ fn parse_registry() {
 
 #[test]
 fn parse_message_waiting() {
-    let msg = raw(&[("Event", "MessageWaiting"), ("Mailbox", "100@default"), ("Waiting", "1"), ("New", "3"), ("Old", "5")]);
+    let msg = raw(&[
+        ("Event", "MessageWaiting"),
+        ("Mailbox", "100@default"),
+        ("Waiting", "1"),
+        ("New", "3"),
+        ("Old", "5"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::MessageWaiting { mailbox, new_messages, old_messages, .. } => {
+        AmiEvent::MessageWaiting {
+            mailbox,
+            new_messages,
+            old_messages,
+            ..
+        } => {
             assert_eq!(mailbox, "100@default");
             assert_eq!(new_messages, 3);
             assert_eq!(old_messages, 5);
@@ -1280,10 +2050,19 @@ fn parse_message_waiting() {
 
 #[test]
 fn parse_voicemail_password_change() {
-    let msg = raw(&[("Event", "VoicemailPasswordChange"), ("Context", "default"), ("Mailbox", "100"), ("NewPassword", "1234")]);
+    let msg = raw(&[
+        ("Event", "VoicemailPasswordChange"),
+        ("Context", "default"),
+        ("Mailbox", "100"),
+        ("NewPassword", "1234"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::VoicemailPasswordChange { mailbox, new_password, .. } => {
+        AmiEvent::VoicemailPasswordChange {
+            mailbox,
+            new_password,
+            ..
+        } => {
             assert_eq!(mailbox, "100");
             assert_eq!(new_password, "1234");
         }
@@ -1295,7 +2074,14 @@ fn parse_voicemail_password_change() {
 
 #[test]
 fn parse_rtcp_received() {
-    let msg = raw(&[("Event", "RTCPReceived"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("SSRC", "0x12345678"), ("PT", "200"), ("From", "192.168.1.10:10000")]);
+    let msg = raw(&[
+        ("Event", "RTCPReceived"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("SSRC", "0x12345678"),
+        ("PT", "200"),
+        ("From", "192.168.1.10:10000"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::RTCPReceived { ssrc, from, .. } => {
@@ -1308,7 +2094,14 @@ fn parse_rtcp_received() {
 
 #[test]
 fn parse_rtcp_sent() {
-    let msg = raw(&[("Event", "RTCPSent"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("SSRC", "0xAABBCCDD"), ("PT", "200"), ("To", "192.168.1.10:10000")]);
+    let msg = raw(&[
+        ("Event", "RTCPSent"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("SSRC", "0xAABBCCDD"),
+        ("PT", "200"),
+        ("To", "192.168.1.10:10000"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::RTCPSent { ssrc, to, .. } => {
@@ -1323,10 +2116,22 @@ fn parse_rtcp_sent() {
 
 #[test]
 fn parse_failed_acl() {
-    let msg = raw(&[("Event", "FailedACL"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "FailedACL"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::FailedACL { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::FailedACL {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1338,10 +2143,22 @@ fn parse_failed_acl() {
 
 #[test]
 fn parse_invalid_account_id() {
-    let msg = raw(&[("Event", "InvalidAccountID"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "InvalidAccountID"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::InvalidAccountID { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::InvalidAccountID {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1353,10 +2170,22 @@ fn parse_invalid_account_id() {
 
 #[test]
 fn parse_invalid_password() {
-    let msg = raw(&[("Event", "InvalidPassword"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "InvalidPassword"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::InvalidPassword { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::InvalidPassword {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1368,10 +2197,22 @@ fn parse_invalid_password() {
 
 #[test]
 fn parse_challenge_response_failed() {
-    let msg = raw(&[("Event", "ChallengeResponseFailed"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "ChallengeResponseFailed"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ChallengeResponseFailed { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::ChallengeResponseFailed {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1383,10 +2224,22 @@ fn parse_challenge_response_failed() {
 
 #[test]
 fn parse_challenge_sent() {
-    let msg = raw(&[("Event", "ChallengeSent"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "ChallengeSent"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ChallengeSent { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::ChallengeSent {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1398,10 +2251,22 @@ fn parse_challenge_sent() {
 
 #[test]
 fn parse_successful_auth() {
-    let msg = raw(&[("Event", "SuccessfulAuth"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "SuccessfulAuth"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::SuccessfulAuth { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::SuccessfulAuth {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1413,10 +2278,22 @@ fn parse_successful_auth() {
 
 #[test]
 fn parse_session_limit() {
-    let msg = raw(&[("Event", "SessionLimit"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "SessionLimit"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::SessionLimit { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::SessionLimit {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1428,10 +2305,22 @@ fn parse_session_limit() {
 
 #[test]
 fn parse_unexpected_address() {
-    let msg = raw(&[("Event", "UnexpectedAddress"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "UnexpectedAddress"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::UnexpectedAddress { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::UnexpectedAddress {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1443,10 +2332,22 @@ fn parse_unexpected_address() {
 
 #[test]
 fn parse_request_bad_format() {
-    let msg = raw(&[("Event", "RequestBadFormat"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "RequestBadFormat"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::RequestBadFormat { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::RequestBadFormat {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1458,10 +2359,22 @@ fn parse_request_bad_format() {
 
 #[test]
 fn parse_request_not_allowed() {
-    let msg = raw(&[("Event", "RequestNotAllowed"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "RequestNotAllowed"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::RequestNotAllowed { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::RequestNotAllowed {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1473,10 +2386,22 @@ fn parse_request_not_allowed() {
 
 #[test]
 fn parse_request_not_supported() {
-    let msg = raw(&[("Event", "RequestNotSupported"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "RequestNotSupported"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::RequestNotSupported { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::RequestNotSupported {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1488,10 +2413,22 @@ fn parse_request_not_supported() {
 
 #[test]
 fn parse_invalid_transport() {
-    let msg = raw(&[("Event", "InvalidTransport"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "InvalidTransport"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::InvalidTransport { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::InvalidTransport {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1503,10 +2440,22 @@ fn parse_invalid_transport() {
 
 #[test]
 fn parse_auth_method_not_allowed() {
-    let msg = raw(&[("Event", "AuthMethodNotAllowed"), ("Severity", "Error"), ("Service", "AMI"), ("AccountID", "admin"), ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038")]);
+    let msg = raw(&[
+        ("Event", "AuthMethodNotAllowed"),
+        ("Severity", "Error"),
+        ("Service", "AMI"),
+        ("AccountID", "admin"),
+        ("RemoteAddress", "IPV4/TCP/192.168.1.100/5038"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AuthMethodNotAllowed { severity, service, account_id, remote_address, .. } => {
+        AmiEvent::AuthMethodNotAllowed {
+            severity,
+            service,
+            account_id,
+            remote_address,
+            ..
+        } => {
             assert_eq!(severity, "Error");
             assert_eq!(service, "AMI");
             assert_eq!(account_id, "admin");
@@ -1520,10 +2469,18 @@ fn parse_auth_method_not_allowed() {
 
 #[test]
 fn parse_shutdown() {
-    let msg = raw(&[("Event", "Shutdown"), ("Shutdown", "Cleanly"), ("Restart", "True")]);
+    let msg = raw(&[
+        ("Event", "Shutdown"),
+        ("Shutdown", "Cleanly"),
+        ("Restart", "True"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Shutdown { shutdown_status, restart, .. } => {
+        AmiEvent::Shutdown {
+            shutdown_status,
+            restart,
+            ..
+        } => {
             assert_eq!(shutdown_status, "Cleanly");
             assert_eq!(restart, "True");
         }
@@ -1533,7 +2490,11 @@ fn parse_shutdown() {
 
 #[test]
 fn parse_reload() {
-    let msg = raw(&[("Event", "Reload"), ("Module", "cdr_csv.so"), ("Status", "0")]);
+    let msg = raw(&[
+        ("Event", "Reload"),
+        ("Module", "cdr_csv.so"),
+        ("Status", "0"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::Reload { module, status, .. } => {
@@ -1546,7 +2507,11 @@ fn parse_reload() {
 
 #[test]
 fn parse_load() {
-    let msg = raw(&[("Event", "Load"), ("Module", "res_pjsip.so"), ("Status", "0")]);
+    let msg = raw(&[
+        ("Event", "Load"),
+        ("Module", "res_pjsip.so"),
+        ("Status", "0"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::Load { module, .. } => {
@@ -1558,7 +2523,11 @@ fn parse_load() {
 
 #[test]
 fn parse_unload() {
-    let msg = raw(&[("Event", "Unload"), ("Module", "res_pjsip.so"), ("Status", "0")]);
+    let msg = raw(&[
+        ("Event", "Unload"),
+        ("Module", "res_pjsip.so"),
+        ("Status", "0"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::Unload { module, .. } => {
@@ -1570,10 +2539,18 @@ fn parse_unload() {
 
 #[test]
 fn parse_log_channel() {
-    let msg = raw(&[("Event", "LogChannel"), ("Channel", "console"), ("Enabled", "Yes")]);
+    let msg = raw(&[
+        ("Event", "LogChannel"),
+        ("Channel", "console"),
+        ("Enabled", "Yes"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::LogChannel { channel_log, enabled, .. } => {
+        AmiEvent::LogChannel {
+            channel_log,
+            enabled,
+            ..
+        } => {
             assert_eq!(channel_log, "console");
             assert_eq!(enabled, "Yes");
         }
@@ -1599,7 +2576,12 @@ fn parse_memory_limit() {
 
 #[test]
 fn parse_async_agi_start() {
-    let msg = raw(&[("Event", "AsyncAGIStart"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Env", "agi_request%3A%20async")]);
+    let msg = raw(&[
+        ("Event", "AsyncAGIStart"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Env", "agi_request%3A%20async"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::AsyncAGIStart { env, .. } => {
@@ -1611,10 +2593,18 @@ fn parse_async_agi_start() {
 
 #[test]
 fn parse_async_agi_exec() {
-    let msg = raw(&[("Event", "AsyncAGIExec"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("CommandID", "cmd-1"), ("Result", "200 result=1")]);
+    let msg = raw(&[
+        ("Event", "AsyncAGIExec"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("CommandID", "cmd-1"),
+        ("Result", "200 result=1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AsyncAGIExec { command_id, result, .. } => {
+        AmiEvent::AsyncAGIExec {
+            command_id, result, ..
+        } => {
             assert_eq!(command_id, "cmd-1");
             assert_eq!(result, "200 result=1");
         }
@@ -1624,7 +2614,11 @@ fn parse_async_agi_exec() {
 
 #[test]
 fn parse_async_agi_end() {
-    let msg = raw(&[("Event", "AsyncAGIEnd"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "AsyncAGIEnd"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::AsyncAGIEnd { channel, .. } => {
@@ -1636,10 +2630,20 @@ fn parse_async_agi_end() {
 
 #[test]
 fn parse_agi_exec_start() {
-    let msg = raw(&[("Event", "AGIExecStart"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Command", "ANSWER"), ("CommandId", "cmd-1")]);
+    let msg = raw(&[
+        ("Event", "AGIExecStart"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Command", "ANSWER"),
+        ("CommandId", "cmd-1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AGIExecStart { command, command_id, .. } => {
+        AmiEvent::AGIExecStart {
+            command,
+            command_id,
+            ..
+        } => {
             assert_eq!(command, "ANSWER");
             assert_eq!(command_id, "cmd-1");
         }
@@ -1649,10 +2653,22 @@ fn parse_agi_exec_start() {
 
 #[test]
 fn parse_agi_exec_end() {
-    let msg = raw(&[("Event", "AGIExecEnd"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Command", "ANSWER"), ("CommandId", "cmd-1"), ("ResultCode", "200"), ("Result", "result=0")]);
+    let msg = raw(&[
+        ("Event", "AGIExecEnd"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Command", "ANSWER"),
+        ("CommandId", "cmd-1"),
+        ("ResultCode", "200"),
+        ("Result", "result=0"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AGIExecEnd { result_code, result, .. } => {
+        AmiEvent::AGIExecEnd {
+            result_code,
+            result,
+            ..
+        } => {
             assert_eq!(result_code, "200");
             assert_eq!(result, "result=0");
         }
@@ -1664,7 +2680,12 @@ fn parse_agi_exec_end() {
 
 #[test]
 fn parse_hangup_handler_push() {
-    let msg = raw(&[("Event", "HangupHandlerPush"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Handler", "handler1")]);
+    let msg = raw(&[
+        ("Event", "HangupHandlerPush"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Handler", "handler1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::HangupHandlerPush { handler, .. } => {
@@ -1676,7 +2697,12 @@ fn parse_hangup_handler_push() {
 
 #[test]
 fn parse_hangup_handler_pop() {
-    let msg = raw(&[("Event", "HangupHandlerPop"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Handler", "handler1")]);
+    let msg = raw(&[
+        ("Event", "HangupHandlerPop"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Handler", "handler1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::HangupHandlerPop { handler, .. } => {
@@ -1688,7 +2714,12 @@ fn parse_hangup_handler_pop() {
 
 #[test]
 fn parse_hangup_handler_run() {
-    let msg = raw(&[("Event", "HangupHandlerRun"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Handler", "handler1")]);
+    let msg = raw(&[
+        ("Event", "HangupHandlerRun"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Handler", "handler1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::HangupHandlerRun { handler, .. } => {
@@ -1702,10 +2733,29 @@ fn parse_hangup_handler_run() {
 
 #[test]
 fn parse_status() {
-    let msg = raw(&[("Event", "Status"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("ChannelState", "6"), ("CallerIDNum", "100"), ("CallerIDName", "Alice"), ("AccountCode", "acct1"), ("Context", "default"), ("Exten", "200"), ("Priority", "1"), ("Seconds", "30"), ("BridgeID", "br-1")]);
+    let msg = raw(&[
+        ("Event", "Status"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("ChannelState", "6"),
+        ("CallerIDNum", "100"),
+        ("CallerIDName", "Alice"),
+        ("AccountCode", "acct1"),
+        ("Context", "default"),
+        ("Exten", "200"),
+        ("Priority", "1"),
+        ("Seconds", "30"),
+        ("BridgeID", "br-1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Status { channel_state, priority, seconds, bridge_id, .. } => {
+        AmiEvent::Status {
+            channel_state,
+            priority,
+            seconds,
+            bridge_id,
+            ..
+        } => {
             assert_eq!(channel_state, "6");
             assert_eq!(priority, 1);
             assert_eq!(seconds, 30);
@@ -1729,10 +2779,25 @@ fn parse_status_complete() {
 
 #[test]
 fn parse_core_show_channel() {
-    let msg = raw(&[("Event", "CoreShowChannel"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("ChannelState", "6"), ("CallerIDNum", "100"), ("CallerIDName", "Alice"), ("Application", "Dial"), ("ApplicationData", "PJSIP/200"), ("Duration", "00:01:30"), ("BridgeID", "br-1")]);
+    let msg = raw(&[
+        ("Event", "CoreShowChannel"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("ChannelState", "6"),
+        ("CallerIDNum", "100"),
+        ("CallerIDName", "Alice"),
+        ("Application", "Dial"),
+        ("ApplicationData", "PJSIP/200"),
+        ("Duration", "00:01:30"),
+        ("BridgeID", "br-1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::CoreShowChannel { application, duration, .. } => {
+        AmiEvent::CoreShowChannel {
+            application,
+            duration,
+            ..
+        } => {
             assert_eq!(application, "Dial");
             assert_eq!(duration, "00:01:30");
         }
@@ -1745,7 +2810,9 @@ fn parse_core_show_channels_complete() {
     let msg = raw(&[("Event", "CoreShowChannelsComplete"), ("ListItems", "3")]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::CoreShowChannelsComplete { listed_channels, .. } => {
+        AmiEvent::CoreShowChannelsComplete {
+            listed_channels, ..
+        } => {
             assert_eq!(listed_channels, 3);
         }
         other => panic!("expected CoreShowChannelsComplete, got {other:?}"),
@@ -1771,7 +2838,11 @@ fn parse_dahdi_channel() {
     ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::DAHDIChannel { dahdi_channel, channel, unique_id } => {
+        AmiEvent::DAHDIChannel {
+            dahdi_channel,
+            channel,
+            unique_id,
+        } => {
             assert_eq!(dahdi_channel, "1");
             assert_eq!(channel.as_deref(), Some("DAHDI/1-1"));
             assert_eq!(unique_id.as_deref(), Some("u1"));
@@ -1785,7 +2856,9 @@ fn parse_dahdi_channel_without_channel() {
     let msg = raw(&[("Event", "DAHDIChannel"), ("DAHDIChannel", "1")]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::DAHDIChannel { channel, unique_id, .. } => {
+        AmiEvent::DAHDIChannel {
+            channel, unique_id, ..
+        } => {
             assert!(channel.is_none());
             assert!(unique_id.is_none());
         }
@@ -1795,10 +2868,18 @@ fn parse_dahdi_channel_without_channel() {
 
 #[test]
 fn parse_alarm() {
-    let msg = raw(&[("Event", "Alarm"), ("Alarm", "Red Alarm"), ("Channel", "DAHDI/1")]);
+    let msg = raw(&[
+        ("Event", "Alarm"),
+        ("Alarm", "Red Alarm"),
+        ("Channel", "DAHDI/1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::Alarm { alarm, channel_dahdi, .. } => {
+        AmiEvent::Alarm {
+            alarm,
+            channel_dahdi,
+            ..
+        } => {
             assert_eq!(alarm, "Red Alarm");
             assert_eq!(channel_dahdi, "DAHDI/1");
         }
@@ -1820,7 +2901,11 @@ fn parse_alarm_clear() {
 
 #[test]
 fn parse_span_alarm() {
-    let msg = raw(&[("Event", "SpanAlarm"), ("Span", "1"), ("Alarm", "Red Alarm")]);
+    let msg = raw(&[
+        ("Event", "SpanAlarm"),
+        ("Span", "1"),
+        ("Alarm", "Red Alarm"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::SpanAlarm { span, alarm, .. } => {
@@ -1847,7 +2932,12 @@ fn parse_span_alarm_clear() {
 
 #[test]
 fn parse_aoc_d() {
-    let msg = raw(&[("Event", "AOC-D"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("ChargeType", "Currency")]);
+    let msg = raw(&[
+        ("Event", "AOC-D"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("ChargeType", "Currency"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::AocD { charge_type, .. } => {
@@ -1859,7 +2949,12 @@ fn parse_aoc_d() {
 
 #[test]
 fn parse_aoc_e() {
-    let msg = raw(&[("Event", "AOC-E"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("ChargeType", "Unit")]);
+    let msg = raw(&[
+        ("Event", "AOC-E"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("ChargeType", "Unit"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::AocE { charge_type, .. } => {
@@ -1871,7 +2966,11 @@ fn parse_aoc_e() {
 
 #[test]
 fn parse_aoc_s() {
-    let msg = raw(&[("Event", "AOC-S"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "AOC-S"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::AocS { channel, .. } => {
@@ -1885,10 +2984,23 @@ fn parse_aoc_s() {
 
 #[test]
 fn parse_fax_status() {
-    let msg = raw(&[("Event", "FAXStatus"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Operation", "receive"), ("Status", "SENDING"), ("LocalStationID", "12345"), ("FileName", "/tmp/fax.tif")]);
+    let msg = raw(&[
+        ("Event", "FAXStatus"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Operation", "receive"),
+        ("Status", "SENDING"),
+        ("LocalStationID", "12345"),
+        ("FileName", "/tmp/fax.tif"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::FAXStatus { operation, status, local_station_id, .. } => {
+        AmiEvent::FAXStatus {
+            operation,
+            status,
+            local_station_id,
+            ..
+        } => {
             assert_eq!(operation, "receive");
             assert_eq!(status, "SENDING");
             assert_eq!(local_station_id, "12345");
@@ -1899,10 +3011,23 @@ fn parse_fax_status() {
 
 #[test]
 fn parse_receive_fax() {
-    let msg = raw(&[("Event", "ReceiveFAX"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("LocalStationID", "12345"), ("RemoteStationID", "67890"), ("PagesTransferred", "3"), ("Resolution", "200x200"), ("FileName", "/tmp/fax.tif")]);
+    let msg = raw(&[
+        ("Event", "ReceiveFAX"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("LocalStationID", "12345"),
+        ("RemoteStationID", "67890"),
+        ("PagesTransferred", "3"),
+        ("Resolution", "200x200"),
+        ("FileName", "/tmp/fax.tif"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ReceiveFAX { pages_transferred, remote_station_id, .. } => {
+        AmiEvent::ReceiveFAX {
+            pages_transferred,
+            remote_station_id,
+            ..
+        } => {
             assert_eq!(pages_transferred, 3);
             assert_eq!(remote_station_id, "67890");
         }
@@ -1912,10 +3037,23 @@ fn parse_receive_fax() {
 
 #[test]
 fn parse_send_fax() {
-    let msg = raw(&[("Event", "SendFAX"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("LocalStationID", "12345"), ("RemoteStationID", "67890"), ("PagesTransferred", "2"), ("Resolution", "200x200"), ("FileName", "/tmp/fax.tif")]);
+    let msg = raw(&[
+        ("Event", "SendFAX"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("LocalStationID", "12345"),
+        ("RemoteStationID", "67890"),
+        ("PagesTransferred", "2"),
+        ("Resolution", "200x200"),
+        ("FileName", "/tmp/fax.tif"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::SendFAX { pages_transferred, filename, .. } => {
+        AmiEvent::SendFAX {
+            pages_transferred,
+            filename,
+            ..
+        } => {
             assert_eq!(pages_transferred, 2);
             assert_eq!(filename, "/tmp/fax.tif");
         }
@@ -1925,7 +3063,12 @@ fn parse_send_fax() {
 
 #[test]
 fn parse_fax_session() {
-    let msg = raw(&[("Event", "FAXSession"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("SessionNumber", "1")]);
+    let msg = raw(&[
+        ("Event", "FAXSession"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("SessionNumber", "1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::FAXSession { session_number, .. } => {
@@ -1937,10 +3080,19 @@ fn parse_fax_session() {
 
 #[test]
 fn parse_fax_sessions_entry() {
-    let msg = raw(&[("Event", "FAXSessionsEntry"), ("Channel", "PJSIP/100-0001"), ("SessionNumber", "1"), ("Technology", "SPANDSP"), ("State", "active"), ("Files", "/tmp/fax.tif")]);
+    let msg = raw(&[
+        ("Event", "FAXSessionsEntry"),
+        ("Channel", "PJSIP/100-0001"),
+        ("SessionNumber", "1"),
+        ("Technology", "SPANDSP"),
+        ("State", "active"),
+        ("Files", "/tmp/fax.tif"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::FAXSessionsEntry { technology, state, .. } => {
+        AmiEvent::FAXSessionsEntry {
+            technology, state, ..
+        } => {
             assert_eq!(technology, "SPANDSP");
             assert_eq!(state, "active");
         }
@@ -1962,10 +3114,25 @@ fn parse_fax_sessions_complete() {
 
 #[test]
 fn parse_fax_stats() {
-    let msg = raw(&[("Event", "FAXStats"), ("CurrentSessions", "2"), ("ReservedSessions", "1"), ("TransmitAttempts", "10"), ("ReceiveAttempts", "8"), ("CompletedFAXes", "15"), ("FailedFAXes", "3")]);
+    let msg = raw(&[
+        ("Event", "FAXStats"),
+        ("CurrentSessions", "2"),
+        ("ReservedSessions", "1"),
+        ("TransmitAttempts", "10"),
+        ("ReceiveAttempts", "8"),
+        ("CompletedFAXes", "15"),
+        ("FailedFAXes", "3"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::FAXStats { current_sessions, reserved_sessions, transmit_attempts, completed_faxes, failed_faxes, .. } => {
+        AmiEvent::FAXStats {
+            current_sessions,
+            reserved_sessions,
+            transmit_attempts,
+            completed_faxes,
+            failed_faxes,
+            ..
+        } => {
             assert_eq!(current_sessions, 2);
             assert_eq!(reserved_sessions, 1);
             assert_eq!(transmit_attempts, 10);
@@ -1980,10 +3147,18 @@ fn parse_fax_stats() {
 
 #[test]
 fn parse_meetme_join() {
-    let msg = raw(&[("Event", "MeetmeJoin"), ("Meetme", "100"), ("Usernum", "1"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1")]);
+    let msg = raw(&[
+        ("Event", "MeetmeJoin"),
+        ("Meetme", "100"),
+        ("Usernum", "1"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::MeetmeJoin { meetme, user_num, .. } => {
+        AmiEvent::MeetmeJoin {
+            meetme, user_num, ..
+        } => {
             assert_eq!(meetme, "100");
             assert_eq!(user_num, "1");
         }
@@ -1993,10 +3168,19 @@ fn parse_meetme_join() {
 
 #[test]
 fn parse_meetme_leave() {
-    let msg = raw(&[("Event", "MeetmeLeave"), ("Meetme", "100"), ("Usernum", "1"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Duration", "120")]);
+    let msg = raw(&[
+        ("Event", "MeetmeLeave"),
+        ("Meetme", "100"),
+        ("Usernum", "1"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Duration", "120"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::MeetmeLeave { meetme, duration, .. } => {
+        AmiEvent::MeetmeLeave {
+            meetme, duration, ..
+        } => {
             assert_eq!(meetme, "100");
             assert_eq!(duration, 120);
         }
@@ -2018,7 +3202,14 @@ fn parse_meetme_end() {
 
 #[test]
 fn parse_meetme_mute() {
-    let msg = raw(&[("Event", "MeetmeMute"), ("Meetme", "100"), ("Usernum", "1"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Status", "on")]);
+    let msg = raw(&[
+        ("Event", "MeetmeMute"),
+        ("Meetme", "100"),
+        ("Usernum", "1"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Status", "on"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::MeetmeMute { status, .. } => {
@@ -2030,7 +3221,14 @@ fn parse_meetme_mute() {
 
 #[test]
 fn parse_meetme_talking() {
-    let msg = raw(&[("Event", "MeetmeTalking"), ("Meetme", "100"), ("Usernum", "1"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Status", "on")]);
+    let msg = raw(&[
+        ("Event", "MeetmeTalking"),
+        ("Meetme", "100"),
+        ("Usernum", "1"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Status", "on"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::MeetmeTalking { status, .. } => {
@@ -2042,7 +3240,14 @@ fn parse_meetme_talking() {
 
 #[test]
 fn parse_meetme_talk_request() {
-    let msg = raw(&[("Event", "MeetmeTalkRequest"), ("Meetme", "100"), ("Usernum", "1"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Status", "on")]);
+    let msg = raw(&[
+        ("Event", "MeetmeTalkRequest"),
+        ("Meetme", "100"),
+        ("Usernum", "1"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Status", "on"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::MeetmeTalkRequest { status, .. } => {
@@ -2054,10 +3259,24 @@ fn parse_meetme_talk_request() {
 
 #[test]
 fn parse_meetme_list() {
-    let msg = raw(&[("Event", "MeetmeList"), ("Meetme", "100"), ("Usernum", "1"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Admin", "No"), ("Muted", "No"), ("Talking", "Yes")]);
+    let msg = raw(&[
+        ("Event", "MeetmeList"),
+        ("Meetme", "100"),
+        ("Usernum", "1"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Admin", "No"),
+        ("Muted", "No"),
+        ("Talking", "Yes"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::MeetmeList { admin, muted, talking, .. } => {
+        AmiEvent::MeetmeList {
+            admin,
+            muted,
+            talking,
+            ..
+        } => {
             assert_eq!(admin, "No");
             assert_eq!(muted, "No");
             assert_eq!(talking, "Yes");
@@ -2068,10 +3287,18 @@ fn parse_meetme_list() {
 
 #[test]
 fn parse_meetme_list_rooms() {
-    let msg = raw(&[("Event", "MeetmeListRooms"), ("Conference", "100"), ("Parties", "5"), ("Marked", "1"), ("Locked", "No")]);
+    let msg = raw(&[
+        ("Event", "MeetmeListRooms"),
+        ("Conference", "100"),
+        ("Parties", "5"),
+        ("Marked", "1"),
+        ("Locked", "No"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::MeetmeListRooms { parties, marked, .. } => {
+        AmiEvent::MeetmeListRooms {
+            parties, marked, ..
+        } => {
             assert_eq!(parties, 5);
             assert_eq!(marked, 1);
         }
@@ -2121,10 +3348,18 @@ fn parse_presence_state_list_complete() {
 
 #[test]
 fn parse_aor_detail() {
-    let msg = raw(&[("Event", "AorDetail"), ("ObjectName", "100"), ("Contacts", "100/sip:100@192.168.1.10")]);
+    let msg = raw(&[
+        ("Event", "AorDetail"),
+        ("ObjectName", "100"),
+        ("Contacts", "100/sip:100@192.168.1.10"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AorDetail { object_name, contacts, .. } => {
+        AmiEvent::AorDetail {
+            object_name,
+            contacts,
+            ..
+        } => {
             assert_eq!(object_name, "100");
             assert_eq!(contacts, "100/sip:100@192.168.1.10");
         }
@@ -2158,10 +3393,18 @@ fn parse_aor_list_complete() {
 
 #[test]
 fn parse_auth_detail() {
-    let msg = raw(&[("Event", "AuthDetail"), ("ObjectName", "100"), ("Username", "100")]);
+    let msg = raw(&[
+        ("Event", "AuthDetail"),
+        ("ObjectName", "100"),
+        ("Username", "100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::AuthDetail { object_name, username, .. } => {
+        AmiEvent::AuthDetail {
+            object_name,
+            username,
+            ..
+        } => {
             assert_eq!(object_name, "100");
             assert_eq!(username, "100");
         }
@@ -2195,10 +3438,19 @@ fn parse_auth_list_complete() {
 
 #[test]
 fn parse_contact_list() {
-    let msg = raw(&[("Event", "ContactList"), ("URI", "sip:100@192.168.1.10:5060"), ("ContactStatus", "Reachable"), ("AOR", "100")]);
+    let msg = raw(&[
+        ("Event", "ContactList"),
+        ("URI", "sip:100@192.168.1.10:5060"),
+        ("ContactStatus", "Reachable"),
+        ("AOR", "100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ContactList { uri, contact_status, .. } => {
+        AmiEvent::ContactList {
+            uri,
+            contact_status,
+            ..
+        } => {
             assert_eq!(uri, "sip:100@192.168.1.10:5060");
             assert_eq!(contact_status, "Reachable");
         }
@@ -2220,10 +3472,19 @@ fn parse_contact_list_complete() {
 
 #[test]
 fn parse_contact_status_detail() {
-    let msg = raw(&[("Event", "ContactStatusDetail"), ("URI", "sip:100@192.168.1.10:5060"), ("ContactStatus", "Reachable"), ("AOR", "100")]);
+    let msg = raw(&[
+        ("Event", "ContactStatusDetail"),
+        ("URI", "sip:100@192.168.1.10:5060"),
+        ("ContactStatus", "Reachable"),
+        ("AOR", "100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::ContactStatusDetail { uri, contact_status, .. } => {
+        AmiEvent::ContactStatusDetail {
+            uri,
+            contact_status,
+            ..
+        } => {
             assert_eq!(uri, "sip:100@192.168.1.10:5060");
             assert_eq!(contact_status, "Reachable");
         }
@@ -2233,10 +3494,19 @@ fn parse_contact_status_detail() {
 
 #[test]
 fn parse_endpoint_detail() {
-    let msg = raw(&[("Event", "EndpointDetail"), ("ObjectName", "100"), ("DeviceState", "Not in use"), ("ActiveChannels", "0")]);
+    let msg = raw(&[
+        ("Event", "EndpointDetail"),
+        ("ObjectName", "100"),
+        ("DeviceState", "Not in use"),
+        ("ActiveChannels", "0"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::EndpointDetail { object_name, device_state, .. } => {
+        AmiEvent::EndpointDetail {
+            object_name,
+            device_state,
+            ..
+        } => {
             assert_eq!(object_name, "100");
             assert_eq!(device_state, "Not in use");
         }
@@ -2258,10 +3528,19 @@ fn parse_endpoint_detail_complete() {
 
 #[test]
 fn parse_endpoint_list() {
-    let msg = raw(&[("Event", "EndpointList"), ("ObjectName", "100"), ("Transport", "transport-udp"), ("Aor", "100")]);
+    let msg = raw(&[
+        ("Event", "EndpointList"),
+        ("ObjectName", "100"),
+        ("Transport", "transport-udp"),
+        ("Aor", "100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::EndpointList { object_name, transport, .. } => {
+        AmiEvent::EndpointList {
+            object_name,
+            transport,
+            ..
+        } => {
             assert_eq!(object_name, "100");
             assert_eq!(transport, "transport-udp");
         }
@@ -2283,10 +3562,18 @@ fn parse_endpoint_list_complete() {
 
 #[test]
 fn parse_identify_detail() {
-    let msg = raw(&[("Event", "IdentifyDetail"), ("ObjectName", "100"), ("Endpoint", "100")]);
+    let msg = raw(&[
+        ("Event", "IdentifyDetail"),
+        ("ObjectName", "100"),
+        ("Endpoint", "100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::IdentifyDetail { object_name, endpoint, .. } => {
+        AmiEvent::IdentifyDetail {
+            object_name,
+            endpoint,
+            ..
+        } => {
             assert_eq!(object_name, "100");
             assert_eq!(endpoint, "100");
         }
@@ -2296,10 +3583,18 @@ fn parse_identify_detail() {
 
 #[test]
 fn parse_transport_detail() {
-    let msg = raw(&[("Event", "TransportDetail"), ("ObjectName", "transport-udp"), ("Protocol", "udp")]);
+    let msg = raw(&[
+        ("Event", "TransportDetail"),
+        ("ObjectName", "transport-udp"),
+        ("Protocol", "udp"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::TransportDetail { object_name, protocol, .. } => {
+        AmiEvent::TransportDetail {
+            object_name,
+            protocol,
+            ..
+        } => {
             assert_eq!(object_name, "transport-udp");
             assert_eq!(protocol, "udp");
         }
@@ -2321,10 +3616,18 @@ fn parse_resource_list_detail() {
 
 #[test]
 fn parse_inbound_registration_detail() {
-    let msg = raw(&[("Event", "InboundRegistrationDetail"), ("ObjectName", "100"), ("Contacts", "sip:100@192.168.1.10")]);
+    let msg = raw(&[
+        ("Event", "InboundRegistrationDetail"),
+        ("ObjectName", "100"),
+        ("Contacts", "sip:100@192.168.1.10"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::InboundRegistrationDetail { object_name, contacts, .. } => {
+        AmiEvent::InboundRegistrationDetail {
+            object_name,
+            contacts,
+            ..
+        } => {
             assert_eq!(object_name, "100");
             assert_eq!(contacts, "sip:100@192.168.1.10");
         }
@@ -2334,10 +3637,18 @@ fn parse_inbound_registration_detail() {
 
 #[test]
 fn parse_outbound_registration_detail() {
-    let msg = raw(&[("Event", "OutboundRegistrationDetail"), ("ObjectName", "trunk"), ("ServerUri", "sip:provider.example.com")]);
+    let msg = raw(&[
+        ("Event", "OutboundRegistrationDetail"),
+        ("ObjectName", "trunk"),
+        ("ServerUri", "sip:provider.example.com"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::OutboundRegistrationDetail { object_name, server_uri, .. } => {
+        AmiEvent::OutboundRegistrationDetail {
+            object_name,
+            server_uri,
+            ..
+        } => {
             assert_eq!(object_name, "trunk");
             assert_eq!(server_uri, "sip:provider.example.com");
         }
@@ -2347,7 +3658,10 @@ fn parse_outbound_registration_detail() {
 
 #[test]
 fn parse_inbound_subscription_detail() {
-    let msg = raw(&[("Event", "InboundSubscriptionDetail"), ("ObjectName", "100")]);
+    let msg = raw(&[
+        ("Event", "InboundSubscriptionDetail"),
+        ("ObjectName", "100"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::InboundSubscriptionDetail { object_name, .. } => {
@@ -2359,7 +3673,10 @@ fn parse_inbound_subscription_detail() {
 
 #[test]
 fn parse_outbound_subscription_detail() {
-    let msg = raw(&[("Event", "OutboundSubscriptionDetail"), ("ObjectName", "mwi-sub")]);
+    let msg = raw(&[
+        ("Event", "OutboundSubscriptionDetail"),
+        ("ObjectName", "mwi-sub"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::OutboundSubscriptionDetail { object_name, .. } => {
@@ -2373,10 +3690,20 @@ fn parse_outbound_subscription_detail() {
 
 #[test]
 fn parse_mwi_get() {
-    let msg = raw(&[("Event", "MWIGet"), ("Mailbox", "100@default"), ("OldMessages", "3"), ("NewMessages", "1")]);
+    let msg = raw(&[
+        ("Event", "MWIGet"),
+        ("Mailbox", "100@default"),
+        ("OldMessages", "3"),
+        ("NewMessages", "1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::MWIGet { mailbox, old_messages, new_messages, .. } => {
+        AmiEvent::MWIGet {
+            mailbox,
+            old_messages,
+            new_messages,
+            ..
+        } => {
             assert_eq!(mailbox, "100@default");
             assert_eq!(old_messages, 3);
             assert_eq!(new_messages, 1);
@@ -2401,10 +3728,18 @@ fn parse_mwi_get_complete() {
 
 #[test]
 fn parse_mini_voicemail() {
-    let msg = raw(&[("Event", "MiniVoiceMail"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("Mailbox", "100@default"), ("Counter", "new")]);
+    let msg = raw(&[
+        ("Event", "MiniVoiceMail"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Mailbox", "100@default"),
+        ("Counter", "new"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::MiniVoiceMail { mailbox, counter, .. } => {
+        AmiEvent::MiniVoiceMail {
+            mailbox, counter, ..
+        } => {
             assert_eq!(mailbox, "100@default");
             assert_eq!(counter, "new");
         }
@@ -2414,10 +3749,16 @@ fn parse_mini_voicemail() {
 
 #[test]
 fn parse_dnd_state() {
-    let msg = raw(&[("Event", "DNDState"), ("Channel", "PJSIP/100"), ("Status", "enabled")]);
+    let msg = raw(&[
+        ("Event", "DNDState"),
+        ("Channel", "PJSIP/100"),
+        ("Status", "enabled"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::DNDState { channel, status, .. } => {
+        AmiEvent::DNDState {
+            channel, status, ..
+        } => {
             assert_eq!(channel, "PJSIP/100");
             assert_eq!(status, "enabled");
         }
@@ -2434,10 +3775,20 @@ fn parse_deadlock_start() {
 
 #[test]
 fn parse_mcid() {
-    let msg = raw(&[("Event", "MCID"), ("Channel", "PJSIP/100-0001"), ("Uniqueid", "u1"), ("CallerIDNum", "100"), ("CallerIDName", "Alice")]);
+    let msg = raw(&[
+        ("Event", "MCID"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("CallerIDNum", "100"),
+        ("CallerIDName", "Alice"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
-        AmiEvent::MCID { caller_id_num, caller_id_name, .. } => {
+        AmiEvent::MCID {
+            caller_id_num,
+            caller_id_name,
+            ..
+        } => {
             assert_eq!(caller_id_num, "100");
             assert_eq!(caller_id_name, "Alice");
         }
@@ -2471,49 +3822,107 @@ fn from_raw_returns_none_for_empty_message() {
 
 #[test]
 fn event_name_newchannel() {
-    let event = AmiEvent::from_raw(&raw(&[("Event", "Newchannel"), ("Channel", "x"), ("ChannelState", "0"), ("ChannelStateDesc", "Down"), ("CallerIDNum", "x"), ("CallerIDName", "x"), ("Uniqueid", "x"), ("Linkedid", "x")])).expect("should parse");
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "Newchannel"),
+        ("Channel", "x"),
+        ("ChannelState", "0"),
+        ("ChannelStateDesc", "Down"),
+        ("CallerIDNum", "x"),
+        ("CallerIDName", "x"),
+        ("Uniqueid", "x"),
+        ("Linkedid", "x"),
+    ]))
+    .expect("should parse");
     assert_eq!(event.event_name(), "Newchannel");
 }
 
 #[test]
 fn event_name_hangup() {
-    let event = AmiEvent::from_raw(&raw(&[("Event", "Hangup"), ("Channel", "x"), ("Uniqueid", "x"), ("Cause", "0"), ("Cause-txt", "x")])).expect("should parse");
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "Hangup"),
+        ("Channel", "x"),
+        ("Uniqueid", "x"),
+        ("Cause", "0"),
+        ("Cause-txt", "x"),
+    ]))
+    .expect("should parse");
     assert_eq!(event.event_name(), "Hangup");
 }
 
 #[test]
 fn event_name_dtmfbegin() {
-    let event = AmiEvent::from_raw(&raw(&[("Event", "DTMFBegin"), ("Channel", "x"), ("Digit", "1"), ("Direction", "r"), ("Uniqueid", "x")])).expect("should parse");
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "DTMFBegin"),
+        ("Channel", "x"),
+        ("Digit", "1"),
+        ("Direction", "r"),
+        ("Uniqueid", "x"),
+    ]))
+    .expect("should parse");
     assert_eq!(event.event_name(), "DTMFBegin");
 }
 
 #[test]
 fn event_name_dtmfend() {
-    let event = AmiEvent::from_raw(&raw(&[("Event", "DTMFEnd"), ("Channel", "x"), ("Digit", "1"), ("DurationMs", "0"), ("Direction", "r"), ("Uniqueid", "x")])).expect("should parse");
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "DTMFEnd"),
+        ("Channel", "x"),
+        ("Digit", "1"),
+        ("DurationMs", "0"),
+        ("Direction", "r"),
+        ("Uniqueid", "x"),
+    ]))
+    .expect("should parse");
     assert_eq!(event.event_name(), "DTMFEnd");
 }
 
 #[test]
 fn event_name_cel() {
-    let event = AmiEvent::from_raw(&raw(&[("Event", "CEL"), ("Channel", "x"), ("Uniqueid", "x"), ("EventName", "x"), ("AccountCode", "x"), ("ApplicationName", "x"), ("ApplicationData", "x")])).expect("should parse");
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "CEL"),
+        ("Channel", "x"),
+        ("Uniqueid", "x"),
+        ("EventName", "x"),
+        ("AccountCode", "x"),
+        ("ApplicationName", "x"),
+        ("ApplicationData", "x"),
+    ]))
+    .expect("should parse");
     assert_eq!(event.event_name(), "CEL");
 }
 
 #[test]
 fn event_name_aocd() {
-    let event = AmiEvent::from_raw(&raw(&[("Event", "AOC-D"), ("Channel", "x"), ("Uniqueid", "x"), ("ChargeType", "x")])).expect("should parse");
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "AOC-D"),
+        ("Channel", "x"),
+        ("Uniqueid", "x"),
+        ("ChargeType", "x"),
+    ]))
+    .expect("should parse");
     assert_eq!(event.event_name(), "AOC-D");
 }
 
 #[test]
 fn event_name_aoce() {
-    let event = AmiEvent::from_raw(&raw(&[("Event", "AOC-E"), ("Channel", "x"), ("Uniqueid", "x"), ("ChargeType", "x")])).expect("should parse");
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "AOC-E"),
+        ("Channel", "x"),
+        ("Uniqueid", "x"),
+        ("ChargeType", "x"),
+    ]))
+    .expect("should parse");
     assert_eq!(event.event_name(), "AOC-E");
 }
 
 #[test]
 fn event_name_aocs() {
-    let event = AmiEvent::from_raw(&raw(&[("Event", "AOC-S"), ("Channel", "x"), ("Uniqueid", "x")])).expect("should parse");
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "AOC-S"),
+        ("Channel", "x"),
+        ("Uniqueid", "x"),
+    ]))
+    .expect("should parse");
     assert_eq!(event.event_name(), "AOC-S");
 }
 
@@ -2521,10 +3930,16 @@ fn event_name_aocs() {
 
 #[test]
 fn channel_returns_some_for_channel_event() {
-    let msg = raw(&[("Event", "Newchannel"), ("Channel", "PJSIP/100-0001"),
-        ("ChannelState", "0"), ("ChannelStateDesc", "Down"),
-        ("CallerIDNum", "100"), ("CallerIDName", "Alice"),
-        ("Uniqueid", "u1"), ("Linkedid", "u1")]);
+    let msg = raw(&[
+        ("Event", "Newchannel"),
+        ("Channel", "PJSIP/100-0001"),
+        ("ChannelState", "0"),
+        ("ChannelStateDesc", "Down"),
+        ("CallerIDNum", "100"),
+        ("CallerIDName", "Alice"),
+        ("Uniqueid", "u1"),
+        ("Linkedid", "u1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     assert_eq!(event.channel(), Some("PJSIP/100-0001"));
 }
@@ -2538,21 +3953,34 @@ fn channel_returns_none_for_fully_booted() {
 
 #[test]
 fn channel_returns_none_for_bridge_create() {
-    let msg = raw(&[("Event", "BridgeCreate"), ("BridgeUniqueid", "br-1"), ("BridgeType", "basic")]);
+    let msg = raw(&[
+        ("Event", "BridgeCreate"),
+        ("BridgeUniqueid", "br-1"),
+        ("BridgeType", "basic"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     assert!(event.channel().is_none());
 }
 
 #[test]
 fn channel_returns_optional_for_agents() {
-    let msg = raw(&[("Event", "Agents"), ("Agent", "100"), ("Name", "x"), ("Status", "x")]);
+    let msg = raw(&[
+        ("Event", "Agents"),
+        ("Agent", "100"),
+        ("Name", "x"),
+        ("Status", "x"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     assert!(event.channel().is_none());
 }
 
 #[test]
 fn channel_returns_optional_for_dahdi() {
-    let msg = raw(&[("Event", "DAHDIChannel"), ("DAHDIChannel", "1"), ("Channel", "DAHDI/1-1")]);
+    let msg = raw(&[
+        ("Event", "DAHDIChannel"),
+        ("DAHDIChannel", "1"),
+        ("Channel", "DAHDI/1-1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     assert_eq!(event.channel(), Some("DAHDI/1-1"));
 }
@@ -2561,8 +3989,13 @@ fn channel_returns_optional_for_dahdi() {
 
 #[test]
 fn unique_id_returns_some_for_hangup() {
-    let msg = raw(&[("Event", "Hangup"), ("Channel", "x"), ("Uniqueid", "uid-1"),
-        ("Cause", "16"), ("Cause-txt", "Normal")]);
+    let msg = raw(&[
+        ("Event", "Hangup"),
+        ("Channel", "x"),
+        ("Uniqueid", "uid-1"),
+        ("Cause", "16"),
+        ("Cause-txt", "Normal"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     assert_eq!(event.unique_id(), Some("uid-1"));
 }
@@ -2576,8 +4009,12 @@ fn unique_id_returns_none_for_fully_booted() {
 
 #[test]
 fn unique_id_returns_none_for_peer_status() {
-    let msg = raw(&[("Event", "PeerStatus"), ("ChannelType", "PJSIP"),
-        ("Peer", "PJSIP/100"), ("PeerStatus", "Reachable")]);
+    let msg = raw(&[
+        ("Event", "PeerStatus"),
+        ("ChannelType", "PJSIP"),
+        ("Peer", "PJSIP/100"),
+        ("PeerStatus", "Reachable"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     assert!(event.unique_id().is_none());
 }
@@ -2591,7 +4028,11 @@ fn unique_id_returns_optional_for_user_event() {
 
 #[test]
 fn unique_id_returns_optional_for_dahdi_channel() {
-    let msg = raw(&[("Event", "DAHDIChannel"), ("DAHDIChannel", "1"), ("Uniqueid", "uid-1")]);
+    let msg = raw(&[
+        ("Event", "DAHDIChannel"),
+        ("DAHDIChannel", "1"),
+        ("Uniqueid", "uid-1"),
+    ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     assert_eq!(event.unique_id(), Some("uid-1"));
 }

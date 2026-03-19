@@ -2889,4 +2889,3 @@ impl asterisk_rs_core::event::Event for AmiEvent {}
 fn get(raw: &RawAmiMessage, key: &str) -> String {
     raw.get(key).unwrap_or("").to_string()
 }
-

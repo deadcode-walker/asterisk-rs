@@ -165,8 +165,7 @@ fn response_parse_success_with_endpos() {
 
 #[test]
 fn response_parse_success_with_data_and_endpos() {
-    let resp =
-        AgiResponse::parse("200 result=1 (dtmf) endpos=67890").expect("should parse");
+    let resp = AgiResponse::parse("200 result=1 (dtmf) endpos=67890").expect("should parse");
     assert_eq!(resp.code, 200);
     assert_eq!(resp.result, 1);
     assert_eq!(resp.data.as_deref(), Some("dtmf"));
@@ -175,18 +174,16 @@ fn response_parse_success_with_data_and_endpos() {
 
 #[test]
 fn response_parse_invalid_command() {
-    let resp =
-        AgiResponse::parse("510 Invalid or unknown command").expect("should parse");
+    let resp = AgiResponse::parse("510 Invalid or unknown command").expect("should parse");
     assert_eq!(resp.code, 510);
     assert_eq!(resp.result, -1);
 }
 
 #[test]
 fn response_parse_dead_channel() {
-    let resp = AgiResponse::parse(
-        "511 Command Not Permitted on a dead channel or intercept routine",
-    )
-    .expect("should parse");
+    let resp =
+        AgiResponse::parse("511 Command Not Permitted on a dead channel or intercept routine")
+            .expect("should parse");
     assert_eq!(resp.code, 511);
     assert_eq!(resp.result, -1);
 }
@@ -290,7 +287,10 @@ fn error_io_error_display() {
     let io_err = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe broke");
     let err = AgiError::Io(io_err);
     let msg = err.to_string();
-    assert!(msg.contains("pipe broke"), "expected io error details in: {msg}");
+    assert!(
+        msg.contains("pipe broke"),
+        "expected io error details in: {msg}"
+    );
 }
 
 #[test]
@@ -316,7 +316,10 @@ fn error_command_failed_display() {
     };
     let msg = err.to_string();
     assert!(msg.contains("510"), "expected code in: {msg}");
-    assert!(msg.contains("invalid command"), "expected message in: {msg}");
+    assert!(
+        msg.contains("invalid command"),
+        "expected message in: {msg}"
+    );
 }
 
 #[test]
@@ -326,7 +329,10 @@ fn error_protocol_error_display() {
     };
     let err = AgiError::Protocol(proto);
     let msg = err.to_string();
-    assert!(msg.contains("bad frame"), "expected protocol details in: {msg}");
+    assert!(
+        msg.contains("bad frame"),
+        "expected protocol details in: {msg}"
+    );
 }
 
 #[test]
@@ -539,9 +545,7 @@ async fn channel_verbose_sends_quoted_message() {
 async fn channel_set_callerid_sends_correct_command() {
     let (mut ch, sr, sw) = mock_channel().await;
     let server = tokio::spawn(run_ok(sr, sw));
-    ch.set_callerid("5551234567")
-        .await
-        .expect("set_callerid");
+    ch.set_callerid("5551234567").await.expect("set_callerid");
     let cmd = server.await.expect("server");
     assert_eq!(cmd, "SET CALLERID 5551234567\n");
 }
@@ -690,9 +694,7 @@ async fn channel_gosub_with_args() {
 async fn channel_gosub_without_args() {
     let (mut ch, sr, sw) = mock_channel().await;
     let server = tokio::spawn(run_ok(sr, sw));
-    ch.gosub("default", "s", "1", None)
-        .await
-        .expect("gosub");
+    ch.gosub("default", "s", "1", None).await.expect("gosub");
     let cmd = server.await.expect("server");
     assert_eq!(cmd, "GOSUB default s 1\n");
 }
@@ -790,9 +792,7 @@ async fn channel_say_datetime_without_format() {
 async fn channel_say_phonetic_sends_correct_command() {
     let (mut ch, sr, sw) = mock_channel().await;
     let server = tokio::spawn(run_ok(sr, sw));
-    ch.say_phonetic("hello", "#")
-        .await
-        .expect("say_phonetic");
+    ch.say_phonetic("hello", "#").await.expect("say_phonetic");
     let cmd = server.await.expect("server");
     assert_eq!(cmd, "SAY PHONETIC hello #\n");
 }
@@ -1002,9 +1002,7 @@ async fn channel_send_command_when_hung_up_returns_error() {
         let mut sw = sw;
         let mut cmd = String::new();
         sr.read_line(&mut cmd).await.expect("read");
-        sw.write_all(b"511 result=-1\n")
-            .await
-            .expect("write 511");
+        sw.write_all(b"511 result=-1\n").await.expect("write 511");
         sw.flush().await.expect("flush");
     });
     let err = ch.answer().await.expect_err("expected hung up");
@@ -1047,9 +1045,7 @@ async fn channel_send_command_on_511_response_sets_hung_up() {
         let mut sw = sw;
         let mut cmd = String::new();
         sr.read_line(&mut cmd).await.expect("read");
-        sw.write_all(b"511 result=-1\n")
-            .await
-            .expect("write 511");
+        sw.write_all(b"511 result=-1\n").await.expect("write 511");
         sw.flush().await.expect("flush");
         cmd
     });

@@ -215,4 +215,3 @@ fn find_crlf(buf: &[u8]) -> Option<usize> {
 fn find_double_crlf(buf: &[u8]) -> Option<usize> {
     buf.windows(4).position(|w| w == b"\r\n\r\n")
 }
-

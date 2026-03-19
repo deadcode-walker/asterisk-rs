@@ -84,7 +84,10 @@ fn build_empty_app_name_fails() {
 
     match err {
         AriError::InvalidUrl(msg) => {
-            assert!(msg.contains("app_name"), "error should mention app_name: {msg}");
+            assert!(
+                msg.contains("app_name"),
+                "error should mention app_name: {msg}"
+            );
         }
         other => panic!("expected InvalidUrl, got: {other:?}"),
     }
@@ -99,7 +102,10 @@ fn build_empty_app_name_via_setter_fails() {
 
     match err {
         AriError::InvalidUrl(msg) => {
-            assert!(msg.contains("app_name"), "error should mention app_name: {msg}");
+            assert!(
+                msg.contains("app_name"),
+                "error should mention app_name: {msg}"
+            );
         }
         other => panic!("expected InvalidUrl, got: {other:?}"),
     }
@@ -142,7 +148,10 @@ fn build_with_custom_reconnect_policy() {
         .build()
         .expect("config with reconnect policy should build");
 
-    assert_eq!(config.reconnect_policy.initial_delay, Duration::from_secs(5));
+    assert_eq!(
+        config.reconnect_policy.initial_delay,
+        Duration::from_secs(5)
+    );
     assert_eq!(config.reconnect_policy.max_delay, Duration::from_secs(5));
 }
 
@@ -330,10 +339,7 @@ fn io_error_display() {
 fn connection_error_display() {
     let err = AriError::Connection(ConnectionError::Closed);
     let msg = err.to_string();
-    assert!(
-        msg.contains("closed unexpectedly"),
-        "got: {msg}"
-    );
+    assert!(msg.contains("closed unexpectedly"), "got: {msg}");
 }
 
 #[test]
@@ -422,8 +428,8 @@ fn deserialize_unknown_event() {
         "data": "whatever"
     }"#;
 
-    let event: AriEvent = serde_json::from_str(json)
-        .expect("unknown event types should not fail deserialization");
+    let event: AriEvent =
+        serde_json::from_str(json).expect("unknown event types should not fail deserialization");
 
     assert!(matches!(event, AriEvent::Unknown));
 }
@@ -528,8 +534,7 @@ fn deserialize_bridge_blind_transfer() {
         "result": "Success",
         "is_external": false
     }"#;
-    let event: AriEvent =
-        serde_json::from_str(json).expect("blind transfer should deserialize");
+    let event: AriEvent = serde_json::from_str(json).expect("blind transfer should deserialize");
     match event {
         AriEvent::BridgeBlindTransfer {
             channel,
@@ -588,8 +593,7 @@ fn deserialize_contact_status_change() {
             "resource": "100"
         }
     }"#;
-    let event: AriEvent =
-        serde_json::from_str(json).expect("contact status should deserialize");
+    let event: AriEvent = serde_json::from_str(json).expect("contact status should deserialize");
     match event {
         AriEvent::ContactStatusChange {
             contact_info,
@@ -611,8 +615,7 @@ fn deserialize_device_state_changed() {
             "state": "INUSE"
         }
     }"#;
-    let event: AriEvent =
-        serde_json::from_str(json).expect("device state should deserialize");
+    let event: AriEvent = serde_json::from_str(json).expect("device state should deserialize");
     match event {
         AriEvent::DeviceStateChanged { device_state } => {
             assert_eq!(device_state.name, "PJSIP/100");
@@ -649,8 +652,7 @@ fn deserialize_recording_failed() {
             "target_uri": "channel:abc"
         }
     }"#;
-    let event: AriEvent =
-        serde_json::from_str(json).expect("recording failed should deserialize");
+    let event: AriEvent = serde_json::from_str(json).expect("recording failed should deserialize");
     assert!(matches!(event, AriEvent::RecordingFailed { .. }));
 }
 
@@ -1135,7 +1137,10 @@ fn deserialize_bridge_merged() {
     }"#;
     let event: AriEvent = serde_json::from_str(json).expect("deser");
     match event {
-        AriEvent::BridgeMerged { bridge, bridge_from } => {
+        AriEvent::BridgeMerged {
+            bridge,
+            bridge_from,
+        } => {
             assert_eq!(bridge.id, "br1");
             assert_eq!(bridge_from.id, "br2");
         }
