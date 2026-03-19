@@ -598,3 +598,207 @@ fn banner_consumed_flag_prevents_recheck() {
         .expect("should produce second message");
     assert_eq!(msg2.get("Event"), Some("Second"));
 }
+
+#[test]
+fn embedded_crlf_crlf_in_header_value() {
+    // codec splits on the FIRST \r\n\r\n regardless of position — no escaping in AMI
+    let mut codec = AmiCodec::new();
+    let mut buf = BytesMut::from(
+        "Asterisk Call Manager/6.0.0\r\n\
+         Event: Test\r\n\
+         Data: part1\r\n\
+         \r\n\
+         Leftover: part2\r\n\
+         \r\n",
+    );
+
+    let msg1 = codec
+        .decode(&mut buf)
+        .expect("first decode should succeed")
+        .expect("should produce first message");
+    assert_eq!(msg1.get("Event"), Some("Test"));
+    assert_eq!(msg1.get("Data"), Some("part1"));
+    // second \r\n\r\n produces a separate message
+    let msg2 = codec
+        .decode(&mut buf)
+        .expect("second decode should succeed")
+        .expect("should produce second message");
+    assert_eq!(msg2.get("Leftover"), Some("part2"));
+}
+
+#[test]
+fn null_bytes_in_header_value() {
+    // null bytes are valid utf-8 — from_utf8_lossy keeps them; just verify no panic
+    let mut codec = AmiCodec::new();
+    let banner = b"Asterisk Call Manager/6.0.0\r\n";
+    let body = b"Event: Test\r\nKey: val\x00ue\r\n\r\n";
+    let mut buf = BytesMut::with_capacity(banner.len() + body.len());
+    buf.extend_from_slice(banner);
+    buf.extend_from_slice(body);
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should produce a message");
+    assert_eq!(msg.get("Event"), Some("Test"));
+    assert!(msg.get("Key").is_some());
+}
+
+#[test]
+fn non_utf8_bytes_in_header() {
+    // 0xFF 0xFE are invalid utf-8; from_utf8_lossy replaces with U+FFFD
+    let mut codec = AmiCodec::new();
+    let banner = b"Asterisk Call Manager/6.0.0\r\n";
+    let mut raw = Vec::new();
+    raw.extend_from_slice(banner);
+    raw.extend_from_slice(b"Event: Test\r\nKey: ");
+    raw.extend_from_slice(&[0xFF, 0xFE]);
+    raw.extend_from_slice(b"\r\n\r\n");
+    let mut buf = BytesMut::from(&raw[..]);
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should produce a message");
+    assert_eq!(msg.get("Event"), Some("Test"));
+    // value should exist with replacement characters, not panic
+    assert!(msg.get("Key").is_some());
+}
+
+#[test]
+fn no_banner_rejects() {
+    let mut codec = AmiCodec::new();
+    let mut buf = BytesMut::from("NOT AN AMI SERVER\r\n");
+    let err = codec
+        .decode(&mut buf)
+        .expect_err("should reject non-AMI banner");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("expected AMI banner"),
+        "error should mention banner: {msg}"
+    );
+}
+
+#[test]
+fn wrong_banner_prefix_rejects() {
+    let mut codec = AmiCodec::new();
+    let mut buf = BytesMut::from("SIP/2.0 200 OK\r\n");
+    let err = codec
+        .decode(&mut buf)
+        .expect_err("should reject SIP banner");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("expected AMI banner"),
+        "error should mention banner: {msg}"
+    );
+}
+
+#[test]
+fn banner_partial_delivery() {
+    let mut codec = AmiCodec::new();
+    // partial banner — no \r\n yet
+    let mut buf = BytesMut::from("Asterisk Call Man");
+    let result = codec.decode(&mut buf).expect("partial should not error");
+    assert!(result.is_none(), "partial banner should yield None");
+
+    // complete the banner and add a message
+    buf.extend_from_slice(b"ager/6.0.0\r\nEvent: Test\r\n\r\n");
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should produce a message");
+    assert_eq!(msg.get("Event"), Some("Test"));
+}
+
+#[test]
+fn chan_variable_nested_parens() {
+    // ChanVariable(foo(bar)) — ends_with(')') matches outer paren
+    let mut codec = AmiCodec::new();
+    let raw = with_banner(
+        "Event: Test\r\n\
+         ChanVariable(foo(bar)): value\r\n\
+         \r\n",
+    );
+    let mut buf = BytesMut::from(raw.as_str());
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should produce a message");
+    assert_eq!(msg.get_variable("foo(bar)"), Some("value"));
+}
+
+#[test]
+fn chan_variable_empty_name() {
+    // ChanVariable(): value — empty parens yields empty string key
+    let mut codec = AmiCodec::new();
+    let raw = with_banner(
+        "Event: Test\r\n\
+         ChanVariable(): value\r\n\
+         \r\n",
+    );
+    let mut buf = BytesMut::from(raw.as_str());
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should produce a message");
+    // empty string key extracted into channel_variables
+    assert_eq!(msg.get_variable(""), Some("value"));
+}
+
+#[test]
+fn header_with_no_value_after_colon() {
+    let mut codec = AmiCodec::new();
+    let raw = with_banner("Event: Test\r\nKey:\r\n\r\n");
+    let mut buf = BytesMut::from(raw.as_str());
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should produce a message");
+    assert_eq!(msg.get("Key"), Some(""));
+}
+
+#[test]
+fn header_with_multiple_colons() {
+    // only splits on the first colon
+    let mut codec = AmiCodec::new();
+    let raw = with_banner("Event: Test\r\nKey: val:ue:extra\r\n\r\n");
+    let mut buf = BytesMut::from(raw.as_str());
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should produce a message");
+    assert_eq!(msg.get("Key"), Some("val:ue:extra"));
+}
+
+#[test]
+fn message_exactly_at_size_limit() {
+    // size check is > MAX_MESSAGE_SIZE, so exactly at limit should pass
+    let mut codec = AmiCodec::new();
+    let banner = b"Asterisk Call Manager/6.0.0\r\n";
+    let max: usize = 64 * 1024;
+    // feed banner + message as one buffer; total must be exactly max
+    let overhead = banner.len() + b"K: \r\n\r\n".len(); // banner + minimal header frame
+    let value_len = max - overhead;
+    let value: String = "V".repeat(value_len);
+    let body = format!("K: {value}\r\n\r\n");
+    let mut buf = BytesMut::with_capacity(max);
+    buf.extend_from_slice(banner);
+    buf.extend_from_slice(body.as_bytes());
+    assert_eq!(buf.len(), max, "buffer should be exactly at the limit");
+    let msg = codec
+        .decode(&mut buf)
+        .expect("exactly at limit should succeed")
+        .expect("should produce a message");
+    assert_eq!(msg.get("K").expect("K header present").len(), value_len);
+}
+
+#[test]
+fn empty_message_skipped() {
+    // empty body (\r\n\r\n) has no headers -> codec skips it and returns next message
+    let mut codec = AmiCodec::new();
+    let raw = with_banner("\r\nEvent: Real\r\n\r\n");
+    let mut buf = BytesMut::from(raw.as_str());
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should skip empty and return real message");
+    assert_eq!(msg.get("Event"), Some("Real"));
+}

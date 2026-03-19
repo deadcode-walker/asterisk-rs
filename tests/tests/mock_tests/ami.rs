@@ -1,9 +1,13 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use asterisk_rs_ami::client::AmiClient;
-use asterisk_rs_core::config::ReconnectPolicy;
+use asterisk_rs_core::config::{ConnectionState, ReconnectPolicy};
 use asterisk_rs_tests::helpers::init_tracing;
-use asterisk_rs_tests::mock::ami_server::{get_header, handle_login, MockAmiServer};
+use asterisk_rs_tests::mock::ami_server::{
+    get_header, handle_login, handle_login_reject, MockAmiServer,
+};
 
 #[tokio::test]
 async fn connect_and_login() {
@@ -2214,5 +2218,252 @@ async fn builder_custom_timeout() {
     );
 
     drop(client);
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn reconnect_login_failure_gives_up() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login_reject(&mut conn).await;
+    });
+
+    let result = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "wrong")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await;
+
+    assert!(
+        result.is_err(),
+        "build should fail when login is rejected with no retries"
+    );
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn reconnect_login_failure_retries_then_gives_up() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let attempt_count = Arc::new(AtomicUsize::new(0));
+    let attempt_count_clone = attempt_count.clone();
+
+    let (handle, ready) = server.accept_loop(move |mut conn, _index| {
+        let counter = attempt_count_clone.clone();
+        async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            handle_login_reject(&mut conn).await;
+        }
+    });
+
+    ready.notified().await;
+
+    // abort server after enough login rejections so subsequent TCP connect
+    // failures trigger the reconnect policy retry check
+    let counter_watcher = attempt_count.clone();
+    let abort_handle = handle.abort_handle();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            if counter_watcher.load(Ordering::SeqCst) >= 2 {
+                abort_handle.abort();
+                break;
+            }
+        }
+    });
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        AmiClient::builder()
+            .host("127.0.0.1")
+            .port(port)
+            .credentials("admin", "wrong")
+            .reconnect(ReconnectPolicy::fixed(Duration::from_millis(50)).with_max_retries(2))
+            .timeout(Duration::from_secs(5))
+            .build(),
+    )
+    .await;
+
+    // after server stops accepting, TCP failures drive the reconnect policy
+    // which eventually exhausts max_retries and returns Disconnected
+    assert!(
+        matches!(result, Ok(Err(_))),
+        "build should fail after exhausting retries: {result:?}"
+    );
+
+    let attempts = attempt_count.load(Ordering::SeqCst);
+    assert!(
+        attempts >= 2,
+        "server should have seen at least 2 login attempts, got {attempts}"
+    );
+
+    handle.abort();
+}
+#[tokio::test]
+async fn pending_action_cancelled_on_disconnect() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // read the action but do not respond — drop connection
+        let _msg = conn.read_message().await;
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect and login");
+
+    let result = tokio::time::timeout(Duration::from_secs(5), client.ping()).await;
+    let ping_result = result.expect("ping should not hang forever");
+    assert!(
+        ping_result.is_err(),
+        "ping should fail when server closes connection"
+    );
+
+    let err = format!("{}", ping_result.expect_err("already asserted err"));
+    assert!(
+        err.contains("channel closed")
+            || err.contains("ResponseChannelClosed")
+            || err.contains("timeout"),
+        "error should indicate channel closed or timeout: {err}"
+    );
+
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn events_delivered_during_connected() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // send an unsolicited event
+        conn.send_message(&[
+            ("Event", "PeerStatus"),
+            ("Privilege", "system,all"),
+            ("ChannelType", "PJSIP"),
+            ("Peer", "PJSIP/alice"),
+            ("PeerStatus", "Reachable"),
+        ])
+        .await;
+
+        // hold connection until client drops
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let mut sub = client.subscribe();
+
+    // receive event
+    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv())
+        .await
+        .expect("should receive event within timeout")
+        .expect("subscription should not be closed");
+
+    assert_eq!(event.event_name(), "PeerStatus");
+    if let asterisk_rs_ami::event::AmiEvent::PeerStatus { peer, .. } = &event {
+        assert_eq!(peer, "PJSIP/alice");
+    } else {
+        panic!("expected PeerStatus event, got {:?}", event.event_name());
+    }
+
+    // drop client to close connection and event bus
+    drop(client);
+
+    // subscription should eventually yield None when bus is dropped
+    let closed = tokio::time::timeout(Duration::from_secs(3), sub.recv()).await;
+    assert!(
+        matches!(closed, Ok(None) | Err(_)),
+        "subscription should close after client is dropped"
+    );
+
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn connection_state_connected_then_disconnected() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // hold connection until client drops
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect");
+
+    assert_eq!(
+        client.connection_state(),
+        ConnectionState::Connected,
+        "should be connected immediately after build"
+    );
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+
+    // give background task time to process shutdown
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert_eq!(
+        client.connection_state(),
+        ConnectionState::Disconnected,
+        "should be disconnected after disconnect"
+    );
+
     let _ = handle.await;
 }

@@ -2789,3 +2789,197 @@ async fn ws_close_frame_handled_gracefully() {
 
     client.disconnect();
 }
+
+#[tokio::test]
+async fn rest_404_returns_api_error() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+
+    let result: Result<serde_json::Value, _> = client.get("nonexistent/path").await;
+
+    match result {
+        Err(AriError::Api { status, .. }) => {
+            assert_eq!(status, 404, "unregistered route should return 404");
+        }
+        Err(other) => panic!("expected AriError::Api 404, got: {other:?}"),
+        Ok(val) => panic!("expected error, got success: {val:?}"),
+    }
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn rest_500_returns_api_error() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("GET", "/ari/server/broken", 500, r#"internal server error"#)
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+    let result = client.get::<serde_json::Value>("server/broken").await;
+
+    match result {
+        Err(AriError::Api { status, message }) => {
+            assert_eq!(status, 500, "expected 500 status");
+            assert!(
+                message.contains("internal server error"),
+                "expected error body, got: {message}"
+            );
+        }
+        Err(other) => panic!("expected AriError::Api 500, got: {other:?}"),
+        Ok(val) => panic!("expected error, got success: {val:?}"),
+    }
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn rest_empty_json_array() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("GET", "/ari/channels", 200, "[]")
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+    let result: Vec<serde_json::Value> = client
+        .get("channels")
+        .await
+        .expect("GET channels should succeed with empty array");
+
+    assert!(result.is_empty(), "expected empty vec, got: {result:?}");
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn rest_malformed_json_body() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("GET", "/ari/bad/json", 200, "not json at all")
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+    let result = client.get::<serde_json::Value>("bad/json").await;
+
+    match result {
+        Err(AriError::Http(_)) => { /* expected: reqwest json parse failure */ }
+        Err(other) => panic!("expected AriError::Http, got: {other:?}"),
+        Ok(val) => panic!("expected json parse error, got success: {val:?}"),
+    }
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn ws_malformed_json_not_delivered() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+    let mut sub = client.subscribe();
+
+    // give the ws task time to connect
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // send malformed json — should be logged and skipped
+    server.send_event("this is not json");
+
+    // verify the malformed event is not delivered
+    let bad = tokio::time::timeout(Duration::from_millis(500), sub.recv()).await;
+    assert!(
+        bad.is_err(),
+        "malformed json should not be delivered to subscriber"
+    );
+
+    // send a valid event after the malformed one
+    server.send_event(&stasis_start_json("chan-after-bad"));
+
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+        .await
+        .expect("timed out waiting for valid event after malformed")
+        .expect("subscription closed");
+
+    match &event.event {
+        asterisk_rs_ari::AriEvent::StasisStart { channel, .. } => {
+            assert_eq!(channel.id, "chan-after-bad");
+        }
+        other => panic!("expected StasisStart, got: {other:?}"),
+    }
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn multiple_subscribers_all_receive() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+
+    let mut sub1 = client.subscribe();
+    let mut sub2 = client.subscribe();
+    let mut sub3 = client.subscribe();
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    server.send_event(&stasis_start_json("chan-broadcast"));
+
+    for (i, sub) in [&mut sub1, &mut sub2, &mut sub3].iter_mut().enumerate() {
+        let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+            .await
+            .unwrap_or_else(|_| panic!("subscriber {i} timed out"))
+            .unwrap_or_else(|| panic!("subscriber {i} closed"));
+
+        match &event.event {
+            asterisk_rs_ari::AriEvent::StasisStart { channel, .. } => {
+                assert_eq!(channel.id, "chan-broadcast");
+            }
+            other => panic!("subscriber {i}: expected StasisStart, got: {other:?}"),
+        }
+    }
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn disconnect_then_subscribe_returns_none() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+
+    // give the ws task time to connect
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // disconnect shuts down the ws listener
+    client.disconnect();
+    server.shutdown();
+
+    // subscribe after disconnect
+    let mut sub = client.subscribe();
+
+    // drop the client so the event bus sender is fully released
+    drop(client);
+
+    // recv should return None since all senders are dropped
+    let result = tokio::time::timeout(Duration::from_secs(5), sub.recv()).await;
+    match result {
+        Ok(None) => { /* expected: bus closed */ }
+        Ok(Some(event)) => panic!("expected None after disconnect, got event: {event:?}"),
+        Err(_) => panic!("timed out — event bus was not fully dropped"),
+    }
+}

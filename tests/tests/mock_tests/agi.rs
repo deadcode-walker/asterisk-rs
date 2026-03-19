@@ -1842,3 +1842,184 @@ async fn server_binds_to_specified_address() {
     let result = handle.await.expect("task should not panic");
     result.expect("server should exit cleanly");
 }
+
+// ---------------------------------------------------------------------------
+// resilience tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn client_disconnect_before_env_complete() {
+    init_tracing();
+
+    let (handle, shutdown, addr) = spawn_server(AnswerAndHangup, None).await;
+
+    // connect raw and send partial env (no blank-line terminator), then drop
+    {
+        use tokio::io::AsyncWriteExt;
+        let mut stream = tokio::net::TcpStream::connect(addr)
+            .await
+            .expect("tcp connect");
+        stream
+            .write_all(b"agi_channel: SIP/100\n")
+            .await
+            .expect("partial env write");
+        // drop without sending the blank line that terminates env
+    }
+
+    // small delay so the server processes the disconnect
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly after partial env disconnect");
+}
+
+#[tokio::test]
+async fn client_disconnect_mid_command() {
+    init_tracing();
+
+    let (handle, shutdown, addr) = spawn_server(AnswerAndHangup, None).await;
+    let env = standard_env();
+    let mut client = MockAgiClient::connect(addr, &env).await;
+
+    // read the first command so the handler is mid-execution
+    let cmd = client.read_command().await.expect("should read ANSWER");
+    assert_eq!(cmd, "ANSWER");
+
+    // drop without responding — handler should get an io/hangup error
+    drop(client);
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // server should still be alive — verify by clean shutdown
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly after mid-command disconnect");
+}
+
+#[tokio::test]
+async fn handler_command_failed_error_does_not_crash_server() {
+    init_tracing();
+
+    struct FailingHandler;
+
+    impl AgiHandler for FailingHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            _channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            Err(AgiError::CommandFailed {
+                code: 510,
+                message: "test error".into(),
+            })
+        }
+    }
+
+    let (handle, shutdown, addr) = spawn_server(FailingHandler, None).await;
+    let env = standard_env();
+
+    // first client — handler immediately errors
+    let _client1 = MockAgiClient::connect(addr, &env).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // second client — server should still accept connections
+    let _client2 = MockAgiClient::connect(addr, &env).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly after handler errors");
+}
+
+#[tokio::test]
+async fn max_connections_enforced_blocking() {
+    init_tracing();
+
+    let (ready_tx, mut ready_rx) = mpsc::channel::<()>(2);
+    let (gate_tx, gate_rx) = tokio::sync::watch::channel(false);
+
+    let handler = BlockingHandler {
+        ready_tx: ready_tx.clone(),
+        gate_rx: gate_rx.clone(),
+    };
+    let (handle, shutdown, addr) = spawn_server(handler, Some(1)).await;
+    let env = standard_env();
+
+    // first client — enters handler and blocks on gate
+    let mut client1 = MockAgiClient::connect(addr, &env).await;
+    tokio::time::timeout(Duration::from_secs(5), ready_rx.recv())
+        .await
+        .expect("timed out waiting for first handler")
+        .expect("ready channel closed");
+
+    // second client — TCP connects but handler dispatch is blocked by semaphore
+    let mut client2 = MockAgiClient::connect(addr, &env).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        ready_rx.try_recv().is_err(),
+        "second handler must not enter while first holds the permit"
+    );
+
+    // release the gate so first handler can finish
+    gate_tx.send(true).expect("release gate");
+
+    // respond to first client's ANSWER
+    let cmd = client1.read_command().await.expect("ANSWER from client1");
+    assert_eq!(cmd, "ANSWER");
+    client1.send_success(0).await;
+
+    // second handler should now enter (was blocked by semaphore until first finished)
+    tokio::time::timeout(Duration::from_secs(5), ready_rx.recv())
+        .await
+        .expect("timed out waiting for second handler")
+        .expect("ready channel closed");
+
+    // second handler already unblocked (gate=true), respond to ANSWER
+    let cmd = client2.read_command().await.expect("ANSWER from client2");
+    assert_eq!(cmd, "ANSWER");
+    client2.send_success(0).await;
+
+    shutdown.shutdown();
+    let result = handle.await.expect("task should not panic");
+    result.expect("server should exit cleanly");
+}
+
+#[tokio::test]
+async fn shutdown_during_handler_execution() {
+    init_tracing();
+
+    let (ready_tx, mut ready_rx) = mpsc::channel::<()>(1);
+    let (gate_tx, gate_rx) = tokio::sync::watch::channel(false);
+
+    let handler = BlockingHandler { ready_tx, gate_rx };
+    let (handle, shutdown, addr) = spawn_server(handler, None).await;
+    let env = standard_env();
+
+    // connect and wait for handler to start processing
+    let mut client = MockAgiClient::connect(addr, &env).await;
+    tokio::time::timeout(Duration::from_secs(5), ready_rx.recv())
+        .await
+        .expect("timed out waiting for handler entry")
+        .expect("ready channel closed");
+
+    // shutdown while handler is still blocked on the gate
+    shutdown.shutdown();
+
+    // server accept loop should exit promptly
+    let result = tokio::time::timeout(Duration::from_secs(5), handle)
+        .await
+        .expect("server should stop accepting within timeout")
+        .expect("task should not panic");
+    result.expect("server should exit cleanly even with in-flight handler");
+
+    // release the gate so the handler task can finish (it was tokio::spawned)
+    gate_tx.send(true).expect("release gate");
+
+    // respond to ANSWER so handler completes fully
+    let cmd = client.read_command().await;
+    if let Some(cmd) = cmd {
+        assert_eq!(cmd, "ANSWER");
+        client.send_success(0).await;
+    }
+}

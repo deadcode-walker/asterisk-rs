@@ -1,0 +1,2 @@
+[alias]
+test-live = "test -p asterisk-rs-tests --test live_integration --features integration -- --test-threads=1"

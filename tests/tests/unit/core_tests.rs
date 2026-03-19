@@ -1485,3 +1485,109 @@ async fn with_filter_on_existing_subscription() {
     let e2 = filtered.recv().await.expect("should get second long event");
     assert_eq!(e2.0, "wxyz");
 }
+
+// =============================================================================
+// event bus lag recovery tests
+// =============================================================================
+
+#[tokio::test]
+async fn event_bus_subscriber_lag_recovers() {
+    let bus = EventBus::<TestEvent>::new(4);
+    let mut sub = bus.subscribe();
+
+    // publish 10 events into capacity-4 buffer, causing lag
+    for i in 0..10 {
+        bus.publish(TestEvent(format!("evt-{i}")));
+    }
+
+    // recv should skip lagged events and return one of the later ones
+    let event = sub.recv().await;
+    assert!(
+        event.is_some(),
+        "recv should return Some after lag recovery"
+    );
+}
+
+#[tokio::test]
+async fn event_bus_subscriber_lag_count() {
+    let bus = EventBus::<TestEvent>::new(4);
+    let mut sub = bus.subscribe();
+
+    for i in 0..8 {
+        bus.publish(TestEvent(format!("evt-{i}")));
+    }
+
+    // exact lag count is broadcast-internal; just verify we get an event back
+    let event = sub.recv().await;
+    assert!(
+        event.is_some(),
+        "recv should recover from lag and return Some"
+    );
+}
+
+#[tokio::test]
+async fn event_bus_lag_with_filtered_subscription() {
+    let bus = EventBus::<TestEvent>::new(2);
+    let mut filtered = bus.subscribe_filtered(|_| true);
+
+    for i in 0..10 {
+        bus.publish(TestEvent(format!("evt-{i}")));
+    }
+
+    // lag handling lives in EventSubscription::recv, filtered delegates to it
+    let event = filtered.recv().await;
+    assert!(event.is_some(), "filtered recv should survive lag");
+}
+
+// =============================================================================
+// reconnect policy adversarial tests
+// =============================================================================
+
+#[test]
+fn reconnect_policy_large_attempt_no_panic() {
+    let mut policy = ReconnectPolicy::exponential(Duration::from_secs(1), Duration::from_secs(60));
+    policy.jitter = false;
+
+    // u32::MAX as i32 wraps to -1, powi(-1) = 1/backoff_factor — must not panic
+    let _duration = policy.delay_for_attempt(u32::MAX);
+}
+
+#[test]
+fn reconnect_policy_large_attempt_capped() {
+    let mut policy = ReconnectPolicy::exponential(Duration::from_secs(1), Duration::from_secs(60));
+    policy.jitter = false;
+
+    let duration = policy.delay_for_attempt(u32::MAX);
+    assert!(
+        duration <= Duration::from_secs(60),
+        "delay must be capped at max_delay, got {duration:?}"
+    );
+}
+
+#[test]
+fn reconnect_policy_zero_initial_delay() {
+    let policy = ReconnectPolicy {
+        initial_delay: Duration::ZERO,
+        max_delay: Duration::from_secs(60),
+        backoff_factor: 2.0,
+        jitter: false,
+        max_retries: None,
+    };
+
+    // 0 * anything = 0
+    assert_eq!(policy.delay_for_attempt(0), Duration::ZERO);
+    assert_eq!(policy.delay_for_attempt(5), Duration::ZERO);
+}
+
+#[test]
+fn reconnect_policy_attempt_at_max_retries_returns_zero() {
+    let mut policy = ReconnectPolicy::exponential(Duration::from_secs(1), Duration::from_secs(60));
+    policy.jitter = false;
+    policy.max_retries = Some(3);
+
+    // attempt >= max_retries returns ZERO (exhausted)
+    assert_eq!(policy.delay_for_attempt(3), Duration::ZERO);
+
+    // attempt below max_retries returns non-zero
+    assert_ne!(policy.delay_for_attempt(2), Duration::ZERO);
+}
