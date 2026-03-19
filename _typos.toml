@@ -5,3 +5,5 @@ ami = "ami"
 ari = "ari"
 exten = "exten"
 empted = "empted"
+# test data: val:ue:extra (colon-split test)
+ue = "ue"

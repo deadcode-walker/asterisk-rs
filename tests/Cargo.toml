@@ -2,6 +2,7 @@
 name = "asterisk-rs-tests"
 version = "0.0.0"
 publish = false
+license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 

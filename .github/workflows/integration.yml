@@ -13,31 +13,42 @@ jobs:
    integration:
       name: Integration Tests
       runs-on: ubuntu-latest
-      services:
-         asterisk:
-            image: andrius/asterisk:22
-            ports:
-               - 5038:5038
-               - 8088:8088
-            volumes:
-               - ${{ github.workspace }}/tests/asterisk/conf:/etc/asterisk
-            options: >-
-               --health-cmd "asterisk -rx 'core show version'"
-               --health-interval 5s
-               --health-timeout 3s
-               --health-retries 15
       steps:
          - uses: actions/checkout@v4
          - uses: dtolnay/rust-toolchain@stable
          - uses: Swatinem/rust-cache@v2
+         - name: Start Asterisk
+           run: |
+              docker run -d --name asterisk \
+                -p 5038:5038 -p 8088:8088 \
+                -v ${{ github.workspace }}/tests/asterisk/conf:/etc/asterisk \
+                --health-cmd "asterisk -rx 'core show version'" \
+                --health-interval 5s \
+                --health-timeout 3s \
+                --health-retries 15 \
+                andrius/asterisk:22
          - name: Wait for Asterisk
-           run: sleep 5
+           run: |
+              for i in $(seq 1 30); do
+                if docker inspect --format='{{.State.Health.Status}}' asterisk 2>/dev/null | grep -q healthy; then
+                  echo "Asterisk is healthy"
+                  exit 0
+                fi
+                echo "Waiting for Asterisk... ($i/30)"
+                sleep 2
+              done
+              echo "Asterisk failed to become healthy"
+              docker logs asterisk
+              exit 1
          - name: Run unit and mock tests
            run: cargo test -p asterisk-rs-tests --test unit --test mock_integration
          - name: Run live integration tests
            run: cargo test -p asterisk-rs-tests --test live_integration --features integration -- --test-threads=1
            env:
-              ASTERISK_AMI_HOST: localhost
+              ASTERISK_AMI_HOST: 127.0.0.1
               ASTERISK_AMI_PORT: 5038
-              ASTERISK_ARI_HOST: localhost
+              ASTERISK_ARI_HOST: 127.0.0.1
               ASTERISK_ARI_PORT: 8088
+         - name: Stop Asterisk
+           if: always()
+           run: docker stop asterisk && docker rm asterisk || true
