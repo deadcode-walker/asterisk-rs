@@ -1,0 +1,84 @@
+[workspace]
+# single changelog at workspace root
+changelog_path = "./CHANGELOG.md"
+
+# disable git releases for all packages by default
+git_release_enable = false
+git_tag_enable = false
+
+# enable dependency updates in release PRs
+dependencies_update = true
+
+# only prepare releases when meaningful commits land
+release_commits = "^(feat|fix|refactor|perf).*"
+
+# umbrella crate gets the single git release with all changes
+[[package]]
+name = "asterisk-rs"
+git_tag_name = "v{{ version }}"
+git_tag_enable = true
+git_release_enable = true
+# include changelogs from all sub-crates in the umbrella release
+changelog_include = [
+    "asterisk-rs-core",
+    "asterisk-rs-ami",
+    "asterisk-rs-agi",
+    "asterisk-rs-ari",
+]
+git_release_body = """
+{{ changelog }}
+"""
+
+# sub-crates publish to crates.io but don't create separate GitHub releases
+[[package]]
+name = "asterisk-rs-core"
+git_release_enable = false
+git_tag_enable = false
+
+[[package]]
+name = "asterisk-rs-ami"
+git_release_enable = false
+git_tag_enable = false
+
+[[package]]
+name = "asterisk-rs-agi"
+git_release_enable = false
+git_tag_enable = false
+
+[[package]]
+name = "asterisk-rs-ari"
+git_release_enable = false
+git_tag_enable = false
+
+# test crate is never published or released
+[[package]]
+name = "asterisk-rs-tests"
+release = false
+publish = false
+
+[changelog]
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits -%}
+{% if commit.scope -%}
+- *({{ commit.scope }})* {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}
+{% else -%}
+- {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}
+{% endif -%}
+{% endfor %}
+{% endfor -%}
+"""
+
+commit_parsers = [
+    { message = "^feat", group = "added" },
+    { message = "^fix", group = "fixed" },
+    { message = "^refactor", group = "changed" },
+    { message = "^perf", group = "performance" },
+    { message = "^docs", group = "documentation" },
+    { message = "^test", group = "testing" },
+    { message = "^ci", group = "ci" },
+    { message = "^chore", group = "other" },
+    { message = "^style", group = "other" },
+    { message = "^build", group = "other" },
+]

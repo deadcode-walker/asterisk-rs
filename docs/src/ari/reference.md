@@ -7,22 +7,22 @@
 
 | Variant | Description |
 |---------|-------------|
-| `StasisStart` |  |
-| `StasisEnd` |  |
-| `ChannelCreated` |  |
-| `ChannelDestroyed` |  |
-| `ChannelStateChange` |  |
-| `ChannelDtmfReceived` |  |
-| `ChannelHangupRequest` |  |
-| `ChannelVarset` |  |
-| `BridgeCreated` |  |
-| `BridgeDestroyed` |  |
-| `ChannelEnteredBridge` |  |
-| `ChannelLeftBridge` |  |
-| `PlaybackStarted` |  |
-| `PlaybackFinished` |  |
-| `RecordingStarted` |  |
-| `RecordingFinished` |  |
+| `StasisStart` | channel entered a Stasis application |
+| `StasisEnd` | channel left a Stasis application |
+| `ChannelCreated` | channel was created |
+| `ChannelDestroyed` | channel was destroyed |
+| `ChannelStateChange` | channel state changed |
+| `ChannelDtmfReceived` | DTMF digit received on channel |
+| `ChannelHangupRequest` | hangup requested on channel |
+| `ChannelVarset` | channel variable set |
+| `BridgeCreated` | bridge was created |
+| `BridgeDestroyed` | bridge was destroyed |
+| `ChannelEnteredBridge` | channel entered a bridge |
+| `ChannelLeftBridge` | channel left a bridge |
+| `PlaybackStarted` | media playback started |
+| `PlaybackFinished` | media playback finished |
+| `RecordingStarted` | recording started |
+| `RecordingFinished` | recording finished |
 | `ChannelCallerId` | channel caller id changed |
 | `ChannelConnectedLine` | channel connected line changed |
 | `ChannelDialplan` | channel dialplan location changed |

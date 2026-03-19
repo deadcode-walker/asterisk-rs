@@ -1,41 +1,43 @@
 name: Integration Tests
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+   push:
+      branches: [main]
+   pull_request:
+      branches: [main]
 
 env:
-  CARGO_TERM_COLOR: always
+   CARGO_TERM_COLOR: always
 
 jobs:
-  integration:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    services:
-      asterisk:
-        image: andrius/asterisk:22
-        ports:
-          - 5038:5038
-          - 8088:8088
-        volumes:
-          - ${{ github.workspace }}/tests/asterisk/conf:/etc/asterisk
-        options: >-
-          --health-cmd "asterisk -rx 'core show version'"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Wait for Asterisk
-        run: sleep 5
-      - name: Run integration tests
-        run: cargo test -p asterisk-rs-tests --features integration
-        env:
-          ASTERISK_AMI_HOST: localhost
-          ASTERISK_AMI_PORT: 5038
-          ASTERISK_ARI_HOST: localhost
-          ASTERISK_ARI_PORT: 8088
+   integration:
+      name: Integration Tests
+      runs-on: ubuntu-latest
+      services:
+         asterisk:
+            image: andrius/asterisk:22
+            ports:
+               - 5038:5038
+               - 8088:8088
+            volumes:
+               - ${{ github.workspace }}/tests/asterisk/conf:/etc/asterisk
+            options: >-
+               --health-cmd "asterisk -rx 'core show version'"
+               --health-interval 5s
+               --health-timeout 3s
+               --health-retries 15
+      steps:
+         - uses: actions/checkout@v4
+         - uses: dtolnay/rust-toolchain@stable
+         - uses: Swatinem/rust-cache@v2
+         - name: Wait for Asterisk
+           run: sleep 5
+         - name: Run unit and mock tests
+           run: cargo test -p asterisk-rs-tests --test unit --test mock_integration
+         - name: Run live integration tests
+           run: cargo test -p asterisk-rs-tests --test live_integration --features integration -- --test-threads=1
+           env:
+              ASTERISK_AMI_HOST: localhost
+              ASTERISK_AMI_PORT: 5038
+              ASTERISK_ARI_HOST: localhost
+              ASTERISK_ARI_PORT: 8088

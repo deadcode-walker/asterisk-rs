@@ -55,6 +55,8 @@ asterisk-rs (umbrella, feature-gated re-exports)
 | `crates/asterisk-rs-ari/src/` | ARI protocol: REST client, WebSocket, events, resource handles |
 | `crates/asterisk-rs-ari/src/resources/` | One module per ARI resource (channel, bridge, endpoint, etc.) |
 | `crates/asterisk-rs/src/` | Umbrella crate with `#[cfg(feature)]` re-exports |
+| `tests/` | External test crate: unit, mock integration, live integration tests |
+| `tests/src/mock/` | Mock servers: MockAmiServer, MockAriServer, MockAgiClient |
 | `docs/src/` | mdBook user guide (ami/, agi/, ari/ subdirectories) |
 | `.github/workflows/` | CI, security audit, docs deploy, release, coverage, semver checks |
 
@@ -64,11 +66,17 @@ asterisk-rs (umbrella, feature-gated re-exports)
 # build
 cargo build --workspace
 
-# test (all features)
-cargo test --workspace --all-features
+# test (unit + mock, no network needed)
+cargo test -p asterisk-rs-tests --test unit --test mock_integration
+
+# test (live, requires running Asterisk — see tests/docker-compose.yml)
+cargo test-live
+
+# test (workspace crates, all features)
+cargo test --workspace --all-features --exclude asterisk-rs-tests
 
 # test (no default features, validates feature gates)
-cargo test --workspace --no-default-features
+cargo test --workspace --no-default-features --exclude asterisk-rs-tests
 
 # lint
 cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -223,7 +231,7 @@ AMI events carry channel variables as `ChanVariable(name): value` headers on the
 - **Formatter**: rustfmt (run `cargo fmt --all`)
 - **Linter**: clippy with `-D warnings` (run via clippy command above)
 - **Security**: cargo-deny for license/advisory checks (`deny.toml`)
-- **Releases**: release-plz (manual trigger via GitHub Actions `workflow_dispatch`)
+- **Releases**: release-plz with consolidated releases (`release-plz.toml`)
 - **Docs**: mdBook (user guide at `docs/`) + rustdoc (API reference)
 
 ## CI Matrix
@@ -233,8 +241,10 @@ AMI events carry channel variables as `ChanVariable(name): value` headers on the
 | check | ubuntu | stable | `cargo check --workspace --all-targets --all-features` |
 | fmt | ubuntu | nightly | `cargo fmt --all -- --check` |
 | clippy | ubuntu | stable | `cargo clippy` with `-D warnings` |
-| test | ubuntu/macos/windows | stable + 1.83 | `cargo test --workspace --all-features` |
-| test-minimal | ubuntu | stable | `cargo test --workspace --no-default-features` |
+| test | ubuntu/macos/windows | stable + 1.83 | `cargo test --workspace --all-features` (excludes test crate) |
+| test-minimal | ubuntu | stable | `cargo test --workspace --no-default-features` (excludes test crate) |
+| mock-tests | ubuntu | stable | `cargo test -p asterisk-rs-tests` (unit + mock) |
+| integration | ubuntu | stable | live tests against Asterisk Docker with `--test-threads=1` |
 | security | ubuntu | stable | Weekly + on Cargo.toml changes; cargo-deny + rustsec audit |
 | coverage | ubuntu | stable | cargo-llvm-cov, uploads to codecov |
 | semver | ubuntu | stable | cargo-semver-checks on PRs |
@@ -242,50 +252,34 @@ AMI events carry channel variables as `ChanVariable(name): value` headers on the
 
 ## Testing
 
-### Framework
+### Architecture
 
-Standard Rust `#[test]` with `#[cfg(test)]` modules embedded in source files. No external test frameworks (no proptest, mockito, etc.).
+All tests live in the external `tests/` crate (no `#[cfg(test)]` in production code). Three test binaries:
 
-### Test Location & Count
+| Binary | Tests | What |
+|--------|-------|------|
+| `unit` | ~839 | Pure data: codec, serialization, types, events, actions, responses |
+| `mock_integration` | ~198 | Mock servers: connection lifecycle, protocol exchanges, adversarial inputs |
+| `live_integration` | ~69 | Real Asterisk (Docker): full protocol coverage across AMI, AGI, ARI |
 
-Tests are co-located with source:
+### Test Infrastructure (`tests/src/mock/`)
 
-| File | Tests | Coverage |
-|------|-------|----------|
-| `asterisk-rs-core` (all) | 19 | EventBus, ReconnectPolicy, Credentials, domain types |
-| `asterisk-rs-ami/src/codec.rs` | 12 | Banner parsing, encode/decode, partial messages, size guard, channel variable extraction |
-| `asterisk-rs-ami/src/response.rs` | 9 | Response parsing, PendingActions lifecycle, channel variable propagation |
-| `asterisk-rs-ami/src/event.rs` | 10 | Event parsing, unknown events, non-event filtering |
-| `asterisk-rs-ami/src/action.rs` | 12 | Action formatting, header construction |
-| `asterisk-rs-agi/src/response.rs` | 7 | AGI response codes, data/endpos parsing |
-| `asterisk-rs-agi/src/command.rs` | 7 | Command formatting, quoting, escaping |
-| `asterisk-rs-ari/src/event.rs` | 14 | JSON deserialization, optional fields, unknown types |
-
-### Test Patterns
-
-- Construct test data inline (e.g., `RawAmiMessage { headers: vec![...] }`, `BytesMut::from(...)`, JSON string literals)
-- Use `.expect("reason")` for test assertions on Results (allowed in test cfg)
-- Pattern match on enum variants with `panic!("expected X")` in else branches
-- No shared test fixtures or helper functions
-
-### Coverage Gaps
-
-- `asterisk-rs-core`: now has 19 tests covering EventBus, ReconnectPolicy, Credentials, domain types
-- Client/connection logic: no tests for AmiClient, AriClient, ConnectionManager
-- Network layer: no mock servers, no integration tests
-- AGI server accept loop and handler dispatch: untested
+- `MockAmiServer` — TCP listener with `accept_one` / `accept_loop`, banner, login helpers
+- `MockAriServer` — HTTP + WebSocket on single port, route registration, event push
+- `MockAgiClient` — connects to AGI server, sends environment, reads commands
 
 ### Running Tests
 
 ```sh
-# all tests
-cargo test --workspace --all-features
+# unit + mock (fast, no network)
+cargo test -p asterisk-rs-tests --test unit --test mock_integration
 
-# specific crate
-cargo test -p asterisk-rs-ami
+# live integration (requires Asterisk Docker)
+cd tests && docker compose up -d
+cargo test-live
 
 # specific test
-cargo test -p asterisk-rs-ami codec::tests::decode_banner_and_response
+cargo test -p asterisk-rs-tests --test mock_integration -- mock_tests::ami::connect_and_login
 ```
 
 ### Examples

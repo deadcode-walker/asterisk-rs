@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type")]
 #[non_exhaustive]
 pub enum AriEvent {
+    /// channel entered a Stasis application
     StasisStart {
         channel: Channel,
         #[serde(default)]
@@ -17,59 +18,48 @@ pub enum AriEvent {
         #[serde(default)]
         replace_channel: Option<Channel>,
     },
-    StasisEnd {
-        channel: Channel,
-    },
-    ChannelCreated {
-        channel: Channel,
-    },
+    /// channel left a Stasis application
+    StasisEnd { channel: Channel },
+    /// channel was created
+    ChannelCreated { channel: Channel },
+    /// channel was destroyed
     ChannelDestroyed {
         channel: Channel,
         cause: i32,
         cause_txt: String,
     },
-    ChannelStateChange {
-        channel: Channel,
-    },
+    /// channel state changed
+    ChannelStateChange { channel: Channel },
+    /// DTMF digit received on channel
     ChannelDtmfReceived {
         channel: Channel,
         digit: String,
         duration_ms: u32,
     },
-    ChannelHangupRequest {
-        channel: Channel,
-    },
+    /// hangup requested on channel
+    ChannelHangupRequest { channel: Channel },
+    /// channel variable set
     ChannelVarset {
         channel: Option<Channel>,
         variable: String,
         value: String,
     },
-    BridgeCreated {
-        bridge: Bridge,
-    },
-    BridgeDestroyed {
-        bridge: Bridge,
-    },
-    ChannelEnteredBridge {
-        bridge: Bridge,
-        channel: Channel,
-    },
-    ChannelLeftBridge {
-        bridge: Bridge,
-        channel: Channel,
-    },
-    PlaybackStarted {
-        playback: Playback,
-    },
-    PlaybackFinished {
-        playback: Playback,
-    },
-    RecordingStarted {
-        recording: LiveRecording,
-    },
-    RecordingFinished {
-        recording: LiveRecording,
-    },
+    /// bridge was created
+    BridgeCreated { bridge: Bridge },
+    /// bridge was destroyed
+    BridgeDestroyed { bridge: Bridge },
+    /// channel entered a bridge
+    ChannelEnteredBridge { bridge: Bridge, channel: Channel },
+    /// channel left a bridge
+    ChannelLeftBridge { bridge: Bridge, channel: Channel },
+    /// media playback started
+    PlaybackStarted { playback: Playback },
+    /// media playback finished
+    PlaybackFinished { playback: Playback },
+    /// recording started
+    RecordingStarted { recording: LiveRecording },
+    /// recording finished
+    RecordingFinished { recording: LiveRecording },
     /// channel caller id changed
     ChannelCallerId {
         channel: Channel,
@@ -77,9 +67,7 @@ pub enum AriEvent {
         caller_presentation_txt: String,
     },
     /// channel connected line changed
-    ChannelConnectedLine {
-        channel: Channel,
-    },
+    ChannelConnectedLine { channel: Channel },
     /// channel dialplan location changed
     ChannelDialplan {
         channel: Channel,
@@ -93,22 +81,13 @@ pub enum AriEvent {
         musicclass: Option<String>,
     },
     /// channel removed from hold
-    ChannelUnhold {
-        channel: Channel,
-    },
+    ChannelUnhold { channel: Channel },
     /// channel talking started
-    ChannelTalkingStarted {
-        channel: Channel,
-    },
+    ChannelTalkingStarted { channel: Channel },
     /// channel talking finished
-    ChannelTalkingFinished {
-        channel: Channel,
-        duration: i32,
-    },
+    ChannelTalkingFinished { channel: Channel, duration: i32 },
     /// tone detected on channel
-    ChannelToneDetected {
-        channel: Channel,
-    },
+    ChannelToneDetected { channel: Channel },
     /// channel transfer via REFER
     ChannelTransfer {
         channel: Channel,
@@ -189,10 +168,7 @@ pub enum AriEvent {
         replace_channel: Option<Channel>,
     },
     /// two bridges merged
-    BridgeMerged {
-        bridge: Bridge,
-        bridge_from: Bridge,
-    },
+    BridgeMerged { bridge: Bridge, bridge_from: Bridge },
     /// bridge video source changed
     BridgeVideoSourceChanged {
         bridge: Bridge,
@@ -205,26 +181,15 @@ pub enum AriEvent {
         endpoint: Endpoint,
     },
     /// device state changed
-    DeviceStateChanged {
-        device_state: DeviceState,
-    },
+    DeviceStateChanged { device_state: DeviceState },
     /// endpoint state changed
-    EndpointStateChange {
-        endpoint: Endpoint,
-    },
+    EndpointStateChange { endpoint: Endpoint },
     /// peer status changed
-    PeerStatusChange {
-        endpoint: Endpoint,
-        peer: Peer,
-    },
+    PeerStatusChange { endpoint: Endpoint, peer: Peer },
     /// playback continuing to next media uri
-    PlaybackContinuing {
-        playback: Playback,
-    },
+    PlaybackContinuing { playback: Playback },
     /// recording failed
-    RecordingFailed {
-        recording: LiveRecording,
-    },
+    RecordingFailed { recording: LiveRecording },
     /// application move failed
     ApplicationMoveFailed {
         channel: Channel,

@@ -237,7 +237,7 @@ async fn agi_get_variable() {
 
     assert!(existing.is_some(), "CHANNEL(name) should return a value");
     assert!(
-        existing.as_deref().map_or(false, |v| !v.is_empty()),
+        existing.as_deref().is_some_and(|v| !v.is_empty()),
         "CHANNEL(name) should be non-empty"
     );
     // nonexistent var returns no data or empty data
@@ -683,11 +683,11 @@ async fn agi_request_metadata() {
         .expect("channel closed");
 
     assert!(
-        meta.channel.as_ref().map_or(false, |c| !c.is_empty()),
+        meta.channel.as_ref().is_some_and(|c| !c.is_empty()),
         "channel should be present"
     );
     assert!(
-        meta.unique_id.as_ref().map_or(false, |u| !u.is_empty()),
+        meta.unique_id.as_ref().is_some_and(|u| !u.is_empty()),
         "unique_id should be present"
     );
     assert_eq!(
@@ -701,15 +701,15 @@ async fn agi_request_metadata() {
         "extension should be 200"
     );
     assert!(
-        meta.priority.as_ref().map_or(false, |p| !p.is_empty()),
+        meta.priority.as_ref().is_some_and(|p| !p.is_empty()),
         "priority should be present"
     );
     assert!(
-        meta.language.as_ref().map_or(false, |l| !l.is_empty()),
+        meta.language.as_ref().is_some_and(|l| !l.is_empty()),
         "language should be present"
     );
     assert!(
-        meta.caller_id.as_ref().map_or(false, |c| !c.is_empty()),
+        meta.caller_id.as_ref().is_some_and(|c| !c.is_empty()),
         "caller_id should be present"
     );
 
