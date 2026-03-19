@@ -184,7 +184,7 @@ async fn channel_answer_and_hangup_via_ari() {
         application: Some("Stasis".to_string()),
         data: Some("test-app".to_string()),
         timeout: Some(10000),
-        caller_id: Some("ari-answer-test <100>".to_string()),
+        caller_id: Some("ari-answer-test <556>".to_string()),
         account: None,
         async_: true,
         variables: vec![],
@@ -201,7 +201,7 @@ async fn channel_answer_and_hangup_via_ari() {
         loop {
             let msg = sub.recv().await.expect("event bus closed");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
-                if channel.caller.number == "100" {
+                if channel.caller.number == "556" {
                     return channel.id.clone();
                 }
             }
