@@ -23,6 +23,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Other
+- release
+- cargo fmt
+- consolidated releases, CI fixes, documentation updates
+
+
+### Testing
+- added comprehensive tests for all new features
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Added
+- *(ari)* added outbound WebSocket server and media channel driver
+- *(ari,ami)* added resource factory pattern and PBX abstraction
+- *(ari)* added REST-over-WebSocket transport mode
+- *(ari,ami)* added ExternalMediaParams, expanded OriginateParams, added CallTracker
+
+
+### Changed
+- *(tests)* moved inline tests to dedicated /tests/ crate
+
+
+### Fixed
+- resolved clippy warnings, fmt, and adapted existing tests
+
+
+### Other
+- release
+- consolidated releases, CI fixes, documentation updates
+
+
+### Testing
+- added comprehensive tests for all new features
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Added
+- *(ari,ami)* added resource factory pattern and PBX abstraction
+- *(ari,ami)* added ExternalMediaParams, expanded OriginateParams, added CallTracker
+
+
+### Changed
+- *(tests)* moved inline tests to dedicated /tests/ crate
+
+
+### Other
+- release
+- cargo fmt
+
+
+### Testing
+- added comprehensive tests for all new features
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Added
+- *(ari,ami)* added resource factory pattern and PBX abstraction
+- *(ari,ami)* added ExternalMediaParams, expanded OriginateParams, added CallTracker
+- *(ari)* added outbound WebSocket server and media channel driver
+- *(ari)* added REST-over-WebSocket transport mode
+
+
+### Changed
+- *(tests)* moved inline tests to dedicated /tests/ crate
+
+
+### Fixed
+- resolved clippy warnings, fmt, and adapted existing tests
+
+
+### Other
 - cargo fmt
 - consolidated releases, CI fixes, documentation updates
 
