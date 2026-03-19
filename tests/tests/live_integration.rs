@@ -6,4 +6,5 @@ mod live_tests {
     pub mod agi;
     pub mod ami;
     pub mod ari;
+    pub mod cross_protocol;
 }

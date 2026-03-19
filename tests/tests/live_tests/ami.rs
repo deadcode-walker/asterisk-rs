@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use asterisk_rs_ami::action::{OriginateAction, StatusAction};
+use asterisk_rs_ami::action::{
+    CoreSettingsAction, CoreShowChannelsAction, CoreStatusAction, DBDelAction, DBDelTreeAction,
+    DBGetAction, DBPutAction, EventsAction, ExtensionStateAction, ListCommandsAction,
+    OriginateAction, ReloadAction, StatusAction,
+};
 use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_ami::AmiEvent;
 use asterisk_rs_core::config::ReconnectPolicy;
@@ -570,6 +574,600 @@ async fn setvar_getvar_on_live_channel() {
         cause: None,
     };
     let _ = client.send_action(&hangup).await;
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn core_settings_action() {
+    init_tracing();
+
+    let client = connect().await;
+    let response = client
+        .send_action(&CoreSettingsAction)
+        .await
+        .expect("core settings action failed");
+    assert!(
+        response.success,
+        "core settings should succeed: {response:?}"
+    );
+
+    // field names vary by asterisk version
+    let has_version_info = response
+        .headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case("AMIversion") || k.eq_ignore_ascii_case("AsteriskVersion"));
+    assert!(
+        has_version_info,
+        "should contain AMIversion or AsteriskVersion: {response:?}"
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn core_status_action() {
+    init_tracing();
+
+    let client = connect().await;
+    let response = client
+        .send_action(&CoreStatusAction)
+        .await
+        .expect("core status action failed");
+    assert!(response.success, "core status should succeed: {response:?}");
+
+    let has_status_info = response.headers.keys().any(|k| {
+        k.eq_ignore_ascii_case("CoreStartupTime") || k.eq_ignore_ascii_case("CoreCurrentCalls")
+    });
+    assert!(
+        has_status_info,
+        "should contain CoreStartupTime or CoreCurrentCalls: {response:?}"
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn core_show_channels_collecting() {
+    init_tracing();
+
+    let client = connect().await;
+    let result = client
+        .send_collecting(&CoreShowChannelsAction)
+        .await
+        .expect("send_collecting failed");
+
+    assert!(result.response.success, "core show channels should succeed");
+
+    let last = result
+        .events
+        .last()
+        .expect("should have at least the Complete event");
+    assert_eq!(
+        last.event_name(),
+        "CoreShowChannelsComplete",
+        "last event should be CoreShowChannelsComplete"
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn db_put_get_del_cycle() {
+    init_tracing();
+
+    let client = connect().await;
+
+    // put
+    let put = DBPutAction {
+        family: "test".to_string(),
+        key: "integration".to_string(),
+        val: "hello123".to_string(),
+    };
+    let response = client.send_action(&put).await.expect("db put failed");
+    assert!(response.success, "db put should succeed: {response:?}");
+
+    // get — should find the value (asterisk may return DBGet as event-list)
+    let get = DBGetAction {
+        family: "test".to_string(),
+        key: "integration".to_string(),
+    };
+    let result = client.send_collecting(&get).await.expect("db get failed");
+    assert!(
+        result.response.success,
+        "db get should succeed: {:?}",
+        result.response
+    );
+
+    // value may be in response headers or in a DBGetResponse event
+    let val = result
+        .response
+        .get("Val")
+        .map(String::from)
+        .unwrap_or_else(|| {
+            result
+                .events
+                .iter()
+                .find_map(|ev| match ev {
+                    AmiEvent::Unknown { headers, .. } => headers.get("Val").cloned(),
+                    _ => None,
+                })
+                .expect("Val not found in response or events")
+        });
+    assert_eq!(val, "hello123", "db value should match: {:?}", result);
+
+    // delete
+    let del = DBDelAction {
+        family: "test".to_string(),
+        key: "integration".to_string(),
+    };
+    let response = client.send_action(&del).await.expect("db del failed");
+    assert!(response.success, "db del should succeed: {response:?}");
+
+    // get again — should fail (key not found)
+    let result = client
+        .send_action(&get)
+        .await
+        .expect("db get after del failed");
+    assert!(
+        !result.success,
+        "db get after delete should fail: {result:?}"
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn db_del_tree() {
+    init_tracing();
+
+    let client = connect().await;
+
+    // put 3 keys under testfamily
+    for i in 0..3 {
+        let put = DBPutAction {
+            family: "testfamily".to_string(),
+            key: format!("key{i}"),
+            val: format!("val{i}"),
+        };
+        let response = client.send_action(&put).await.expect("db put failed");
+        assert!(response.success, "db put key{i} should succeed");
+    }
+
+    // delete the entire family
+    let del_tree = DBDelTreeAction {
+        family: "testfamily".to_string(),
+        key: None,
+    };
+    let response = client
+        .send_action(&del_tree)
+        .await
+        .expect("db del tree failed");
+    assert!(response.success, "db del tree should succeed: {response:?}");
+
+    // verify all keys are gone
+    for i in 0..3 {
+        let get = DBGetAction {
+            family: "testfamily".to_string(),
+            key: format!("key{i}"),
+        };
+        let response = client
+            .send_action(&get)
+            .await
+            .expect("db get after del tree failed");
+        assert!(
+            !response.success,
+            "db get key{i} after del tree should fail: {response:?}"
+        );
+    }
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn list_commands_action() {
+    init_tracing();
+
+    let client = connect().await;
+    let response = client
+        .send_action(&ListCommandsAction)
+        .await
+        .expect("list commands failed");
+    assert!(
+        response.success,
+        "list commands should succeed: {response:?}"
+    );
+
+    // asterisk returns a list of CLI commands as headers
+    assert!(
+        response.headers.len() > 2,
+        "should have multiple command headers: {response:?}"
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn multiple_cli_commands() {
+    init_tracing();
+
+    let client = connect().await;
+
+    for cmd in [
+        "core show uptime",
+        "core show sysinfo",
+        "dialplan show default",
+    ] {
+        let response = client.command(cmd).await.expect("command failed");
+        assert!(response.success, "{cmd} should succeed: {response:?}");
+    }
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn originate_application_mode() {
+    init_tracing();
+
+    let client = connect().await;
+    let mut sub = client.subscribe();
+
+    let action = OriginateAction {
+        channel: "Local/999@default".to_string(),
+        context: None,
+        exten: None,
+        priority: None,
+        application: Some("Playback".to_string()),
+        data: Some("silence/1".to_string()),
+        timeout: Some(10000),
+        caller_id: None,
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = client.send_action(&action).await.expect("originate failed");
+    assert!(
+        response.success,
+        "originate should be accepted: {response:?}"
+    );
+
+    // wait for hangup confirming the call completed
+    let saw_hangup = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let ev = sub.recv().await.expect("event bus closed");
+            if ev.event_name() == "Hangup" {
+                return true;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for Hangup");
+
+    assert!(saw_hangup);
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn filtered_event_subscription() {
+    init_tracing();
+
+    let client = connect().await;
+    let mut filtered = client.subscribe_filtered(|e| e.event_name() == "Hangup");
+
+    // originate to ext 100 — answers, waits 1s, hangs up
+    let action = OriginateAction {
+        channel: "Local/100@default".to_string(),
+        context: Some("default".to_string()),
+        exten: Some("100".to_string()),
+        priority: Some(1),
+        application: None,
+        data: None,
+        timeout: Some(10000),
+        caller_id: None,
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = client.send_action(&action).await.expect("originate failed");
+    assert!(
+        response.success,
+        "originate should be accepted: {response:?}"
+    );
+
+    // collect up to 5 events with timeout — all should be Hangup
+    let mut events = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        for _ in 0..5 {
+            if let Some(ev) = filtered.recv().await {
+                events.push(ev);
+            } else {
+                break;
+            }
+        }
+    })
+    .await;
+
+    assert!(
+        !events.is_empty(),
+        "should have received at least one Hangup event"
+    );
+    for ev in &events {
+        assert_eq!(
+            ev.event_name(),
+            "Hangup",
+            "filtered sub should only yield Hangup"
+        );
+    }
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn multiple_concurrent_clients() {
+    init_tracing();
+
+    let client1 = connect().await;
+    let client2 = connect().await;
+    let mut sub1 = client1.subscribe();
+    let mut sub2 = client2.subscribe();
+
+    // originate from client1
+    let action = OriginateAction {
+        channel: "Local/100@default".to_string(),
+        context: Some("default".to_string()),
+        exten: Some("100".to_string()),
+        priority: Some(1),
+        application: None,
+        data: None,
+        timeout: Some(10000),
+        caller_id: None,
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = client1
+        .send_action(&action)
+        .await
+        .expect("originate failed");
+    assert!(
+        response.success,
+        "originate should be accepted: {response:?}"
+    );
+
+    // both subscribers should see events
+    let mut saw1 = false;
+    let mut saw2 = false;
+
+    let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            tokio::select! {
+                ev = sub1.recv() => {
+                    let ev = ev.expect("sub1 bus closed");
+                    if ev.event_name() == "Hangup" { saw1 = true; }
+                }
+                ev = sub2.recv() => {
+                    let ev = ev.expect("sub2 bus closed");
+                    if ev.event_name() == "Hangup" { saw2 = true; }
+                }
+            }
+            if saw1 && saw2 {
+                break;
+            }
+        }
+    })
+    .await;
+
+    assert!(saw1, "client1 subscriber should see events");
+    assert!(saw2, "client2 subscriber should see events");
+
+    client1
+        .disconnect()
+        .await
+        .expect("disconnect client1 failed");
+    client2
+        .disconnect()
+        .await
+        .expect("disconnect client2 failed");
+}
+
+#[tokio::test]
+async fn extension_state_query() {
+    init_tracing();
+
+    let client = connect().await;
+    let action = ExtensionStateAction {
+        exten: "100".to_string(),
+        context: "default".to_string(),
+    };
+    let response = client
+        .send_action(&action)
+        .await
+        .expect("extension state action failed");
+
+    // unhinted extensions may return -1 — just verify the action completes
+    assert!(
+        response.success,
+        "extension state should succeed: {response:?}"
+    );
+
+    let has_state = response
+        .headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case("Status") || k.eq_ignore_ascii_case("Hint"));
+    assert!(has_state, "should have Status or Hint header: {response:?}");
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn reload_action() {
+    init_tracing();
+
+    let client = connect().await;
+    let action = ReloadAction { module: None };
+    let response = client
+        .send_action(&action)
+        .await
+        .expect("reload action failed");
+    assert!(response.success, "reload should succeed: {response:?}");
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn events_action_toggle() {
+    init_tracing();
+
+    // use a dedicated client so event masking doesn't affect other tests
+    let client = connect().await;
+    let mut sub = client.subscribe();
+
+    // turn off events
+    let off = EventsAction {
+        event_mask: "off".to_string(),
+    };
+    let response = client.send_action(&off).await.expect("events off failed");
+    assert!(response.success, "events off should succeed: {response:?}");
+
+    // actions should still work with events masked off
+    let action = OriginateAction {
+        channel: "Local/100@default".to_string(),
+        context: Some("default".to_string()),
+        exten: Some("100".to_string()),
+        priority: Some(1),
+        application: None,
+        data: None,
+        timeout: Some(10000),
+        caller_id: None,
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+    let response = client.send_action(&action).await.expect("originate failed");
+    assert!(
+        response.success,
+        "originate should succeed with events off: {response:?}"
+    );
+
+    // turn events back on
+    let on = EventsAction {
+        event_mask: "on".to_string(),
+    };
+    let response = client.send_action(&on).await.expect("events on failed");
+    assert!(response.success, "events on should succeed: {response:?}");
+
+    // originate again — should produce events now
+    let _ = client
+        .send_action(&action)
+        .await
+        .expect("originate 2 failed");
+
+    let got_event = tokio::time::timeout(Duration::from_secs(10), sub.recv()).await;
+    assert!(
+        got_event.is_ok(),
+        "should receive events after turning mask back on"
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn originate_to_nonexistent_extension_sync_rejected() {
+    init_tracing();
+
+    let client = connect().await;
+
+    // originate to a truly nonexistent context synchronously (async_ = false)
+    // asterisk rejects this before creating any channels
+    let action = OriginateAction {
+        channel: "Local/99999@does-not-exist".to_string(),
+        context: Some("does-not-exist".to_string()),
+        exten: Some("99999".to_string()),
+        priority: Some(1),
+        application: None,
+        data: None,
+        timeout: Some(5000),
+        caller_id: None,
+        account: None,
+        async_: false,
+        variables: vec![],
+    };
+
+    let response = client
+        .send_action(&action)
+        .await
+        .expect("originate send failed");
+    assert!(
+        !response.success,
+        "sync originate to nonexistent context should fail: {response:?}"
+    );
+
+    client.disconnect().await.expect("disconnect failed");
+}
+
+#[tokio::test]
+async fn originate_with_account_code() {
+    init_tracing();
+
+    let client = connect().await;
+    let mut sub = client.subscribe();
+
+    let action = OriginateAction {
+        channel: "Local/100@default".to_string(),
+        context: Some("default".to_string()),
+        exten: Some("100".to_string()),
+        priority: Some(1),
+        application: None,
+        data: None,
+        timeout: Some(10000),
+        caller_id: None,
+        account: Some("test-account".to_string()),
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = client.send_action(&action).await.expect("originate failed");
+    assert!(
+        response.success,
+        "originate should be accepted: {response:?}"
+    );
+
+    // look for VarSet with CHANNEL(accountcode) or Cdr events containing the account code.
+    // NewChannel doesn't carry account_code in the typed variant, so check VarSet instead.
+    let mut found_account = false;
+    let _ = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let ev = sub.recv().await.expect("event bus closed");
+            if let AmiEvent::VarSet {
+                variable, value, ..
+            } = &ev
+            {
+                if variable.contains("accountcode") && value == "test-account" {
+                    found_account = true;
+                    break;
+                }
+            }
+            // Unknown events may carry AccountCode in headers
+            if let AmiEvent::Unknown { headers, .. } = &ev {
+                if headers.get("AccountCode").map(|v| v.as_str()) == Some("test-account") {
+                    found_account = true;
+                    break;
+                }
+            }
+            if ev.event_name() == "OriginateResponse" {
+                break;
+            }
+        }
+    })
+    .await;
+
+    assert!(
+        found_account,
+        "should see account code in VarSet or event headers"
+    );
 
     client.disconnect().await.expect("disconnect failed");
 }

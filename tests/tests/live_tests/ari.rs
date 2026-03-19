@@ -3,8 +3,11 @@ use std::time::Duration;
 use asterisk_rs_ami::action::OriginateAction;
 use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_ari::config::AriConfigBuilder;
+use asterisk_rs_ari::error::AriError;
+use asterisk_rs_ari::event::AriMessage;
 use asterisk_rs_ari::{AriClient, AriEvent};
 use asterisk_rs_core::config::ReconnectPolicy;
+use asterisk_rs_core::event::EventSubscription;
 use asterisk_rs_tests::helpers::*;
 
 /// build an ARI client connected to the test Asterisk instance
@@ -118,7 +121,7 @@ async fn stasis_event_from_originate() {
         application: Some("Stasis".to_string()),
         data: Some("test-app".to_string()),
         timeout: Some(10000),
-        caller_id: Some("ari-test <100>".to_string()),
+        caller_id: Some("ari-stasis-test <555>".to_string()),
         account: None,
         async_: true,
         variables: vec![],
@@ -137,7 +140,7 @@ async fn stasis_event_from_originate() {
             tracing::info!(event = ?msg.event, app = %msg.application, "ari event received");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
                 // match our originate by caller id
-                if channel.caller.number == "100" {
+                if channel.caller.number == "555" {
                     return msg;
                 }
             }
@@ -426,7 +429,7 @@ async fn channel_variable_via_ari() {
         application: Some("Stasis".to_string()),
         data: Some("test-app".to_string()),
         timeout: Some(10000),
-        caller_id: Some("var-test <100>".to_string()),
+        caller_id: Some("var-test <777>".to_string()),
         account: None,
         async_: true,
         variables: vec![],
@@ -439,7 +442,7 @@ async fn channel_variable_via_ari() {
         loop {
             let msg = sub.recv().await.expect("event bus closed");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
-                if channel.caller.number == "100" {
+                if channel.caller.number == "777" {
                     return channel.id.clone();
                 }
             }
@@ -470,6 +473,614 @@ async fn channel_variable_via_ari() {
     );
 
     // cleanup
+    let _ = ari.delete(&format!("channels/{channel_id}")).await;
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+/// originate a channel into stasis and return its channel id
+///
+/// filters the stasis-start event by the caller number embedded in
+/// `caller_id` (expects `"name <number>"` format)
+async fn originate_into_stasis(
+    ami: &AmiClient,
+    sub: &mut EventSubscription<AriMessage>,
+    caller_id: &str,
+) -> String {
+    // extract the numeric caller id from "name <NNN>" format
+    let number = caller_id
+        .rsplit_once('<')
+        .and_then(|(_, rest)| rest.strip_suffix('>'))
+        .expect("caller_id must be in 'name <number>' format");
+
+    let action = OriginateAction {
+        channel: "Local/999@default".to_string(),
+        context: None,
+        exten: None,
+        priority: None,
+        application: Some("Stasis".to_string()),
+        data: Some("test-app".to_string()),
+        timeout: Some(10000),
+        caller_id: Some(caller_id.to_string()),
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+    let resp = ami.send_action(&action).await.expect("originate failed");
+    assert!(resp.success);
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let msg = sub.recv().await.expect("event bus closed");
+            if let AriEvent::StasisStart { channel, .. } = &msg.event {
+                if channel.caller.number == number {
+                    return channel.id.clone();
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for StasisStart")
+}
+
+// ---------------------------------------------------------------------------
+// extended tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn asterisk_ping() {
+    init_tracing();
+
+    let client = connect_ari().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let resp: serde_json::Value = client
+        .get("asterisk/ping")
+        .await
+        .expect("GET asterisk/ping failed");
+
+    assert_eq!(
+        resp.get("ping").and_then(|v| v.as_str()),
+        Some("pong"),
+        "ping response should contain pong: {resp}"
+    );
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn asterisk_modules_list() {
+    init_tracing();
+
+    let client = connect_ari().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let modules: Vec<serde_json::Value> = client
+        .get("asterisk/modules")
+        .await
+        .expect("GET asterisk/modules failed");
+
+    assert!(!modules.is_empty(), "asterisk should have modules loaded");
+    tracing::info!(count = modules.len(), "loaded modules");
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn asterisk_global_variable_set_get() {
+    init_tracing();
+
+    let client = connect_ari().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // set global variable
+    client
+        .post_empty("asterisk/variable?variable=GLOBAL_TEST_VAR&value=ari_global_value")
+        .await
+        .expect("set global variable failed");
+
+    // get it back
+    let var: serde_json::Value = client
+        .get("asterisk/variable?variable=GLOBAL_TEST_VAR")
+        .await
+        .expect("get global variable failed");
+
+    assert_eq!(
+        var["value"].as_str(),
+        Some("ari_global_value"),
+        "global variable should match: {var}"
+    );
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn channel_moh_start_stop() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+    let channel_id = originate_into_stasis(&ami, &mut sub, "moh-test <100>").await;
+
+    // answer first so moh can play
+    ari.post_empty(&format!("channels/{channel_id}/answer"))
+        .await
+        .expect("answer failed");
+
+    // start moh — may return 409 if no moh class configured, accept that
+    let moh_start = ari.post_empty(&format!("channels/{channel_id}/moh")).await;
+    match &moh_start {
+        Ok(()) => tracing::info!("moh started"),
+        Err(AriError::Api { status: 409, .. }) => {
+            tracing::warn!("moh not available (409), skipping stop");
+        }
+        Err(e) => panic!("unexpected moh start error: {e}"),
+    }
+
+    if moh_start.is_ok() {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        ari.delete(&format!("channels/{channel_id}/moh"))
+            .await
+            .expect("stop moh failed");
+    }
+
+    let _ = ari.delete(&format!("channels/{channel_id}")).await;
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn channel_hold_unhold() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+    let channel_id = originate_into_stasis(&ami, &mut sub, "hold-test <100>").await;
+
+    ari.post_empty(&format!("channels/{channel_id}/answer"))
+        .await
+        .expect("answer failed");
+
+    // hold — local channels don't emit ChannelHold events, so only
+    // assert the REST calls succeed
+    ari.post_empty(&format!("channels/{channel_id}/hold"))
+        .await
+        .expect("hold failed");
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // unhold
+    ari.delete(&format!("channels/{channel_id}/hold"))
+        .await
+        .expect("unhold failed");
+
+    let _ = ari.delete(&format!("channels/{channel_id}")).await;
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn channel_mute_unmute() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+    let channel_id = originate_into_stasis(&ami, &mut sub, "mute-test <100>").await;
+
+    ari.post_empty(&format!("channels/{channel_id}/answer"))
+        .await
+        .expect("answer failed");
+
+    // mute inbound audio
+    ari.post_empty(&format!("channels/{channel_id}/mute?direction=in"))
+        .await
+        .expect("mute failed");
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // unmute
+    ari.delete(&format!("channels/{channel_id}/mute?direction=in"))
+        .await
+        .expect("unmute failed");
+
+    let _ = ari.delete(&format!("channels/{channel_id}")).await;
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn channel_ring_start_stop() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    // originate to 301 (no pre-answer) so ringing is valid
+    let ami = connect_ami().await;
+    let action = OriginateAction {
+        channel: "Local/301@default".to_string(),
+        context: None,
+        exten: None,
+        priority: None,
+        application: Some("Stasis".to_string()),
+        data: Some("test-app".to_string()),
+        timeout: Some(10000),
+        caller_id: Some("ring-test <100>".to_string()),
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+    let resp = ami.send_action(&action).await.expect("originate failed");
+    assert!(resp.success);
+
+    let channel_id = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let msg = sub.recv().await.expect("event bus closed");
+            if let AriEvent::StasisStart { channel, .. } = &msg.event {
+                return channel.id.clone();
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for StasisStart");
+
+    // start ringing indication
+    ari.post_empty(&format!("channels/{channel_id}/ring"))
+        .await
+        .expect("ring start failed");
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // stop ringing
+    ari.delete(&format!("channels/{channel_id}/ring"))
+        .await
+        .expect("ring stop failed");
+
+    let _ = ari.delete(&format!("channels/{channel_id}")).await;
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn channel_continue_to_dialplan() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+    let channel_id = originate_into_stasis(&ami, &mut sub, "continue-test <100>").await;
+
+    ari.post_empty(&format!("channels/{channel_id}/answer"))
+        .await
+        .expect("answer failed");
+
+    // continue into dialplan — channel leaves stasis
+    ari.post_empty(&format!(
+        "channels/{channel_id}/continue?context=default&extension=400&priority=1"
+    ))
+    .await
+    .expect("continue failed");
+
+    // wait for StasisEnd
+    let saw_end = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let msg = sub.recv().await.expect("event bus closed");
+            if let AriEvent::StasisEnd { channel, .. } = &msg.event {
+                if channel.id == channel_id {
+                    return true;
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for StasisEnd");
+
+    assert!(saw_end);
+
+    // channel is now in dialplan, not stasis — don't try to hangup via ari
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn endpoint_list() {
+    init_tracing();
+
+    let client = connect_ari().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let endpoints: Vec<serde_json::Value> =
+        client.get("endpoints").await.expect("GET endpoints failed");
+
+    // may be empty, just verify the call succeeded
+    tracing::info!(count = endpoints.len(), "endpoints");
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn sound_list() {
+    init_tracing();
+
+    let client = connect_ari().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let result: Result<Vec<serde_json::Value>, _> = client.get("sounds").await;
+    match result {
+        Ok(sounds) => {
+            tracing::info!(count = sounds.len(), "sounds found");
+        }
+        Err(AriError::Api { status: 404, .. }) => {
+            // no sound files installed — acceptable in minimal docker image
+            tracing::info!("no sounds installed (404)");
+        }
+        Err(e) => panic!("unexpected error: {e}"),
+    }
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn rest_invalid_channel_404() {
+    init_tracing();
+
+    let client = connect_ari().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let err = client
+        .get::<serde_json::Value>("channels/nonexistent-channel-id-12345")
+        .await;
+
+    assert!(
+        matches!(err, Err(AriError::Api { status: 404, .. })),
+        "expected 404 for nonexistent channel: {err:?}"
+    );
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn rest_delete_nonexistent_channel() {
+    init_tracing();
+
+    let client = connect_ari().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let err = client.delete("channels/nonexistent-channel-id-12345").await;
+
+    assert!(
+        matches!(err, Err(AriError::Api { status: 404, .. })),
+        "expected 404 for nonexistent channel: {err:?}"
+    );
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn stasis_start_with_args() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+
+    // ext 302 does Stasis(test-app,hello,world) in dialplan
+    let action = OriginateAction {
+        channel: "Local/302@default".to_string(),
+        context: None,
+        exten: None,
+        priority: None,
+        application: Some("Stasis".to_string()),
+        data: Some("test-app".to_string()),
+        timeout: Some(10000),
+        caller_id: Some("args-test <100>".to_string()),
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+    let resp = ami.send_action(&action).await.expect("originate failed");
+    assert!(resp.success);
+
+    // collect StasisStart events — we may get one from the originate (app=Stasis)
+    // and one from the dialplan (Stasis(test-app,hello,world)). look for args.
+    let (channel_id, args) = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let msg = sub.recv().await.expect("event bus closed");
+            if let AriEvent::StasisStart { channel, args, .. } = &msg.event {
+                if args.contains(&"hello".to_string()) && args.contains(&"world".to_string()) {
+                    return (channel.id.clone(), args.clone());
+                }
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for StasisStart with args");
+
+    assert_eq!(args, vec!["hello", "world"], "stasis args should match");
+
+    let _ = ari.delete(&format!("channels/{channel_id}")).await;
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn bridge_moh_start_stop() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // create a bridge
+    let bridge: serde_json::Value = ari
+        .post("bridges", &serde_json::json!({"type": "mixing"}))
+        .await
+        .expect("create bridge failed");
+    let bridge_id = bridge["id"]
+        .as_str()
+        .expect("bridge should have id")
+        .to_string();
+
+    // start moh on bridge — may 409 if no moh class
+    let moh_result = ari.post_empty(&format!("bridges/{bridge_id}/moh")).await;
+    match &moh_result {
+        Ok(()) => {
+            tracing::info!("bridge moh started");
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            ari.delete(&format!("bridges/{bridge_id}/moh"))
+                .await
+                .expect("stop bridge moh failed");
+        }
+        Err(AriError::Api { status: 409, .. }) => {
+            tracing::warn!("bridge moh not available (409)");
+        }
+        Err(e) => panic!("unexpected bridge moh error: {e}"),
+    }
+
+    ari.delete(&format!("bridges/{bridge_id}"))
+        .await
+        .expect("destroy bridge failed");
+
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn channel_play_media() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+    let channel_id = originate_into_stasis(&ami, &mut sub, "play-test <100>").await;
+
+    ari.post_empty(&format!("channels/{channel_id}/answer"))
+        .await
+        .expect("answer failed");
+
+    // play silence/1 media
+    let playback: serde_json::Value = ari
+        .post(
+            &format!("channels/{channel_id}/play?media=sound:silence/1"),
+            &serde_json::json!({}),
+        )
+        .await
+        .expect("play media failed");
+
+    let playback_id = playback["id"].as_str().expect("playback should have id");
+    tracing::info!(playback_id, "playback started");
+
+    // wait briefly for playback to register
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let _ = ari.delete(&format!("channels/{channel_id}")).await;
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn multiple_stasis_subscribers() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub1 = ari.subscribe();
+    let mut sub2 = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+
+    // originate into stasis
+    let action = OriginateAction {
+        channel: "Local/999@default".to_string(),
+        context: None,
+        exten: None,
+        priority: None,
+        application: Some("Stasis".to_string()),
+        data: Some("test-app".to_string()),
+        timeout: Some(10000),
+        caller_id: Some("multi-sub-test <100>".to_string()),
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+    let resp = ami.send_action(&action).await.expect("originate failed");
+    assert!(resp.success);
+
+    // both subscribers should receive StasisStart
+    let id1 = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let msg = sub1.recv().await.expect("sub1 event bus closed");
+            if let AriEvent::StasisStart { channel, .. } = &msg.event {
+                return channel.id.clone();
+            }
+        }
+    })
+    .await
+    .expect("sub1 timed out waiting for StasisStart");
+
+    let id2 = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let msg = sub2.recv().await.expect("sub2 event bus closed");
+            if let AriEvent::StasisStart { channel, .. } = &msg.event {
+                return channel.id.clone();
+            }
+        }
+    })
+    .await
+    .expect("sub2 timed out waiting for StasisStart");
+
+    assert_eq!(id1, id2, "both subscribers should see same channel");
+
+    let _ = ari.delete(&format!("channels/{id1}")).await;
+    ami.disconnect().await.expect("ami disconnect failed");
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn channel_snoop() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let ami = connect_ami().await;
+    let channel_id = originate_into_stasis(&ami, &mut sub, "snoop-test <100>").await;
+
+    ari.post_empty(&format!("channels/{channel_id}/answer"))
+        .await
+        .expect("answer failed");
+
+    // create a snoop channel
+    let snoop: serde_json::Value = ari
+        .post(
+            &format!("channels/{channel_id}/snoop?app=test-app&spy=both"),
+            &serde_json::json!({}),
+        )
+        .await
+        .expect("snoop failed");
+
+    let snoop_id = snoop["id"].as_str().expect("snoop should have channel id");
+    tracing::info!(snoop_id, "snoop channel created");
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // cleanup: hangup both channels
+    let _ = ari.delete(&format!("channels/{snoop_id}")).await;
     let _ = ari.delete(&format!("channels/{channel_id}")).await;
     ami.disconnect().await.expect("ami disconnect failed");
     ari.disconnect();
