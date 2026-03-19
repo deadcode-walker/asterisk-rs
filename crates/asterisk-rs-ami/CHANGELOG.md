@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `CallTracker`: background task correlating AMI events by UniqueID into `CompletedCall` records
-- `AmiClient::call_tracker()` convenience method
-
 ## [0.4.0](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-ami-v0.3.0...asterisk-rs-ami-v0.4.0) - 2026-03-18
 
 ### Added

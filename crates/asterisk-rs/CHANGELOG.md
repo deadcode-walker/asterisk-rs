@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `Pbx` high-level call abstraction wrapping AmiClient + CallTracker
-- `Call` handle with `hangup()` and `wait_for_answer()` methods
-- `DialOptions` builder for caller_id, timeout, variables
-- `PbxError` typed error enum
-
 ## [0.1.4](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-v0.1.3...asterisk-rs-v0.1.4) - 2026-03-18
 
 ### Other

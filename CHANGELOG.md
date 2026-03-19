@@ -7,20 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- `asterisk-rs-ari`: transport abstraction with two modes -- `TransportMode::Http` (default, separate HTTP + WS) and `TransportMode::WebSocket` (unified WS for REST and events, requires Asterisk 20.14.0+)
-- `asterisk-rs-ari`: `ExternalMediaParams` typed struct with all ARI fields (encapsulation, transport, connection_type, direction, channel_id, variables) and builder methods
-- `asterisk-rs-ari`: expanded `OriginateParams` with channel_id, other_channel_id, originator, formats, variables, label fields
-- `asterisk-rs-ari`: resource factory pattern -- `PendingChannel`, `PendingBridge`, `PendingPlayback` for race-free origination with pre-event subscription
-- `asterisk-rs-ari`: outbound WebSocket server (`AriServer`) -- accepts incoming WS connections from Asterisk 22+ configured with outbound websockets
-- `asterisk-rs-ari`: WebSocket media channel driver (`MediaChannel`) for exchanging raw audio with chan_websocket (Asterisk 20.16.0+)
-- `asterisk-rs-ami`: `CallTracker` -- background task correlating AMI events by UniqueID into `CompletedCall` records with channel, linked_id, duration, cause, collected events
-- `asterisk-rs`: `Pbx` high-level call abstraction wrapping AmiClient + CallTracker -- `dial()`, `Call::wait_for_answer()`, `Call::hangup()`
-
-### Changed
-
-- `asterisk-rs-ari`: `ChannelHandle::external_media()` now accepts `&ExternalMediaParams` instead of positional arguments (breaking)
-- `asterisk-rs-ari`: `AriClient` REST methods dispatch through transport abstraction instead of direct reqwest calls
-
 ### Added
 
 - `asterisk-rs-core`: shared error types, event bus with filtered subscriptions, reconnection policy, credentials with secret redaction

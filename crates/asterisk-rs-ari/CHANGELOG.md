@@ -7,22 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- transport abstraction with `TransportMode::Http` (default) and `TransportMode::WebSocket` (unified WS, requires Asterisk 20.14.0+)
-- `ExternalMediaParams` typed struct with all ARI fields and builder methods
-- expanded `OriginateParams` with channel_id, other_channel_id, originator, formats, variables, label
-- resource factory: `PendingChannel`, `PendingBridge`, `PendingPlayback` for race-free origination
-- outbound WebSocket server (`AriServer`) for Asterisk 22+ outbound WS connections
-- WebSocket media channel driver (`MediaChannel`) for chan_websocket audio exchange (Asterisk 20.16.0+)
-- `AriClient::channel()`, `bridge()`, `playback()` factory methods
-- `AriClient::config()` accessor
-
-### Changed
-
-- `ChannelHandle::external_media()` now accepts `&ExternalMediaParams` instead of positional arguments (breaking)
-- REST methods dispatch through transport abstraction instead of direct reqwest
-
 ## [0.3.1](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-ari-v0.3.0...asterisk-rs-ari-v0.3.1) - 2026-03-18
 
 ### Added
