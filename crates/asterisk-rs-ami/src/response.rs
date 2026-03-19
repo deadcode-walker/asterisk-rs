@@ -27,6 +27,12 @@ impl AmiResponse {
     ///
     /// returns `None` for non-response messages (e.g., events)
     pub fn from_raw(raw: &RawAmiMessage) -> Option<Self> {
+        // messages with both Event: and Response: headers are events
+        // (e.g. OriginateResponse carries Response: Success/Failure
+        // but is an event, not an action response)
+        if raw.get("Event").is_some() {
+            return None;
+        }
         let response_type = raw.get("Response")?.to_string();
         // action ID may be absent for unsolicited responses
         let action_id = raw.get("ActionID").unwrap_or("").to_string();

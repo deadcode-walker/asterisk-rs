@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use asterisk_rs_ami::action::{HangupAction, OriginateAction};
 use asterisk_rs_ami::event::AmiEvent;
-use asterisk_rs_ami::response::AmiResponse;
 use asterisk_rs_ami::tracker::{CallTracker, CompletedCall};
 use asterisk_rs_ami::AmiClient;
 use tokio::sync::mpsc;
@@ -27,7 +26,9 @@ pub struct Call {
 
 impl Call {
     /// hang up this call
-    pub async fn hangup(&self) -> asterisk_rs_ami::error::Result<AmiResponse> {
+    pub async fn hangup(
+        &self,
+    ) -> asterisk_rs_ami::error::Result<asterisk_rs_ami::response::AmiResponse> {
         self.client.hangup(HangupAction::new(&self.channel)).await
     }
 
@@ -142,8 +143,9 @@ impl Pbx {
 
     /// originate a call from one endpoint to another
     ///
-    /// creates a channel to `from`, then connects it to `to` via the dialplan.
-    /// returns a [`Call`] handle for tracking and controlling the call
+    /// uses async originate so the call is queued immediately.
+    /// waits for the OriginateResponse event to get the actual
+    /// channel name and unique_id.
     pub async fn dial(
         &self,
         from: impl Into<String>,
@@ -157,7 +159,8 @@ impl Pbx {
         let mut action = OriginateAction::new(&from)
             .extension(&to)
             .context("default")
-            .priority(1);
+            .priority(1)
+            .async_originate(true);
 
         if let Some(ref cid) = opts.caller_id {
             action = action.caller_id(cid);
@@ -166,19 +169,45 @@ impl Pbx {
             action = action.timeout_ms(ms);
         }
 
-        let response = self.client.originate(action).await?;
+        // subscribe to OriginateResponse before sending the action
+        // so we don't miss the event
+        let mut orig_sub = self
+            .client
+            .subscribe_filtered(move |e| matches!(e, AmiEvent::OriginateResponse { .. }));
 
-        // extract unique_id from response headers, default to empty if absent
-        let unique_id = response
-            .get("Uniqueid")
-            .map(|s| s.to_owned())
-            .unwrap_or_default();
+        self.client.originate(action).await?;
 
-        // extract channel name from response, fall back to the requested endpoint
-        let channel = response
-            .get("Channel")
-            .map(|s| s.to_owned())
-            .unwrap_or_else(|| from.clone());
+        // wait for the OriginateResponse event with a timeout
+        let originate_timeout =
+            Duration::from_secs(opts.timeout_ms.map(|ms| ms / 1000 + 5).unwrap_or(35));
+
+        let event = tokio::time::timeout(originate_timeout, async {
+            loop {
+                match orig_sub.recv().await {
+                    Some(AmiEvent::OriginateResponse {
+                        channel,
+                        unique_id,
+                        response,
+                        ..
+                    }) => {
+                        return Ok((channel, unique_id, response));
+                    }
+                    Some(_) => continue,
+                    None => return Err(PbxError::Disconnected),
+                }
+            }
+        })
+        .await
+        .map_err(|_| PbxError::Timeout)??;
+
+        let (channel, unique_id, response) = event;
+
+        if response.eq_ignore_ascii_case("failure") {
+            return Err(PbxError::CallFailed {
+                cause: 0,
+                cause_txt: "originate failed".to_owned(),
+            });
+        }
 
         Ok(Call {
             channel,

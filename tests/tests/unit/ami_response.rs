@@ -433,3 +433,57 @@ fn deliver_event_list_event_to_unknown_action_returns_false() {
     };
     assert!(!pending.deliver_event_list_event("nonexistent", event));
 }
+
+// ── OriginateResponse event must not be parsed as action response ───────
+
+#[test]
+fn originate_response_event_not_consumed_as_response() {
+    // OriginateResponse events carry both Event: and Response: headers.
+    // from_raw must return None so dispatch_message routes it as an event.
+    let raw = RawAmiMessage {
+        headers: vec![
+            ("Event".into(), "OriginateResponse".into()),
+            ("Response".into(), "Success".into()),
+            ("Channel".into(), "PJSIP/100-00000001".into()),
+            ("Uniqueid".into(), "1234.5".into()),
+            ("ActionID".into(), "7".into()),
+        ],
+        output: vec![],
+        channel_variables: HashMap::new(),
+    };
+    assert!(
+        AmiResponse::from_raw(&raw).is_none(),
+        "messages with Event: header must not parse as action responses"
+    );
+}
+
+#[test]
+fn originate_response_event_parses_as_event() {
+    // the same message must parse as an AmiEvent
+    let raw = RawAmiMessage {
+        headers: vec![
+            ("Event".into(), "OriginateResponse".into()),
+            ("Response".into(), "Success".into()),
+            ("Channel".into(), "PJSIP/100-00000001".into()),
+            ("Uniqueid".into(), "1234.5".into()),
+            ("Reason".into(), "4".into()),
+        ],
+        output: vec![],
+        channel_variables: HashMap::new(),
+    };
+    let event = AmiEvent::from_raw(&raw).expect("should parse as event");
+    match event {
+        AmiEvent::OriginateResponse {
+            channel,
+            unique_id,
+            response,
+            reason,
+        } => {
+            assert_eq!(channel, "PJSIP/100-00000001");
+            assert_eq!(unique_id, "1234.5");
+            assert_eq!(response, "Success");
+            assert_eq!(reason, "4");
+        }
+        other => panic!("expected OriginateResponse, got {other:?}"),
+    }
+}
