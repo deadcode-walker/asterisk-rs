@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "asterisk-rs"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "asterisk-rs-agi",
  "asterisk-rs-ami",
@@ -28,7 +28,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-ami"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "asterisk-rs-core",
  "bytes",
@@ -45,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-ari"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "asterisk-rs-core",
  "base64",
