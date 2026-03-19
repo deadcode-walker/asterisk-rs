@@ -202,4 +202,3 @@ impl Pbx {
         self.tracker.shutdown();
     }
 }
-

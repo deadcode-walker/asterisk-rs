@@ -2467,3 +2467,92 @@ async fn connection_state_connected_then_disconnected() {
 
     let _ = handle.await;
 }
+
+// ── call tracker mock tests ───────────────────────────────
+
+#[tokio::test]
+async fn call_tracker_via_mock_ami() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        // send NewChannel event
+        conn.send_message(&[
+            ("Event", "Newchannel"),
+            ("Channel", "PJSIP/200-00000001"),
+            ("ChannelState", "0"),
+            ("ChannelStateDesc", "Down"),
+            ("CallerIDNum", "100"),
+            ("CallerIDName", "Alice"),
+            ("Uniqueid", "tracker-uid-001"),
+            ("Linkedid", "tracker-lid-001"),
+        ])
+        .await;
+
+        // send Newstate event (ringing)
+        conn.send_message(&[
+            ("Event", "Newstate"),
+            ("Channel", "PJSIP/200-00000001"),
+            ("ChannelState", "5"),
+            ("ChannelStateDesc", "Ringing"),
+            ("Uniqueid", "tracker-uid-001"),
+        ])
+        .await;
+
+        // send Hangup event
+        conn.send_message(&[
+            ("Event", "Hangup"),
+            ("Channel", "PJSIP/200-00000001"),
+            ("Uniqueid", "tracker-uid-001"),
+            ("Cause", "16"),
+            ("Cause-txt", "Normal Clearing"),
+        ])
+        .await;
+
+        // hold connection until client drops
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .expect("client should connect and login");
+
+    let (_tracker, mut completed_rx) = client.call_tracker();
+
+    let completed = tokio::time::timeout(Duration::from_secs(5), completed_rx.recv())
+        .await
+        .expect("should receive completed call within timeout")
+        .expect("completed call channel should not be closed");
+
+    assert_eq!(
+        completed.channel, "PJSIP/200-00000001",
+        "channel name mismatch"
+    );
+    assert_eq!(completed.unique_id, "tracker-uid-001", "unique_id mismatch");
+    assert_eq!(completed.cause, 16, "hangup cause mismatch");
+    assert_eq!(completed.cause_txt, "Normal Clearing", "cause_txt mismatch");
+    // NewChannel + Newstate + Hangup = 3 events
+    assert_eq!(
+        completed.events.len(),
+        3,
+        "should have collected 3 events, got: {}",
+        completed.events.len()
+    );
+
+    drop(client);
+    let _ = handle.await;
+}

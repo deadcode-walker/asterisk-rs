@@ -1171,3 +1171,93 @@ async fn originate_with_account_code() {
 
     client.disconnect().await.expect("disconnect failed");
 }
+
+// ── call tracker live tests ───────────────────────────────
+
+#[tokio::test]
+async fn call_tracker_captures_originate_lifecycle() {
+    init_tracing();
+
+    let client = connect().await;
+
+    // start tracking calls before we originate
+    let (_tracker, mut completed_rx) = client.call_tracker();
+
+    // originate a call to Local/999@default which answers briefly then hangs up
+    let action = OriginateAction {
+        channel: "Local/999@default".to_string(),
+        context: Some("default".to_string()),
+        exten: Some("999".to_string()),
+        priority: Some(1),
+        application: None,
+        data: None,
+        timeout: Some(10000),
+        caller_id: Some("tracker-test <558>".to_string()),
+        account: None,
+        async_: true,
+        variables: vec![],
+    };
+
+    let response = client.send_action(&action).await.expect("originate failed");
+    assert!(
+        response.success,
+        "originate should be accepted: {response:?}"
+    );
+
+    // wait for a CompletedCall to appear — the Local channel pair should complete
+    // once the call times out or the dialplan finishes.
+    let completed = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let call = completed_rx
+                .recv()
+                .await
+                .expect("call tracker channel closed");
+            tracing::info!(
+                channel = %call.channel,
+                unique_id = %call.unique_id,
+                duration = ?call.duration,
+                cause = call.cause,
+                "completed call received"
+            );
+            // Local channels create a pair: Local/999@default-XXXXX;1 and ;2
+            // match on the channel prefix to find ours
+            if call.channel.starts_with("Local/999@default") {
+                return call;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for CompletedCall from tracker");
+
+    assert!(
+        !completed.unique_id.is_empty(),
+        "completed call should have a non-empty unique_id"
+    );
+    assert!(
+        completed.channel.starts_with("Local/"),
+        "channel should be a Local channel: {}",
+        completed.channel
+    );
+    assert!(
+        !completed.cause_txt.is_empty(),
+        "cause_txt should not be empty"
+    );
+    assert!(
+        !completed.events.is_empty(),
+        "completed call should have collected events"
+    );
+
+    tracing::info!(
+        channel = %completed.channel,
+        unique_id = %completed.unique_id,
+        linked_id = %completed.linked_id,
+        duration = ?completed.duration,
+        cause = completed.cause,
+        cause_txt = %completed.cause_txt,
+        event_count = completed.events.len(),
+        "call tracker lifecycle verified"
+    );
+
+    _tracker.shutdown();
+    client.disconnect().await.expect("disconnect failed");
+}

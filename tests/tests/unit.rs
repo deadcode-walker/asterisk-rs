@@ -6,8 +6,8 @@ mod unit {
     pub mod ami_codec;
     pub mod ami_events;
     pub mod ami_response;
+    pub mod ami_tracker;
     pub mod ari;
     pub mod core_tests;
-    pub mod ami_tracker;
     pub mod pbx;
 }

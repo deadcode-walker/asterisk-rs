@@ -2988,3 +2988,483 @@ async fn disconnect_then_subscribe_returns_none() {
         Err(_) => panic!("timed out — event bus was not fully dropped"),
     }
 }
+
+// ── mock tests ───────────────────────────────
+
+#[tokio::test]
+async fn external_media_with_full_params() {
+    init_tracing();
+
+    let channel_json = r#"{
+        "id": "ext-media-chan-1",
+        "name": "UnicastRTP/127.0.0.1:9999-0001",
+        "state": "Up",
+        "caller": {"name": "", "number": ""},
+        "connected": {"name": "", "number": ""},
+        "dialplan": {"context": "default", "exten": "s", "priority": 1}
+    }"#;
+
+    let server = MockAriServerBuilder::new()
+        .route("POST", "/ari/channels/externalMedia", 200, channel_json)
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+
+    let params = asterisk_rs_ari::resources::channel::ExternalMediaParams::new(
+        "test-app",
+        "127.0.0.1:9999",
+        "ulaw",
+    )
+    .encapsulation("rtp")
+    .transport("udp")
+    .connection_type("client")
+    .direction("both")
+    .channel_id("ext-media-chan-1")
+    .variables(std::collections::HashMap::from([(
+        "VAR1".to_string(),
+        "val1".to_string(),
+    )]));
+
+    let channel: asterisk_rs_ari::event::Channel = client
+        .post("channels/externalMedia", &params)
+        .await
+        .expect("external media POST should succeed");
+
+    assert_eq!(channel.id, "ext-media-chan-1", "channel id mismatch");
+    assert_eq!(channel.state, "Up", "channel state mismatch");
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn originate_with_channel_id() {
+    init_tracing();
+
+    let channel_json = r#"{
+        "id": "my-custom-chan-id",
+        "name": "PJSIP/200-00000001",
+        "state": "Ring",
+        "caller": {"name": "Test", "number": "100"},
+        "connected": {"name": "", "number": ""},
+        "dialplan": {"context": "default", "exten": "200", "priority": 1}
+    }"#;
+
+    let server = MockAriServerBuilder::new()
+        .route("POST", "/ari/channels", 200, channel_json)
+        .start()
+        .await;
+
+    let client = connect_to_mock(server.port()).await;
+
+    let params = asterisk_rs_ari::resources::channel::OriginateParams {
+        endpoint: "PJSIP/200".to_string(),
+        channel_id: Some("my-custom-chan-id".to_string()),
+        app: Some("test-app".to_string()),
+        caller_id: Some("100".to_string()),
+        ..Default::default()
+    };
+
+    let channel: asterisk_rs_ari::event::Channel = client
+        .post("channels", &params)
+        .await
+        .expect("originate POST should succeed");
+
+    assert_eq!(
+        channel.id, "my-custom-chan-id",
+        "channel id should match requested id"
+    );
+    assert_eq!(channel.state, "Ring", "channel state mismatch");
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn pending_channel_creates_unique_id() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+
+    let pending = client.channel();
+    let id = pending.id().to_string();
+
+    assert!(!id.is_empty(), "pending channel id must not be empty");
+    assert!(
+        id.starts_with("channel-pending-"),
+        "pending channel id should start with 'channel-pending-', got: {id}"
+    );
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn pending_bridge_creates_unique_id() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+
+    let pending = client.bridge();
+    let id = pending.id().to_string();
+
+    assert!(!id.is_empty(), "pending bridge id must not be empty");
+    assert!(
+        id.starts_with("bridge-pending-"),
+        "pending bridge id should start with 'bridge-pending-', got: {id}"
+    );
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn pending_playback_creates_unique_id() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+
+    let pending = client.playback();
+    let id = pending.id().to_string();
+
+    assert!(!id.is_empty(), "pending playback id must not be empty");
+    assert!(
+        id.starts_with("playback-pending-"),
+        "pending playback id should start with 'playback-pending-', got: {id}"
+    );
+
+    client.disconnect();
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn outbound_ws_server_accepts_connection() {
+    init_tracing();
+
+    let bind_addr: std::net::SocketAddr = "127.0.0.1:0".parse().expect("valid addr");
+    let (server, handle) = asterisk_rs_ari::server::AriServerBuilder::new()
+        .bind(bind_addr)
+        .build()
+        .await
+        .expect("server should build");
+
+    let local_addr = server.local_addr().expect("server should have local addr");
+
+    // run server in background, handler just signals receipt
+    let (session_tx, mut session_rx) = tokio::sync::mpsc::channel::<()>(1);
+    let server_task = tokio::spawn(async move {
+        server
+            .run(move |_session| {
+                let tx = session_tx.clone();
+                async move {
+                    let _ = tx.send(()).await;
+                }
+            })
+            .await
+            .expect("server run should succeed");
+    });
+
+    // connect as a WS client
+    let url = format!("ws://{local_addr}");
+    let (_ws_stream, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("ws connect to AriServer should succeed");
+
+    // verify the handler was invoked
+    tokio::time::timeout(Duration::from_secs(5), session_rx.recv())
+        .await
+        .expect("should receive session signal within timeout")
+        .expect("session channel should not be closed");
+
+    handle.shutdown();
+    let _ = server_task.await;
+}
+
+#[tokio::test]
+async fn outbound_ws_server_delivers_events_to_session() {
+    init_tracing();
+
+    let bind_addr: std::net::SocketAddr = "127.0.0.1:0".parse().expect("valid addr");
+    let (server, handle) = asterisk_rs_ari::server::AriServerBuilder::new()
+        .bind(bind_addr)
+        .build()
+        .await
+        .expect("server should build");
+
+    let local_addr = server.local_addr().expect("server should have local addr");
+
+    // channel to deliver received event type from handler to test
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<String>(1);
+
+    let server_task = tokio::spawn(async move {
+        server
+            .run(move |session| {
+                let tx = event_tx.clone();
+                async move {
+                    let mut sub = session.subscribe();
+                    if let Some(msg) = sub.recv().await {
+                        if let asterisk_rs_ari::AriEvent::StasisStart { channel, .. } = &msg.event {
+                            let _ = tx.send(channel.id.clone()).await;
+                        }
+                    }
+                }
+            })
+            .await
+            .expect("server run should succeed");
+    });
+
+    // small delay for the server to be ready to accept
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // connect and send a StasisStart event
+    let url = format!("ws://{local_addr}");
+    let (mut ws_stream, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("ws connect should succeed");
+
+    let stasis_json = r#"{
+        "type": "StasisStart",
+        "application": "test-app",
+        "timestamp": "2024-01-01T00:00:00.000+0000",
+        "channel": {
+            "id": "outbound-chan-1",
+            "name": "PJSIP/100-0001",
+            "state": "Ring",
+            "caller": {"name": "Test", "number": "100"},
+            "connected": {"name": "", "number": ""},
+            "dialplan": {"context": "default", "exten": "100", "priority": 1}
+        },
+        "args": []
+    }"#;
+
+    use futures_util::SinkExt;
+    ws_stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            stasis_json.to_string(),
+        ))
+        .await
+        .expect("should send event text frame");
+
+    // verify the session received and parsed the event
+    let channel_id = tokio::time::timeout(Duration::from_secs(5), event_rx.recv())
+        .await
+        .expect("should receive event within timeout")
+        .expect("event channel should not be closed");
+
+    assert_eq!(
+        channel_id, "outbound-chan-1",
+        "session should receive the StasisStart channel id"
+    );
+
+    handle.shutdown();
+    let _ = server_task.await;
+}
+
+#[tokio::test]
+async fn media_channel_connect_and_disconnect() {
+    use futures_util::StreamExt;
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let addr = listener.local_addr().expect("should have local addr");
+
+    // accept one connection as a WS server
+    let server_task = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept should succeed");
+        let mut ws = tokio_tungstenite::accept_async(stream)
+            .await
+            .expect("ws accept should succeed");
+        // hold the connection until client disconnects
+        while ws.next().await.is_some() {}
+    });
+
+    let url = format!("ws://{addr}");
+    let media = asterisk_rs_ari::media::MediaChannel::connect(&url)
+        .await
+        .expect("media channel connect should succeed");
+
+    media.disconnect();
+    let _ = server_task.await;
+}
+
+#[tokio::test]
+async fn media_channel_sends_command() {
+    use futures_util::StreamExt;
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let addr = listener.local_addr().expect("should have local addr");
+
+    let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<String>(1);
+
+    let server_task = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept should succeed");
+        let mut ws = tokio_tungstenite::accept_async(stream)
+            .await
+            .expect("ws accept should succeed");
+        // read the first text frame
+        while let Some(Ok(msg)) = ws.next().await {
+            if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
+                let _ = msg_tx.send(text).await;
+                break;
+            }
+        }
+    });
+
+    let url = format!("ws://{addr}");
+    let media = asterisk_rs_ari::media::MediaChannel::connect(&url)
+        .await
+        .expect("media channel connect should succeed");
+
+    media
+        .send_command(asterisk_rs_ari::media::MediaCommand::Answer)
+        .await
+        .expect("send_command should succeed");
+
+    let received = tokio::time::timeout(Duration::from_secs(5), msg_rx.recv())
+        .await
+        .expect("should receive command within timeout")
+        .expect("channel should not be closed");
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&received).expect("received text should be valid JSON");
+    assert_eq!(
+        parsed["command"], "ANSWER",
+        "command field should be ANSWER"
+    );
+
+    media.disconnect();
+    let _ = server_task.await;
+}
+
+#[tokio::test]
+async fn media_channel_receives_event() {
+    use futures_util::SinkExt;
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let addr = listener.local_addr().expect("should have local addr");
+
+    let server_task = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept should succeed");
+        let mut ws = tokio_tungstenite::accept_async(stream)
+            .await
+            .expect("ws accept should succeed");
+
+        let media_start_json = r#"{
+            "event": "MEDIA_START",
+            "connection_id": "conn-1",
+            "channel": "PJSIP/100-0001",
+            "channel_id": "chan-1",
+            "format": "ulaw",
+            "optimal_frame_size": 160,
+            "ptime": 20
+        }"#;
+
+        ws.send(tokio_tungstenite::tungstenite::Message::Text(
+            media_start_json.to_string(),
+        ))
+        .await
+        .expect("server should send event");
+
+        // hold connection open briefly
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    });
+
+    let url = format!("ws://{addr}");
+    let mut media = asterisk_rs_ari::media::MediaChannel::connect(&url)
+        .await
+        .expect("media channel connect should succeed");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), media.recv_event())
+        .await
+        .expect("should receive event within timeout")
+        .expect("event stream should not be closed");
+
+    match event {
+        asterisk_rs_ari::media::MediaEvent::MediaStart {
+            connection_id,
+            format,
+            optimal_frame_size,
+            ptime,
+            ..
+        } => {
+            assert_eq!(connection_id, "conn-1", "connection_id mismatch");
+            assert_eq!(format, "ulaw", "format mismatch");
+            assert_eq!(optimal_frame_size, 160, "optimal_frame_size mismatch");
+            assert_eq!(ptime, 20, "ptime mismatch");
+        }
+        other => panic!("expected MediaStart, got: {other:?}"),
+    }
+
+    media.disconnect();
+    let _ = server_task.await;
+}
+
+#[tokio::test]
+async fn media_channel_sends_and_receives_audio() {
+    use futures_util::{SinkExt, StreamExt};
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let addr = listener.local_addr().expect("should have local addr");
+
+    let server_task = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept should succeed");
+        let mut ws = tokio_tungstenite::accept_async(stream)
+            .await
+            .expect("ws accept should succeed");
+
+        // read a binary frame and echo it back
+        while let Some(Ok(msg)) = ws.next().await {
+            if let tokio_tungstenite::tungstenite::Message::Binary(data) = msg {
+                ws.send(tokio_tungstenite::tungstenite::Message::Binary(data))
+                    .await
+                    .expect("server should echo audio");
+                break;
+            }
+        }
+        // hold connection open briefly
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    });
+
+    let url = format!("ws://{addr}");
+    let mut media = asterisk_rs_ari::media::MediaChannel::connect(&url)
+        .await
+        .expect("media channel connect should succeed");
+
+    let test_audio = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04];
+    media
+        .send_audio(test_audio.clone())
+        .await
+        .expect("send_audio should succeed");
+
+    let received = tokio::time::timeout(Duration::from_secs(5), media.recv_audio())
+        .await
+        .expect("should receive audio within timeout")
+        .expect("audio stream should not be closed");
+
+    assert_eq!(
+        received, test_audio,
+        "audio round-trip should preserve data"
+    );
+
+    media.disconnect();
+    let _ = server_task.await;
+}

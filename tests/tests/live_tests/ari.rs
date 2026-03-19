@@ -5,6 +5,8 @@ use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_ari::config::AriConfigBuilder;
 use asterisk_rs_ari::error::AriError;
 use asterisk_rs_ari::event::AriMessage;
+use asterisk_rs_ari::resources::channel::{ExternalMediaParams, OriginateParams};
+use asterisk_rs_ari::TransportMode;
 use asterisk_rs_ari::{AriClient, AriEvent};
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_core::event::EventSubscription;
@@ -1084,4 +1086,142 @@ async fn channel_snoop() {
     let _ = ari.delete(&format!("channels/{channel_id}")).await;
     ami.disconnect().await.expect("ami disconnect failed");
     ari.disconnect();
+}
+
+// ── live tests ─────────────────────────────
+
+#[tokio::test]
+async fn originate_with_custom_channel_id() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    let mut sub = ari.subscribe();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let custom_id = "test-chan-custom-123";
+    let params = OriginateParams {
+        endpoint: "Local/999@default".to_string(),
+        app: Some("test-app".to_string()),
+        channel_id: Some(custom_id.to_string()),
+        timeout: Some(10),
+        caller_id: Some("originate-chanid-test <557>".to_string()),
+        ..Default::default()
+    };
+
+    // originate via ARI REST — the request should be accepted even if the
+    // endpoint never answers.
+    let result = asterisk_rs_ari::resources::channel::originate(&ari, &params).await;
+
+    match result {
+        Ok(channel) => {
+            // Asterisk honoured our custom channel ID
+            assert_eq!(
+                channel.id, custom_id,
+                "channel id should match the custom id we requested"
+            );
+            tracing::info!(channel_id = %channel.id, "originate accepted with custom channel_id");
+
+            // wait briefly for StasisStart so we can clean up
+            let _ = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let msg = sub.recv().await.expect("event bus closed");
+                    if let AriEvent::StasisStart { channel, .. } = &msg.event {
+                        if channel.id == custom_id {
+                            return;
+                        }
+                    }
+                }
+            })
+            .await;
+
+            let _ = ari.delete(&format!("channels/{custom_id}")).await;
+        }
+        Err(e) => {
+            // Even a 409 (channel id already in use) or 404 (bad endpoint) is acceptable —
+            // it proves Asterisk parsed the request including channel_id without
+            // rejecting it as malformed.
+            tracing::info!(error = %e, "originate rejected (expected for bad endpoint)");
+            let is_server_error = matches!(&e, AriError::Api { status, .. } if *status >= 500);
+            assert!(!is_server_error, "should not get a server error, got: {e}");
+        }
+    }
+
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn external_media_params_accepted() {
+    init_tracing();
+
+    let ari = connect_ari().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let params = ExternalMediaParams::new("test-app", "127.0.0.1:19999", "ulaw")
+        .encapsulation("rtp")
+        .transport("udp")
+        .connection_type("client")
+        .direction("both");
+
+    let result = asterisk_rs_ari::resources::channel::external_media(&ari, &params).await;
+
+    match result {
+        Ok(channel) => {
+            tracing::info!(channel_id = %channel.id, "external media channel created");
+            // clean up — hangup the external media channel
+            let _ = ari.delete(&format!("channels/{}", channel.id)).await;
+        }
+        Err(e) => {
+            // External media may fail if Asterisk has no media support or the target
+            // is unreachable, but it should not fail with a 400 (bad request) due to
+            // missing or malformed fields — that would indicate a serialization bug.
+            tracing::info!(error = %e, "external_media returned error (may be expected)");
+            if let AriError::Api { status, message } = &e {
+                assert!(
+                    *status != 400,
+                    "400 Bad Request indicates serialization issue: {message}"
+                );
+            }
+        }
+    }
+
+    ari.disconnect();
+}
+
+#[tokio::test]
+async fn transport_mode_http_default_works() {
+    init_tracing();
+
+    // explicitly set HTTP transport mode to validate the default path
+    let config = AriConfigBuilder::new("test-app")
+        .host(ari_host())
+        .port(ari_port())
+        .username("testuser")
+        .password("testpass")
+        .transport(TransportMode::Http)
+        .reconnect(ReconnectPolicy::exponential(
+            Duration::from_millis(500),
+            Duration::from_secs(5),
+        ))
+        .build()
+        .expect("failed to build ARI config with HTTP transport");
+
+    let client = AriClient::connect(config)
+        .await
+        .expect("failed to connect with HTTP transport mode");
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // ping Asterisk to verify the connection works end-to-end
+    let info: serde_json::Value = client
+        .get("asterisk/info")
+        .await
+        .expect("GET asterisk/info should succeed with HTTP transport");
+
+    assert!(
+        info.get("system").is_some() || info.get("config").is_some(),
+        "asterisk/info should return system or config sections: {info}"
+    );
+
+    tracing::info!("HTTP transport mode verified successfully");
+    client.disconnect();
 }

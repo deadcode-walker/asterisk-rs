@@ -2,29 +2,29 @@
 
 use asterisk_rs_ari::client::url_encode;
 use asterisk_rs_ari::config::AriConfigBuilder;
+use asterisk_rs_ari::config::TransportMode;
 use asterisk_rs_ari::error::AriError;
 use asterisk_rs_ari::event::{
     AriEvent, AriMessage, Bridge, CallerId, Channel, ContactInfo, DeviceState, DialplanCep,
     Endpoint, LiveRecording, Peer, Playback, ReferTo, ReferredBy, TextMessage,
 };
+use asterisk_rs_ari::media::{MediaCommand, MediaEvent};
 use asterisk_rs_ari::resources::application::Application;
 use asterisk_rs_ari::resources::asterisk::{
     AsteriskInfo, AsteriskPing, ConfigTuple, LogChannel, Module, Variable as AsteriskVariable,
 };
+use asterisk_rs_ari::resources::channel::ExternalMediaParams;
 use asterisk_rs_ari::resources::channel::{OriginateParams, Variable as ChannelVariable};
 use asterisk_rs_ari::resources::device_state::DeviceState as ResourceDeviceState;
 use asterisk_rs_ari::resources::endpoint::Endpoint as ResourceEndpoint;
 use asterisk_rs_ari::resources::mailbox::Mailbox;
 use asterisk_rs_ari::resources::recording::StoredRecording;
 use asterisk_rs_ari::resources::sound::{Sound, SoundFormat};
+use asterisk_rs_ari::server::AriServerBuilder;
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_core::error::{AuthError, ConnectionError};
-use std::time::Duration;
-use asterisk_rs_ari::config::TransportMode;
-use asterisk_rs_ari::media::{MediaCommand, MediaEvent};
-use asterisk_rs_ari::resources::channel::ExternalMediaParams;
-use asterisk_rs_ari::server::AriServerBuilder;
 use std::collections::HashMap;
+use std::time::Duration;
 
 // ── config tests (12 migrated) ──────────────────────────────────────────────
 
@@ -2134,8 +2134,7 @@ fn media_command_stop_buffering_with_correlation_id() {
         correlation_id: Some("req-42".to_string()),
     };
     let json = serde_json::to_string(&cmd).expect("serialize stop buffering");
-    let parsed: serde_json::Value =
-        serde_json::from_str(&json).expect("parse stop buffering json");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse stop buffering json");
     assert_eq!(parsed["command"], "STOP_MEDIA_BUFFERING");
     assert_eq!(parsed["correlation_id"], "req-42");
 }
@@ -2306,4 +2305,209 @@ async fn shutdown_handle_stops_server() {
         .expect("server should stop within timeout");
 
     assert!(result.is_ok());
+}
+
+// ── unit tests ────────────────────────────────
+
+#[test]
+fn external_media_params_all_optional_fields_serialize() {
+    let mut vars = HashMap::new();
+    vars.insert("key1".into(), "val1".into());
+
+    let params = ExternalMediaParams::new("myapp", "10.0.0.1:9999", "ulaw")
+        .encapsulation("rtp")
+        .transport("udp")
+        .connection_type("client")
+        .direction("both")
+        .channel_id("ext-media-001")
+        .variables(vars);
+
+    let json: serde_json::Value = serde_json::to_value(&params).expect("should serialize");
+
+    assert_eq!(json["app"], "myapp");
+    assert_eq!(json["external_host"], "10.0.0.1:9999");
+    assert_eq!(json["format"], "ulaw");
+    assert_eq!(json["encapsulation"], "rtp");
+    assert_eq!(json["transport"], "udp");
+    assert_eq!(json["connection_type"], "client");
+    assert_eq!(json["direction"], "both");
+    assert_eq!(json["channelId"], "ext-media-001");
+    assert!(
+        json["variables"].is_object(),
+        "variables should be an object"
+    );
+    assert_eq!(json["variables"]["key1"], "val1");
+}
+
+#[test]
+fn external_media_params_variables_serialize_as_object() {
+    let mut vars = HashMap::new();
+    vars.insert("CDR(accountcode)".into(), "12345".into());
+    vars.insert("CHANNEL(language)".into(), "en".into());
+    vars.insert("SIP_HEADER(X-Custom)".into(), "hello".into());
+
+    let params = ExternalMediaParams::new("app", "host:1234", "slin16").variables(vars);
+
+    let json: serde_json::Value = serde_json::to_value(&params).expect("should serialize");
+    let vars_obj = json["variables"]
+        .as_object()
+        .expect("variables should be a JSON object");
+
+    assert_eq!(vars_obj.len(), 3);
+    assert_eq!(vars_obj["CDR(accountcode)"], "12345");
+    assert_eq!(vars_obj["CHANNEL(language)"], "en");
+    assert_eq!(vars_obj["SIP_HEADER(X-Custom)"], "hello");
+}
+
+#[test]
+fn originate_params_channel_id_camelcase() {
+    let params = OriginateParams {
+        endpoint: "SIP/100".into(),
+        channel_id: Some("my-chan-id".into()),
+        ..Default::default()
+    };
+
+    let json: serde_json::Value = serde_json::to_value(&params).expect("should serialize");
+    assert_eq!(json["channelId"], "my-chan-id");
+    assert!(
+        json.get("channel_id").is_none(),
+        "snake_case key must not appear"
+    );
+}
+
+#[test]
+fn originate_params_other_channel_id_camelcase() {
+    let params = OriginateParams {
+        endpoint: "SIP/100".into(),
+        other_channel_id: Some("other-chan-id".into()),
+        ..Default::default()
+    };
+
+    let json: serde_json::Value = serde_json::to_value(&params).expect("should serialize");
+    assert_eq!(json["otherChannelId"], "other-chan-id");
+    assert!(
+        json.get("other_channel_id").is_none(),
+        "snake_case key must not appear"
+    );
+}
+
+#[test]
+fn originate_params_all_new_and_old_fields() {
+    let mut vars = HashMap::new();
+    vars.insert("VAR1".into(), "val1".into());
+
+    let params = OriginateParams {
+        endpoint: "PJSIP/200".into(),
+        extension: Some("s".into()),
+        context: Some("default".into()),
+        priority: Some(1),
+        app: Some("myapp".into()),
+        app_args: Some("arg1,arg2".into()),
+        caller_id: Some("\"Test\" <100>".into()),
+        timeout: Some(30),
+        channel_id: Some("chan-001".into()),
+        other_channel_id: Some("chan-002".into()),
+        originator: Some("PJSIP/100-00000001".into()),
+        formats: Some("ulaw,alaw".into()),
+        variables: Some(vars),
+        label: Some("my-label".into()),
+    };
+
+    let json: serde_json::Value = serde_json::to_value(&params).expect("should serialize");
+
+    // old fields
+    assert_eq!(json["endpoint"], "PJSIP/200");
+    assert_eq!(json["extension"], "s");
+    assert_eq!(json["context"], "default");
+    assert_eq!(json["priority"], 1);
+    assert_eq!(json["app"], "myapp");
+    assert_eq!(json["app_args"], "arg1,arg2");
+    assert_eq!(json["caller_id"], "\"Test\" <100>");
+    assert_eq!(json["timeout"], 30);
+    // new fields
+    assert_eq!(json["channelId"], "chan-001");
+    assert_eq!(json["otherChannelId"], "chan-002");
+    assert_eq!(json["originator"], "PJSIP/100-00000001");
+    assert_eq!(json["formats"], "ulaw,alaw");
+    assert!(json["variables"].is_object());
+    assert_eq!(json["variables"]["VAR1"], "val1");
+    assert_eq!(json["label"], "my-label");
+}
+
+#[test]
+fn transport_mode_variants_distinct() {
+    assert_ne!(TransportMode::Http, TransportMode::WebSocket);
+}
+
+#[test]
+fn config_default_transport_mode_is_http() {
+    let config = AriConfigBuilder::new("myapp")
+        .build()
+        .expect("default config should build");
+    assert_eq!(config.transport_mode, TransportMode::Http);
+}
+
+#[test]
+fn media_command_all_variants_serialize() {
+    let variants: Vec<(MediaCommand, &str)> = vec![
+        (MediaCommand::Answer, "ANSWER"),
+        (MediaCommand::Hangup { cause: None }, "HANGUP"),
+        (MediaCommand::Hangup { cause: Some(16) }, "HANGUP"),
+        (MediaCommand::StartMediaBuffering, "START_MEDIA_BUFFERING"),
+        (
+            MediaCommand::StopMediaBuffering {
+                correlation_id: None,
+            },
+            "STOP_MEDIA_BUFFERING",
+        ),
+        (MediaCommand::FlushMedia, "FLUSH_MEDIA"),
+        (MediaCommand::PauseMedia, "PAUSE_MEDIA"),
+        (MediaCommand::ContinueMedia, "CONTINUE_MEDIA"),
+        (MediaCommand::MarkMedia, "MARK_MEDIA"),
+        (MediaCommand::GetStatus, "GET_STATUS"),
+        (MediaCommand::ReportQueueDrained, "REPORT_QUEUE_DRAINED"),
+    ];
+
+    for (cmd, expected_tag) in variants {
+        let json: serde_json::Value =
+            serde_json::to_value(&cmd).expect("MediaCommand should serialize");
+        assert_eq!(
+            json["command"], expected_tag,
+            "wrong command tag for {cmd:?}"
+        );
+    }
+}
+
+#[test]
+fn media_event_mark_processed_deserialization() {
+    let input = r#"{"event": "MEDIA_MARK_PROCESSED"}"#;
+    let event: MediaEvent =
+        serde_json::from_str(input).expect("should deserialize MEDIA_MARK_PROCESSED");
+    assert!(matches!(event, MediaEvent::MediaMarkProcessed));
+}
+
+#[test]
+fn media_event_xon_deserialization() {
+    let input = r#"{"event": "MEDIA_XON"}"#;
+    let event: MediaEvent = serde_json::from_str(input).expect("should deserialize MEDIA_XON");
+    assert!(matches!(event, MediaEvent::MediaXon));
+}
+
+#[test]
+fn media_command_flush_media_serialization() {
+    let json: serde_json::Value =
+        serde_json::to_value(&MediaCommand::FlushMedia).expect("FlushMedia should serialize");
+    assert_eq!(json["command"], "FLUSH_MEDIA");
+    // unit variant should only have the tag field
+    let obj = json.as_object().expect("should be an object");
+    assert_eq!(obj.len(), 1, "FlushMedia should only have 'command' key");
+}
+
+#[test]
+fn media_command_get_status_serialization() {
+    let json: serde_json::Value =
+        serde_json::to_value(&MediaCommand::GetStatus).expect("GetStatus should serialize");
+    assert_eq!(json["command"], "GET_STATUS");
+    let obj = json.as_object().expect("should be an object");
+    assert_eq!(obj.len(), 1, "GetStatus should only have 'command' key");
 }
