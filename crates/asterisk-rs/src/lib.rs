@@ -25,3 +25,6 @@ pub use asterisk_rs_agi as agi;
 
 #[cfg(feature = "ari")]
 pub use asterisk_rs_ari as ari;
+
+#[cfg(feature = "ami")]
+pub mod pbx;

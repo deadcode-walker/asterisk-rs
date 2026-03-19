@@ -153,6 +153,24 @@ impl AriClient {
         &self.config
     }
 
+    /// create a pending channel with a pre-generated ID for race-free origination
+    ///
+    /// the returned PendingChannel subscribes to events for its ID immediately,
+    /// so no StasisStart events are missed between originate and subscribe.
+    pub fn channel(&self) -> crate::pending::PendingChannel {
+        crate::pending::PendingChannel::new(self.clone())
+    }
+
+    /// create a pending bridge with a pre-generated ID
+    pub fn bridge(&self) -> crate::pending::PendingBridge {
+        crate::pending::PendingBridge::new(self.clone())
+    }
+
+    /// create a pending playback with a pre-generated ID
+    pub fn playback(&self) -> crate::pending::PendingPlayback {
+        crate::pending::PendingPlayback::new(self)
+    }
+
     /// shut down the websocket listener and transport
     pub fn disconnect(&self) {
         self.transport.shutdown();
