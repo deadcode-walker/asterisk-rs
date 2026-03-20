@@ -8,6 +8,7 @@ use crate::event::{Channel, LiveRecording, Playback};
 
 /// parameters for originating a new channel
 #[derive(Debug, Clone, Default, serde::Serialize)]
+#[must_use]
 pub struct OriginateParams {
     pub endpoint: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -40,6 +41,7 @@ pub struct OriginateParams {
 
 /// parameters for starting an external media session
 #[derive(Debug, Clone, serde::Serialize)]
+#[must_use]
 pub struct ExternalMediaParams {
     pub app: String,
     pub external_host: String,
@@ -59,6 +61,7 @@ pub struct ExternalMediaParams {
 }
 
 impl ExternalMediaParams {
+    /// create params with required fields; optional fields default to none
     pub fn new(
         app: impl Into<String>,
         external_host: impl Into<String>,
@@ -77,31 +80,37 @@ impl ExternalMediaParams {
         }
     }
 
+    /// set the encapsulation type (e.g. `rtp`)
     pub fn encapsulation(mut self, encapsulation: impl Into<String>) -> Self {
         self.encapsulation = Some(encapsulation.into());
         self
     }
 
+    /// set the transport protocol (e.g. `udp`)
     pub fn transport(mut self, transport: impl Into<String>) -> Self {
         self.transport = Some(transport.into());
         self
     }
 
+    /// set the connection type
     pub fn connection_type(mut self, connection_type: impl Into<String>) -> Self {
         self.connection_type = Some(connection_type.into());
         self
     }
 
+    /// set the media direction (e.g. `both`, `in`, `out`)
     pub fn direction(mut self, direction: impl Into<String>) -> Self {
         self.direction = Some(direction.into());
         self
     }
 
+    /// set a specific channel id
     pub fn channel_id(mut self, channel_id: impl Into<String>) -> Self {
         self.channel_id = Some(channel_id.into());
         self
     }
 
+    /// set channel variables
     pub fn variables(mut self, variables: HashMap<String, String>) -> Self {
         self.variables = Some(variables);
         self
@@ -122,6 +131,7 @@ pub struct ChannelHandle {
 }
 
 impl ChannelHandle {
+    /// create a channel handle for the given id
     pub fn new(id: impl Into<String>, client: AriClient) -> Self {
         Self {
             id: id.into(),
@@ -129,6 +139,7 @@ impl ChannelHandle {
         }
     }
 
+    /// channel id
     pub fn id(&self) -> &str {
         &self.id
     }

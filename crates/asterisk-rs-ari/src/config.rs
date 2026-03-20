@@ -21,16 +21,24 @@ pub enum TransportMode {
 /// ARI connection configuration
 #[derive(Debug, Clone)]
 pub struct AriConfig {
+    /// http base url for rest requests
     pub base_url: Url,
+    /// ari username
     pub username: String,
+    /// ari password
     pub password: String,
+    /// stasis application name
     pub app_name: String,
+    /// websocket url for event subscription
     pub ws_url: Url,
+    /// policy controlling reconnect behavior
     pub reconnect_policy: ReconnectPolicy,
+    /// transport mode for rest communication
     pub transport_mode: TransportMode,
 }
 
 /// builder for constructing an [`AriConfig`] with validation
+#[must_use]
 pub struct AriConfigBuilder {
     host: String,
     port: u16,
@@ -43,6 +51,7 @@ pub struct AriConfigBuilder {
 }
 
 impl AriConfigBuilder {
+    /// create a builder with the given stasis application name
     pub fn new(app_name: impl Into<String>) -> Self {
         Self {
             host: "127.0.0.1".to_owned(),
@@ -56,36 +65,43 @@ impl AriConfigBuilder {
         }
     }
 
+    /// set the asterisk host (default `127.0.0.1`)
     pub fn host(mut self, host: impl Into<String>) -> Self {
         self.host = host.into();
         self
     }
 
+    /// set the http/websocket port (default 8088)
     pub fn port(mut self, port: u16) -> Self {
         self.port = port;
         self
     }
 
+    /// set the ari username
     pub fn username(mut self, username: impl Into<String>) -> Self {
         self.username = username.into();
         self
     }
 
+    /// set the ari password
     pub fn password(mut self, password: impl Into<String>) -> Self {
         self.password = password.into();
         self
     }
 
+    /// set the stasis application name
     pub fn app_name(mut self, app_name: impl Into<String>) -> Self {
         self.app_name = app_name.into();
         self
     }
 
+    /// use https/wss when true (default false)
     pub fn secure(mut self, secure: bool) -> Self {
         self.secure = secure;
         self
     }
 
+    /// set the reconnect policy
     pub fn reconnect(mut self, policy: ReconnectPolicy) -> Self {
         self.reconnect_policy = policy;
         self

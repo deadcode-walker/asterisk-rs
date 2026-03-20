@@ -331,11 +331,13 @@ impl AriServer {
 
 /// builder for [`AriServer`]
 #[derive(Debug, Clone)]
+#[must_use]
 pub struct AriServerBuilder {
     bind_addr: SocketAddr,
 }
 
 impl AriServerBuilder {
+    /// create a builder with default bind address `0.0.0.0:8765`
     pub fn new() -> Self {
         Self {
             bind_addr: ([0, 0, 0, 0], 8765).into(),

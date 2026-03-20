@@ -189,31 +189,37 @@ impl Default for AmiClientBuilder {
 }
 
 impl AmiClientBuilder {
+    /// set the asterisk host (default `127.0.0.1`)
     pub fn host(mut self, host: impl Into<String>) -> Self {
         self.host = host.into();
         self
     }
 
+    /// set the ami port (default 5038)
     pub fn port(mut self, port: u16) -> Self {
         self.port = port;
         self
     }
 
+    /// set the ami login credentials
     pub fn credentials(mut self, username: impl Into<String>, secret: impl Into<String>) -> Self {
         self.credentials = Some(Credentials::new(username, secret));
         self
     }
 
+    /// set the reconnect policy
     pub fn reconnect(mut self, policy: ReconnectPolicy) -> Self {
         self.reconnect_policy = policy;
         self
     }
 
+    /// set the action response timeout (default 30s)
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
+    /// set the event channel buffer capacity (default 1024)
     pub fn event_capacity(mut self, capacity: usize) -> Self {
         self.event_capacity = capacity;
         self

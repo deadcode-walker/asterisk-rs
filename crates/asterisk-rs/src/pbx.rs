@@ -84,6 +84,7 @@ impl Call {
 
 /// options for originating a call
 #[derive(Debug, Clone, Default)]
+#[must_use]
 pub struct DialOptions {
     /// caller ID to present
     pub caller_id: Option<String>,
@@ -94,10 +95,12 @@ pub struct DialOptions {
 }
 
 impl DialOptions {
+    /// create default dial options
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// set the caller id to present
     pub fn caller_id(mut self, cid: impl Into<String>) -> Self {
         self.caller_id = Some(cid.into());
         self
