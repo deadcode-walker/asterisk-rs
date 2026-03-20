@@ -37,6 +37,12 @@ globs:
 - Each protocol crate (ami, agi, ari) is independently usable.
 - `asterisk-rs` is the umbrella re-export. It adds no logic, only pub use.
 
+## Testing
+
+- No `#[cfg(test)]` or inline test modules in production crates. All tests live in the external `tests/` crate (`asterisk-rs-tests`).
+- Unit, mock integration, and live integration tests are separate binaries in `tests/`.
+- Run tests with `cargo test -p asterisk-rs-tests`, never with per-crate `cargo test -p asterisk-rs-ami`.
+
 ## Build
 
 ```bash
