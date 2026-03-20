@@ -33,6 +33,7 @@ jobs:
 
    release-plz-pr:
       name: Release PR
+      needs: release-plz-release
       runs-on: ubuntu-latest
       if: ${{ github.repository_owner == 'deadcode-walker' }}
       concurrency:

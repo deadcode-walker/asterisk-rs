@@ -9,6 +9,8 @@ git_tag_enable = false
 # enable dependency updates in release PRs
 dependencies_update = true
 
+# only publish when a release PR is merged, not on every push
+release_always = false
 
 # only prepare releases when meaningful commits land
 release_commits = "^(feat|fix|refactor|perf).*"
@@ -19,6 +21,7 @@ pr_labels = ["release"]
 # umbrella crate gets the single git release with all changes
 [[package]]
 name = "asterisk-rs"
+version_group = "main"
 git_tag_name = "v{{ version }}"
 git_tag_enable = true
 git_release_enable = true
@@ -36,21 +39,25 @@ git_release_body = """
 # sub-crates publish to crates.io but don't create separate GitHub releases
 [[package]]
 name = "asterisk-rs-core"
+version_group = "main"
 git_release_enable = false
 git_tag_enable = false
 
 [[package]]
 name = "asterisk-rs-ami"
+version_group = "main"
 git_release_enable = false
 git_tag_enable = false
 
 [[package]]
 name = "asterisk-rs-agi"
+version_group = "main"
 git_release_enable = false
 git_tag_enable = false
 
 [[package]]
 name = "asterisk-rs-ari"
+version_group = "main"
 git_release_enable = false
 git_tag_enable = false
 
