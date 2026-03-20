@@ -146,8 +146,8 @@ async fn websocket_events() {
     let client = connect_to_mock(server.port()).await;
     let mut sub = client.subscribe();
 
-    // give the background ws task time to connect
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // wait for background ws task to connect
+    server.wait_for_ws_client().await;
 
     let event_json = r#"{
         "type": "StasisStart",
@@ -240,7 +240,7 @@ async fn filtered_subscription() {
         matches!(msg.event, asterisk_rs_ari::AriEvent::StasisStart { .. })
     });
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // send a ChannelDestroyed event first (should be filtered out)
     server.send_event(
@@ -475,7 +475,7 @@ async fn disconnect_stops_ws_listener() {
     let mut sub = client.subscribe();
 
     // give ws task time to connect
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // send an event to confirm subscription works
     server.send_event(
@@ -547,7 +547,7 @@ async fn multiple_websocket_events_in_sequence() {
     let client = connect_to_mock(server.port()).await;
     let mut sub = client.subscribe();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     let channel_block = r#""id": "chan-1", "name": "SIP/100-0001", "state": "Ring", "caller": {"name": "", "number": ""}, "connected": {"name": "", "number": ""}, "dialplan": {"context": "default", "exten": "s", "priority": 1}"#;
 
@@ -2471,7 +2471,7 @@ async fn ws_reconnects_after_server_restart() {
     .await;
     let mut sub = client.subscribe();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     server.send_event(&stasis_start_json("chan-1"));
 
@@ -2530,7 +2530,7 @@ async fn ws_max_retries_stops_reconnecting() {
     .await;
     let mut sub = client.subscribe();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // confirm events work before shutdown
     server.send_event(&stasis_start_json("chan-1"));
@@ -2566,7 +2566,7 @@ async fn ws_events_delivered_to_multiple_subscribers() {
     let mut sub1 = client.subscribe();
     let mut sub2 = client.subscribe();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     server.send_event(&stasis_start_json("chan-multi"));
 
@@ -2604,7 +2604,7 @@ async fn ws_malformed_json_event_ignored() {
     let client = connect_to_mock(server.port()).await;
     let mut sub = client.subscribe();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // send garbage — should be logged and ignored, not crash
     server.send_event("this is not json at all");
@@ -2640,7 +2640,7 @@ async fn ws_binary_message_ignored() {
     let client = connect_to_mock(port).await;
     let mut sub = client.subscribe();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // send a binary frame directly via a raw websocket connection to the server
     // the mock server's send_event sends text only, so we need to verify that
@@ -2673,7 +2673,7 @@ async fn ws_events_after_client_disconnect_not_received() {
     let client = connect_to_mock(server.port()).await;
     let mut sub = client.subscribe();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // confirm subscription is working
     server.send_event(&stasis_start_json("chan-pre"));
@@ -2688,7 +2688,7 @@ async fn ws_events_after_client_disconnect_not_received() {
 
     // send events after disconnect
     server.send_event(&stasis_start_json("chan-post"));
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // subscription should yield None (bus closed)
     let result = tokio::time::timeout(Duration::from_secs(2), sub.recv()).await;
@@ -2709,7 +2709,7 @@ async fn ws_rapid_events_all_delivered() {
     let client = connect_to_mock(server.port()).await;
     let mut sub = client.subscribe();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // send 20 events in rapid succession (broadcast channel has 64 capacity)
     let count = 20;
@@ -2765,7 +2765,7 @@ async fn ws_close_frame_handled_gracefully() {
     .await;
     let mut sub = client.subscribe();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // send an event to confirm WS is working
     server.send_event(&stasis_start_json("chan-before-close"));
@@ -2896,7 +2896,7 @@ async fn ws_malformed_json_not_delivered() {
     let mut sub = client.subscribe();
 
     // give the ws task time to connect
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // send malformed json — should be logged and skipped
     server.send_event("this is not json");
@@ -2938,7 +2938,7 @@ async fn multiple_subscribers_all_receive() {
     let mut sub2 = client.subscribe();
     let mut sub3 = client.subscribe();
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     server.send_event(&stasis_start_json("chan-broadcast"));
 
@@ -2968,7 +2968,7 @@ async fn disconnect_then_subscribe_returns_none() {
     let client = connect_to_mock(server.port()).await;
 
     // give the ws task time to connect
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    server.wait_for_ws_client().await;
 
     // disconnect shuts down the ws listener
     client.disconnect();

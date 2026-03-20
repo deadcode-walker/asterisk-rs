@@ -6,12 +6,13 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, watch, Notify};
 use tokio_tungstenite::tungstenite::Message;
 
 /// pre-configured response for a given (method, path) pair
@@ -25,6 +26,8 @@ pub struct MockRoute {
 struct ServerState {
     routes: HashMap<(String, String), MockRoute>,
     event_tx: broadcast::Sender<String>,
+    ws_clients: AtomicUsize,
+    ws_connected: Arc<Notify>,
 }
 
 /// mock ARI server binding HTTP and WebSocket on one port
@@ -33,6 +36,7 @@ pub struct MockAriServer {
     event_tx: broadcast::Sender<String>,
     shutdown_tx: watch::Sender<bool>,
     task: tokio::task::JoinHandle<()>,
+    state: Arc<ServerState>,
 }
 
 impl MockAriServer {
@@ -58,6 +62,13 @@ impl MockAriServer {
     pub fn shutdown(self) {
         let _ = self.shutdown_tx.send(true);
         self.task.abort();
+    }
+
+    /// wait until at least one websocket client has connected
+    pub async fn wait_for_ws_client(&self) {
+        while self.state.ws_clients.load(Ordering::Acquire) == 0 {
+            self.state.ws_connected.notified().await;
+        }
     }
 }
 
@@ -106,15 +117,18 @@ impl MockAriServerBuilder {
         let state = Arc::new(ServerState {
             routes: self.routes,
             event_tx: event_tx.clone(),
+            ws_clients: AtomicUsize::new(0),
+            ws_connected: Arc::new(Notify::new()),
         });
 
-        let task = tokio::spawn(accept_loop(listener, state, shutdown_rx));
+        let task = tokio::spawn(accept_loop(listener, Arc::clone(&state), shutdown_rx));
 
         MockAriServer {
             addr,
             event_tx,
             shutdown_tx,
             task,
+            state,
         }
     }
 }
@@ -178,6 +192,10 @@ async fn handle_websocket(stream: TcpStream, state: Arc<ServerState>) {
             return;
         }
     };
+
+    // signal that a ws client has connected
+    state.ws_clients.fetch_add(1, Ordering::Release);
+    state.ws_connected.notify_waiters();
 
     let (mut write, mut read) = ws.split();
     let mut event_rx = state.event_tx.subscribe();
