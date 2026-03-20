@@ -112,10 +112,19 @@ impl WsTransport {
             .await
             .map_err(|_| AriError::Disconnected)?;
 
-        tokio::time::timeout(REQUEST_TIMEOUT, response_rx)
+        let response = tokio::time::timeout(REQUEST_TIMEOUT, response_rx)
             .await
             .map_err(|_| AriError::WebSocket("REST request timed out".to_owned()))?
-            .map_err(|_| AriError::Disconnected)
+            .map_err(|_| AriError::Disconnected)?;
+
+        if response.status >= 400 {
+            let message = response.body.unwrap_or_else(|| "request failed".to_owned());
+            return Err(AriError::Api {
+                status: response.status,
+                message,
+            });
+        }
+        Ok(response)
     }
 
     pub fn shutdown(&self) {
@@ -148,8 +157,16 @@ async fn ws_loop(
 
         tracing::info!(url = %redact_url(&ws_url), attempt, "connecting to ARI websocket (unified mode)");
 
-        match tokio_tungstenite::connect_async(&ws_url).await {
-            Ok((ws_stream, _response)) => {
+        match tokio::time::timeout(
+            Duration::from_secs(10),
+            tokio_tungstenite::connect_async(&ws_url),
+        )
+        .await
+        {
+            Err(_) => {
+                tracing::warn!(attempt, "ARI websocket connection timed out");
+            }
+            Ok(Ok((ws_stream, _response))) => {
                 tracing::info!("ARI websocket connected (unified mode)");
                 attempt = 0;
 
@@ -164,7 +181,7 @@ async fn ws_loop(
 
                 tracing::warn!("ARI websocket disconnected (unified mode)");
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 tracing::warn!(error = %e, attempt, "ARI websocket connection failed");
             }
         }
@@ -211,6 +228,8 @@ async fn handle_connection(
     let mut pending: HashMap<String, oneshot::Sender<TransportResponse>> = HashMap::new();
 
     loop {
+        // purge entries whose receiver was dropped (e.g. caller-side timeout)
+        pending.retain(|_, tx| !tx.is_closed());
         tokio::select! {
             msg = read.next() => {
                 match msg {

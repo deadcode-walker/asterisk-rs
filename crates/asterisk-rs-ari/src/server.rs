@@ -228,10 +228,20 @@ impl AriSession {
             .await
             .map_err(|_| AriError::Disconnected)?;
 
-        tokio::time::timeout(REQUEST_TIMEOUT, response_rx)
+        let resp = tokio::time::timeout(REQUEST_TIMEOUT, response_rx)
             .await
             .map_err(|_| AriError::WebSocket("REST request timed out".to_owned()))?
-            .map_err(|_| AriError::Disconnected)
+            .map_err(|_| AriError::Disconnected)?;
+
+        // mirror HttpTransport: any non-2xx status is an error
+        if resp.status < 200 || resp.status >= 300 {
+            let message = resp.body.unwrap_or_else(|| format!("HTTP {}", resp.status));
+            return Err(AriError::Api {
+                status: resp.status,
+                message,
+            });
+        }
+        Ok(resp)
     }
 }
 
@@ -280,7 +290,14 @@ impl AriServer {
         loop {
             tokio::select! {
                 result = self.listener.accept() => {
-                    let (stream, addr) = result.map_err(AriError::Io)?;
+                    let (stream, addr) = match result {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::warn!(error = %e, "accept error, retrying in 100ms");
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            continue;
+                        }
+                    };
                     tracing::info!(%addr, "accepted incoming ARI websocket connection");
 
                     let handler = handler.clone();

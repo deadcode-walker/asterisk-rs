@@ -19,6 +19,12 @@ pub enum AgiError {
     #[error("invalid AGI argument: {details}")]
     InvalidArgument { details: String },
 
+    #[error("command already in flight; channel is not cancel-safe")]
+    CommandInFlight,
+
+    #[error("channel is poisoned due to a previous I/O error")]
+    ChannelPoisoned,
+
     #[error("protocol error: {0}")]
     Protocol(#[from] ProtocolError),
 }

@@ -90,15 +90,6 @@ impl Decoder for AmiCodec {
     type Error = AmiError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        // guard against oversized messages
-        if src.len() > MAX_MESSAGE_SIZE {
-            return Err(AmiError::Protocol(
-                asterisk_rs_core::error::ProtocolError::MalformedMessage {
-                    details: format!("message exceeds {} byte limit", MAX_MESSAGE_SIZE),
-                },
-            ));
-        }
-
         // consume the banner line on first message
         if !self.banner_consumed {
             if let Some(pos) = find_crlf(src) {
@@ -121,30 +112,46 @@ impl Decoder for AmiCodec {
             }
         }
 
-        // look for message terminator: \r\n\r\n
-        let end_pos = match find_double_crlf(src) {
+        // find the end of the header block (\r\n\r\n)
+        let header_end = match find_double_crlf(src) {
             Some(pos) => pos,
             None => return Ok(None), // need more data
         };
 
-        // extract the message bytes (not including the final \r\n\r\n)
-        let message_bytes = &src[..end_pos];
-        let mut headers = Vec::new();
-        let mut output = Vec::new();
-        let mut channel_variables = HashMap::new();
+        // for Response: Follows, the real frame extends past the header block
+        // to include the command output body terminated by --END COMMAND--\r\n
+        const END_MARKER: &[u8] = b"--END COMMAND--\r\n";
+        let (frame_end, output) = if is_follows_response(&src[..header_end]) {
+            let body_start = header_end + 4; // skip \r\n\r\n
+            match find_subsequence(&src[body_start..], END_MARKER) {
+                Some(marker_offset) => {
+                    let output_end = body_start + marker_offset;
+                    let lines = parse_output_lines(&src[body_start..output_end]);
+                    (output_end + END_MARKER.len(), lines)
+                }
+                None => return Ok(None), // --END COMMAND-- not yet in buffer
+            }
+        } else {
+            (header_end + 4, Vec::new())
+        };
 
-        for line in message_bytes.split(|&b| b == b'\n') {
+        // size check on the individual message, not the whole buffer
+        if frame_end > MAX_MESSAGE_SIZE {
+            return Err(AmiError::Protocol(
+                asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                    details: format!("message exceeds {} byte limit", MAX_MESSAGE_SIZE),
+                },
+            ));
+        }
+
+        // parse headers from the header block only
+        let mut headers = Vec::new();
+        let mut channel_variables = HashMap::new();
+        for line in src[..header_end].split(|&b| b == b'\n') {
             let line = line.strip_suffix(b"\r").unwrap_or(line);
             if line.is_empty() {
                 continue;
             }
-
-            // skip the END COMMAND marker
-            if line == b"--END COMMAND--" {
-                continue;
-            }
-
-            // split on first ':'
             if let Some(colon_pos) = line.iter().position(|&b| b == b':') {
                 let key = String::from_utf8_lossy(&line[..colon_pos])
                     .trim()
@@ -163,14 +170,10 @@ impl Decoder for AmiCodec {
                 } else {
                     headers.push((key, value));
                 }
-            } else {
-                // command output line (e.g., Response: Follows body)
-                output.push(String::from_utf8_lossy(line).to_string());
             }
         }
 
-        // advance past the message + terminator (\r\n\r\n = 4 bytes)
-        src.advance(end_pos + 4);
+        src.advance(frame_end);
 
         if headers.is_empty() {
             // empty message, try next
@@ -254,4 +257,26 @@ fn find_crlf(buf: &[u8]) -> Option<usize> {
 /// find the position of \r\n\r\n (returns position of first \r)
 fn find_double_crlf(buf: &[u8]) -> Option<usize> {
     buf.windows(4).position(|w| w == b"\r\n\r\n")
+}
+
+/// returns true if the header block contains `Response: Follows`
+fn is_follows_response(header_bytes: &[u8]) -> bool {
+    header_bytes.split(|&b| b == b'\n').any(|line| {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        line.eq_ignore_ascii_case(b"response: follows")
+    })
+}
+
+/// find the starting position of `needle` in `haystack`
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+/// split body bytes into non-empty lines, stripping \r\n
+fn parse_output_lines(body: &[u8]) -> Vec<String> {
+    body.split(|&b| b == b'\n')
+        .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+        .filter(|line| !line.is_empty())
+        .map(|line| String::from_utf8_lossy(line).into_owned())
+        .collect()
 }

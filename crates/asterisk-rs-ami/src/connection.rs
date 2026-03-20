@@ -114,7 +114,6 @@ async fn connection_task(
 
         match tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(&address)).await {
             Ok(Ok(stream)) => {
-                attempt = 0;
                 tracing::info!(address = %address, "TCP connected to AMI");
 
                 let (read_half, write_half) = stream.into_split();
@@ -127,6 +126,7 @@ async fn connection_task(
                     continue; // will trigger reconnect
                 }
                 tracing::info!("AMI login successful");
+                attempt = 0; // reset only after successful auth
                 let _ = state_tx.send(ConnectionState::Connected);
 
                 // set up keep-alive ping timer
@@ -225,7 +225,23 @@ async fn connection_task(
         let _ = state_tx.send(ConnectionState::Reconnecting);
         let delay = reconnect_policy.delay_for_attempt(attempt);
         tracing::info!(?delay, attempt, "reconnecting to AMI");
-        tokio::time::sleep(delay).await;
+        // poll shutdown during the reconnect sleep so we exit promptly
+        tokio::select! {
+            () = tokio::time::sleep(delay) => {}
+            cmd = command_rx.recv() => {
+                match cmd {
+                    None | Some(ConnectionCommand::Shutdown) => {
+                        tracing::info!("shutdown received during reconnect backoff");
+                        let _ = state_tx.send(ConnectionState::Disconnected);
+                        return;
+                    }
+                    Some(_) => {
+                        // non-shutdown command while disconnected; it will time out on the
+                        // caller side — nothing we can do until reconnected
+                    }
+                }
+            }
+        }
         attempt += 1;
     }
 }

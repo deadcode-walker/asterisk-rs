@@ -5,11 +5,27 @@ use crate::command;
 use crate::error::{AgiError, Result};
 use crate::response::AgiResponse;
 
+/// tracks whether a command round-trip is currently in progress
+///
+/// used to detect cancellation between write and read: if a caller drops
+/// a `send_command` future after the write but before the read completes,
+/// the state stays `InFlight` and the next call sees it immediately.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChannelState {
+    /// ready to accept the next command
+    Ready,
+    /// write has been sent; waiting for the response line(s)
+    InFlight,
+    /// a previous I/O error left the stream in an undefined state
+    Poisoned,
+}
+
 /// high-level interface for sending AGI commands over a connection
 pub struct AgiChannel {
     reader: BufReader<OwnedReadHalf>,
     writer: OwnedWriteHalf,
     hung_up: bool,
+    state: ChannelState,
 }
 
 impl AgiChannel {
@@ -19,37 +35,109 @@ impl AgiChannel {
             reader,
             writer,
             hung_up: false,
+            state: ChannelState::Ready,
         }
     }
 
     /// send a raw command string and parse the response
     ///
+    /// # cancel safety
+    ///
+    /// this function is **not** cancel-safe. dropping the future after the write
+    /// but before the read completes leaves an unread response in the buffer.
+    /// subsequent calls will observe `ChannelState::InFlight` and return
+    /// `AgiError::CommandInFlight` to prevent reading stale data.
+    ///
     /// the command should already be formatted with a trailing newline.
-    /// checks the hung_up flag before sending to avoid writing to a dead channel.
     pub async fn send_command(&mut self, command: &str) -> Result<AgiResponse> {
+        match self.state {
+            ChannelState::InFlight => return Err(AgiError::CommandInFlight),
+            ChannelState::Poisoned => return Err(AgiError::ChannelPoisoned),
+            ChannelState::Ready => {}
+        }
         if self.hung_up {
             return Err(AgiError::ChannelHungUp);
         }
 
-        self.writer.write_all(command.as_bytes()).await?;
-        self.writer.flush().await?;
+        // mark in-flight before write so that a cancellation between write and
+        // read is visible to the next caller
+        self.state = ChannelState::InFlight;
+
+        if let Err(e) = self.writer.write_all(command.as_bytes()).await {
+            self.state = ChannelState::Poisoned;
+            return Err(AgiError::Io(e));
+        }
+        if let Err(e) = self.writer.flush().await {
+            self.state = ChannelState::Poisoned;
+            return Err(AgiError::Io(e));
+        }
 
         let mut line = String::new();
-        let bytes_read = self.reader.read_line(&mut line).await?;
+        let bytes_read = match self.reader.read_line(&mut line).await {
+            Ok(n) => n,
+            Err(e) => {
+                self.state = ChannelState::Poisoned;
+                return Err(AgiError::Io(e));
+            }
+        };
 
         if bytes_read == 0 {
             self.hung_up = true;
+            self.state = ChannelState::Ready;
             return Err(AgiError::ChannelHungUp);
         }
 
-        let response = AgiResponse::parse(&line)?;
+        // 520 with a dash is a multiline response — drain all continuation
+        // lines until the terminating `520 End of proper usage.` line
+        if let Some(stripped) = line.strip_prefix("520-") {
+            let first = stripped.trim().to_owned();
+            let mut usage = first;
+            loop {
+                let mut next = String::new();
+                let n = match self.reader.read_line(&mut next).await {
+                    Ok(n) => n,
+                    Err(e) => {
+                        self.state = ChannelState::Poisoned;
+                        return Err(AgiError::Io(e));
+                    }
+                };
+                if n == 0 {
+                    self.hung_up = true;
+                    self.state = ChannelState::Ready;
+                    return Err(AgiError::ChannelHungUp);
+                }
+                let trimmed = next.trim();
+                if trimmed == "520 End of proper usage." {
+                    break;
+                }
+                if !usage.is_empty() {
+                    usage.push('\n');
+                }
+                usage.push_str(trimmed);
+            }
+            self.state = ChannelState::Ready;
+            return Err(AgiError::CommandFailed {
+                code: 520,
+                message: usage,
+            });
+        }
+
+        let response = match AgiResponse::parse(&line) {
+            Ok(r) => r,
+            Err(e) => {
+                self.state = ChannelState::Poisoned;
+                return Err(e);
+            }
+        };
 
         // 511 means the channel is dead
         if response.code == 511 {
             self.hung_up = true;
+            self.state = ChannelState::Ready;
             return Err(AgiError::ChannelHungUp);
         }
 
+        self.state = ChannelState::Ready;
         Ok(response)
     }
 
