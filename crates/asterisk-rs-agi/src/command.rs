@@ -1,4 +1,6 @@
 // standard AGI command names
+use crate::error::{AgiError, Result};
+
 pub const ANSWER: &str = "ANSWER";
 pub const HANGUP: &str = "HANGUP";
 pub const STREAM_FILE: &str = "STREAM FILE";
@@ -49,14 +51,35 @@ pub const ASYNCAGI_BREAK: &str = "ASYNCAGI BREAK";
 
 /// format an AGI command string with proper quoting
 ///
-/// arguments containing spaces or double quotes are wrapped in double quotes,
-/// with embedded double quotes escaped as `\"`
-pub fn format_command(name: &str, args: &[&str]) -> String {
+/// arguments containing spaces, double quotes, or being empty are wrapped in double
+/// quotes, with embedded double quotes escaped as `\"`.
+///
+/// returns an error if the command name or any argument contains CR (\r) or LF (\n),
+/// preventing protocol injection via user-controlled input
+pub fn format_command(name: &str, args: &[&str]) -> Result<String> {
+    // CR or LF in any token would terminate the AGI command line early,
+    // allowing an attacker to inject arbitrary subsequent commands
+    let reject_crlf = |s: &str| -> Result<()> {
+        if s.contains('\r') || s.contains('\n') {
+            return Err(AgiError::InvalidArgument {
+                details: "CR or LF in AGI command argument".to_string(),
+            });
+        }
+        Ok(())
+    };
+
+    reject_crlf(name)?;
+    for arg in args {
+        reject_crlf(arg)?;
+    }
+
     let mut cmd = String::from(name);
 
     for arg in args {
         cmd.push(' ');
-        if arg.contains(' ') || arg.contains('"') {
+        // empty args, args with spaces, or args with quotes are quoted;
+        // embedded double quotes are backslash-escaped per AGI spec
+        if arg.is_empty() || arg.contains(' ') || arg.contains('"') {
             cmd.push('"');
             for ch in arg.chars() {
                 if ch == '"' {
@@ -71,5 +94,5 @@ pub fn format_command(name: &str, args: &[&str]) -> String {
     }
 
     cmd.push('\n');
-    cmd
+    Ok(cmd)
 }

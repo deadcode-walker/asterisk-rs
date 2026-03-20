@@ -24,7 +24,9 @@ pub async fn list(client: &AriClient) -> Result<Vec<Application>> {
 
 /// get a specific stasis application
 pub async fn get(client: &AriClient, app_name: &str) -> Result<Application> {
-    client.get(&format!("/applications/{app_name}")).await
+    client
+        .get(&format!("/applications/{}", url_encode(app_name)))
+        .await
 }
 
 /// subscribe an application to an event source
@@ -36,7 +38,8 @@ pub async fn subscribe(
     client
         .post(
             &format!(
-                "/applications/{application_name}/subscription?eventSource={}",
+                "/applications/{}/subscription?eventSource={}",
+                url_encode(application_name),
                 url_encode(event_source)
             ),
             &serde_json::json!({}),
@@ -52,7 +55,8 @@ pub async fn unsubscribe(
 ) -> Result<Application> {
     client
         .delete_with_response(&format!(
-            "/applications/{application_name}/subscription?eventSource={}",
+            "/applications/{}/subscription?eventSource={}",
+            url_encode(application_name),
             url_encode(event_source)
         ))
         .await
@@ -66,7 +70,7 @@ pub async fn set_event_filter(
 ) -> Result<Application> {
     client
         .put(
-            &format!("/applications/{application_name}/eventFilter"),
+            &format!("/applications/{}/eventFilter", url_encode(application_name)),
             filter,
         )
         .await

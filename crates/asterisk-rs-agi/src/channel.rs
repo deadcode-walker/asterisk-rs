@@ -55,15 +55,15 @@ impl AgiChannel {
 
     /// answer the channel
     pub async fn answer(&mut self) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::ANSWER, &[]);
+        let cmd = command::format_command(command::ANSWER, &[])?;
         self.send_command(&cmd).await
     }
 
     /// hang up the channel, optionally specifying which channel to hang up
     pub async fn hangup(&mut self, channel: Option<&str>) -> Result<AgiResponse> {
         let cmd = match channel {
-            Some(ch) => command::format_command(command::HANGUP, &[ch]),
-            None => command::format_command(command::HANGUP, &[]),
+            Some(ch) => command::format_command(command::HANGUP, &[ch])?,
+            None => command::format_command(command::HANGUP, &[])?,
         };
         self.send_command(&cmd).await
     }
@@ -74,7 +74,7 @@ impl AgiChannel {
         filename: &str,
         escape_digits: &str,
     ) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::STREAM_FILE, &[filename, escape_digits]);
+        let cmd = command::format_command(command::STREAM_FILE, &[filename, escape_digits])?;
         self.send_command(&cmd).await
     }
 
@@ -87,53 +87,53 @@ impl AgiChannel {
     ) -> Result<AgiResponse> {
         let timeout = timeout_ms.to_string();
         let digits = max_digits.to_string();
-        let cmd = command::format_command(command::GET_DATA, &[filename, &timeout, &digits]);
+        let cmd = command::format_command(command::GET_DATA, &[filename, &timeout, &digits])?;
         self.send_command(&cmd).await
     }
 
     /// say a digit string with escape digits
     pub async fn say_digits(&mut self, digits: &str, escape_digits: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SAY_DIGITS, &[digits, escape_digits]);
+        let cmd = command::format_command(command::SAY_DIGITS, &[digits, escape_digits])?;
         self.send_command(&cmd).await
     }
 
     /// say a number with escape digits
     pub async fn say_number(&mut self, number: i64, escape_digits: &str) -> Result<AgiResponse> {
         let num = number.to_string();
-        let cmd = command::format_command(command::SAY_NUMBER, &[&num, escape_digits]);
+        let cmd = command::format_command(command::SAY_NUMBER, &[&num, escape_digits])?;
         self.send_command(&cmd).await
     }
 
     /// set a channel variable
     pub async fn set_variable(&mut self, name: &str, value: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SET_VARIABLE, &[name, value]);
+        let cmd = command::format_command(command::SET_VARIABLE, &[name, value])?;
         self.send_command(&cmd).await
     }
 
     /// get a channel variable
     pub async fn get_variable(&mut self, name: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::GET_VARIABLE, &[name]);
+        let cmd = command::format_command(command::GET_VARIABLE, &[name])?;
         self.send_command(&cmd).await
     }
 
     /// execute an asterisk application
     pub async fn exec(&mut self, application: &str, args: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::EXEC, &[application, args]);
+        let cmd = command::format_command(command::EXEC, &[application, args])?;
         self.send_command(&cmd).await
     }
 
     /// wait for a DTMF digit, -1 for infinite timeout
     pub async fn wait_for_digit(&mut self, timeout_ms: i64) -> Result<AgiResponse> {
         let timeout = timeout_ms.to_string();
-        let cmd = command::format_command(command::WAIT_FOR_DIGIT, &[&timeout]);
+        let cmd = command::format_command(command::WAIT_FOR_DIGIT, &[&timeout])?;
         self.send_command(&cmd).await
     }
 
     /// get the status of a channel
     pub async fn channel_status(&mut self, channel: Option<&str>) -> Result<AgiResponse> {
         let cmd = match channel {
-            Some(ch) => command::format_command(command::CHANNEL_STATUS, &[ch]),
-            None => command::format_command(command::CHANNEL_STATUS, &[]),
+            Some(ch) => command::format_command(command::CHANNEL_STATUS, &[ch])?,
+            None => command::format_command(command::CHANNEL_STATUS, &[])?,
         };
         self.send_command(&cmd).await
     }
@@ -141,19 +141,19 @@ impl AgiChannel {
     /// send a verbose message to the asterisk console
     pub async fn verbose(&mut self, message: &str, level: u8) -> Result<AgiResponse> {
         let lvl = level.to_string();
-        let cmd = command::format_command(command::VERBOSE, &[message, &lvl]);
+        let cmd = command::format_command(command::VERBOSE, &[message, &lvl])?;
         self.send_command(&cmd).await
     }
 
     /// set the caller id for the current channel
     pub async fn set_callerid(&mut self, callerid: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SET_CALLERID, &[callerid]);
+        let cmd = command::format_command(command::SET_CALLERID, &[callerid])?;
         self.send_command(&cmd).await
     }
 
     /// get a value from the asterisk database
     pub async fn database_get(&mut self, family: &str, key: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::DATABASE_GET, &[family, key]);
+        let cmd = command::format_command(command::DATABASE_GET, &[family, key])?;
         self.send_command(&cmd).await
     }
 
@@ -164,13 +164,13 @@ impl AgiChannel {
         key: &str,
         value: &str,
     ) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::DATABASE_PUT, &[family, key, value]);
+        let cmd = command::format_command(command::DATABASE_PUT, &[family, key, value])?;
         self.send_command(&cmd).await
     }
 
     /// delete a key from the asterisk database
     pub async fn database_del(&mut self, family: &str, key: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::DATABASE_DEL, &[family, key]);
+        let cmd = command::format_command(command::DATABASE_DEL, &[family, key])?;
         self.send_command(&cmd).await
     }
 
@@ -181,8 +181,8 @@ impl AgiChannel {
         key: Option<&str>,
     ) -> Result<AgiResponse> {
         let cmd = match key {
-            Some(k) => command::format_command(command::DATABASE_DELTREE, &[family, k]),
-            None => command::format_command(command::DATABASE_DELTREE, &[family]),
+            Some(k) => command::format_command(command::DATABASE_DELTREE, &[family, k])?,
+            None => command::format_command(command::DATABASE_DELTREE, &[family])?,
         };
         self.send_command(&cmd).await
     }
@@ -204,7 +204,7 @@ impl AgiChannel {
         let cmd = command::format_command(
             command::CONTROL_STREAM_FILE,
             &[filename, escape_digits, &skip, ff, rew, pause],
-        );
+        )?;
         self.send_command(&cmd).await
     }
 
@@ -215,8 +215,8 @@ impl AgiChannel {
         channel: Option<&str>,
     ) -> Result<AgiResponse> {
         let cmd = match channel {
-            Some(ch) => command::format_command(command::GET_FULL_VARIABLE, &[expression, ch]),
-            None => command::format_command(command::GET_FULL_VARIABLE, &[expression]),
+            Some(ch) => command::format_command(command::GET_FULL_VARIABLE, &[expression, ch])?,
+            None => command::format_command(command::GET_FULL_VARIABLE, &[expression])?,
         };
         self.send_command(&cmd).await
     }
@@ -231,9 +231,9 @@ impl AgiChannel {
         let cmd = match timeout_ms {
             Some(t) => {
                 let ts = t.to_string();
-                command::format_command(command::GET_OPTION, &[filename, escape_digits, &ts])
+                command::format_command(command::GET_OPTION, &[filename, escape_digits, &ts])?
             }
-            None => command::format_command(command::GET_OPTION, &[filename, escape_digits]),
+            None => command::format_command(command::GET_OPTION, &[filename, escape_digits])?,
         };
         self.send_command(&cmd).await
     }
@@ -247,29 +247,29 @@ impl AgiChannel {
         args: Option<&str>,
     ) -> Result<AgiResponse> {
         let cmd = match args {
-            Some(a) => command::format_command(command::GOSUB, &[context, extension, priority, a]),
-            None => command::format_command(command::GOSUB, &[context, extension, priority]),
+            Some(a) => command::format_command(command::GOSUB, &[context, extension, priority, a])?,
+            None => command::format_command(command::GOSUB, &[context, extension, priority])?,
         };
         self.send_command(&cmd).await
     }
 
     /// do nothing, used for testing
     pub async fn noop(&mut self) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::NOOP, &[]);
+        let cmd = command::format_command(command::NOOP, &[])?;
         self.send_command(&cmd).await
     }
 
     /// receive a character from the connected channel
     pub async fn receive_char(&mut self, timeout_ms: i64) -> Result<AgiResponse> {
         let timeout = timeout_ms.to_string();
-        let cmd = command::format_command(command::RECEIVE_CHAR, &[&timeout]);
+        let cmd = command::format_command(command::RECEIVE_CHAR, &[&timeout])?;
         self.send_command(&cmd).await
     }
 
     /// receive a text message from the connected channel
     pub async fn receive_text(&mut self, timeout_ms: i64) -> Result<AgiResponse> {
         let timeout = timeout_ms.to_string();
-        let cmd = command::format_command(command::RECEIVE_TEXT, &[&timeout]);
+        let cmd = command::format_command(command::RECEIVE_TEXT, &[&timeout])?;
         self.send_command(&cmd).await
     }
 
@@ -295,20 +295,20 @@ impl AgiChannel {
             silence_str = format!("s={s}");
             args.push(&silence_str);
         }
-        let cmd = command::format_command(command::RECORD_FILE, &args);
+        let cmd = command::format_command(command::RECORD_FILE, &args)?;
         self.send_command(&cmd).await
     }
 
     /// say an alphabetic string with escape digits
     pub async fn say_alpha(&mut self, text: &str, escape_digits: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SAY_ALPHA, &[text, escape_digits]);
+        let cmd = command::format_command(command::SAY_ALPHA, &[text, escape_digits])?;
         self.send_command(&cmd).await
     }
 
     /// say a date (unix timestamp) with escape digits
     pub async fn say_date(&mut self, date: i64, escape_digits: &str) -> Result<AgiResponse> {
         let d = date.to_string();
-        let cmd = command::format_command(command::SAY_DATE, &[&d, escape_digits]);
+        let cmd = command::format_command(command::SAY_DATE, &[&d, escape_digits])?;
         self.send_command(&cmd).await
     }
 
@@ -330,51 +330,51 @@ impl AgiChannel {
                 args.push(tz);
             }
         }
-        let cmd = command::format_command(command::SAY_DATETIME, &args);
+        let cmd = command::format_command(command::SAY_DATETIME, &args)?;
         self.send_command(&cmd).await
     }
 
     /// say a string phonetically with escape digits
     pub async fn say_phonetic(&mut self, text: &str, escape_digits: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SAY_PHONETIC, &[text, escape_digits]);
+        let cmd = command::format_command(command::SAY_PHONETIC, &[text, escape_digits])?;
         self.send_command(&cmd).await
     }
 
     /// say a time (unix timestamp) with escape digits
     pub async fn say_time(&mut self, time: i64, escape_digits: &str) -> Result<AgiResponse> {
         let t = time.to_string();
-        let cmd = command::format_command(command::SAY_TIME, &[&t, escape_digits]);
+        let cmd = command::format_command(command::SAY_TIME, &[&t, escape_digits])?;
         self.send_command(&cmd).await
     }
 
     /// send an image to the connected channel
     pub async fn send_image(&mut self, image: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SEND_IMAGE, &[image]);
+        let cmd = command::format_command(command::SEND_IMAGE, &[image])?;
         self.send_command(&cmd).await
     }
 
     /// send text to the connected channel
     pub async fn send_text(&mut self, text: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SEND_TEXT, &[text]);
+        let cmd = command::format_command(command::SEND_TEXT, &[text])?;
         self.send_command(&cmd).await
     }
 
     /// set the auto-hangup timer in seconds (0 to disable)
     pub async fn set_autohangup(&mut self, seconds: u32) -> Result<AgiResponse> {
         let s = seconds.to_string();
-        let cmd = command::format_command(command::SET_AUTOHANGUP, &[&s]);
+        let cmd = command::format_command(command::SET_AUTOHANGUP, &[&s])?;
         self.send_command(&cmd).await
     }
 
     /// set the dialplan context for continuation after agi completes
     pub async fn set_context(&mut self, context: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SET_CONTEXT, &[context]);
+        let cmd = command::format_command(command::SET_CONTEXT, &[context])?;
         self.send_command(&cmd).await
     }
 
     /// set the dialplan extension for continuation after agi completes
     pub async fn set_extension(&mut self, extension: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SET_EXTENSION, &[extension]);
+        let cmd = command::format_command(command::SET_EXTENSION, &[extension])?;
         self.send_command(&cmd).await
     }
 
@@ -382,39 +382,39 @@ impl AgiChannel {
     pub async fn set_music(&mut self, enabled: bool, class: Option<&str>) -> Result<AgiResponse> {
         let on_off = if enabled { "on" } else { "off" };
         let cmd = match class {
-            Some(c) => command::format_command(command::SET_MUSIC, &[on_off, c]),
-            None => command::format_command(command::SET_MUSIC, &[on_off]),
+            Some(c) => command::format_command(command::SET_MUSIC, &[on_off, c])?,
+            None => command::format_command(command::SET_MUSIC, &[on_off])?,
         };
         self.send_command(&cmd).await
     }
 
     /// set the dialplan priority for continuation after agi completes
     pub async fn set_priority(&mut self, priority: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SET_PRIORITY, &[priority]);
+        let cmd = command::format_command(command::SET_PRIORITY, &[priority])?;
         self.send_command(&cmd).await
     }
 
     /// create a speech recognition object
     pub async fn speech_create(&mut self, engine: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SPEECH_CREATE, &[engine]);
+        let cmd = command::format_command(command::SPEECH_CREATE, &[engine])?;
         self.send_command(&cmd).await
     }
 
     /// destroy the current speech recognition object
     pub async fn speech_destroy(&mut self) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SPEECH_DESTROY, &[]);
+        let cmd = command::format_command(command::SPEECH_DESTROY, &[])?;
         self.send_command(&cmd).await
     }
 
     /// activate a loaded grammar for recognition
     pub async fn speech_activate_grammar(&mut self, grammar_name: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SPEECH_ACTIVATE_GRAMMAR, &[grammar_name]);
+        let cmd = command::format_command(command::SPEECH_ACTIVATE_GRAMMAR, &[grammar_name])?;
         self.send_command(&cmd).await
     }
 
     /// deactivate a grammar
     pub async fn speech_deactivate_grammar(&mut self, grammar_name: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SPEECH_DEACTIVATE_GRAMMAR, &[grammar_name]);
+        let cmd = command::format_command(command::SPEECH_DEACTIVATE_GRAMMAR, &[grammar_name])?;
         self.send_command(&cmd).await
     }
 
@@ -424,13 +424,13 @@ impl AgiChannel {
         grammar_name: &str,
         path: &str,
     ) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SPEECH_LOAD_GRAMMAR, &[grammar_name, path]);
+        let cmd = command::format_command(command::SPEECH_LOAD_GRAMMAR, &[grammar_name, path])?;
         self.send_command(&cmd).await
     }
 
     /// unload a previously loaded grammar
     pub async fn speech_unload_grammar(&mut self, grammar_name: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SPEECH_UNLOAD_GRAMMAR, &[grammar_name]);
+        let cmd = command::format_command(command::SPEECH_UNLOAD_GRAMMAR, &[grammar_name])?;
         self.send_command(&cmd).await
     }
 
@@ -445,28 +445,28 @@ impl AgiChannel {
         let cmd = match offset {
             Some(o) => {
                 let os = o.to_string();
-                command::format_command(command::SPEECH_RECOGNIZE, &[prompt, &t, &os])
+                command::format_command(command::SPEECH_RECOGNIZE, &[prompt, &t, &os])?
             }
-            None => command::format_command(command::SPEECH_RECOGNIZE, &[prompt, &t]),
+            None => command::format_command(command::SPEECH_RECOGNIZE, &[prompt, &t])?,
         };
         self.send_command(&cmd).await
     }
 
     /// set a speech engine setting
     pub async fn speech_set(&mut self, name: &str, value: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::SPEECH_SET, &[name, value]);
+        let cmd = command::format_command(command::SPEECH_SET, &[name, value])?;
         self.send_command(&cmd).await
     }
 
     /// enable or disable tdd mode on the channel
     pub async fn tdd_mode(&mut self, mode: &str) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::TDD_MODE, &[mode]);
+        let cmd = command::format_command(command::TDD_MODE, &[mode])?;
         self.send_command(&cmd).await
     }
 
     /// break out of async agi
     pub async fn asyncagi_break(&mut self) -> Result<AgiResponse> {
-        let cmd = command::format_command(command::ASYNCAGI_BREAK, &[]);
+        let cmd = command::format_command(command::ASYNCAGI_BREAK, &[])?;
         self.send_command(&cmd).await
     }
 }

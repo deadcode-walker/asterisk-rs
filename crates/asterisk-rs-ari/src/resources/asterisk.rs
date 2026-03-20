@@ -119,7 +119,8 @@ pub async fn add_log_channel(
 ) -> Result<()> {
     client
         .post_empty(&format!(
-            "/asterisk/logging/{log_channel_name}?configuration={}",
+            "/asterisk/logging/{}?configuration={}",
+            url_encode(log_channel_name),
             url_encode(configuration)
         ))
         .await
@@ -128,14 +129,20 @@ pub async fn add_log_channel(
 /// remove a log channel
 pub async fn remove_log_channel(client: &AriClient, log_channel_name: &str) -> Result<()> {
     client
-        .delete(&format!("/asterisk/logging/{log_channel_name}"))
+        .delete(&format!(
+            "/asterisk/logging/{}",
+            url_encode(log_channel_name)
+        ))
         .await
 }
 
 /// rotate a log channel
 pub async fn rotate_log_channel(client: &AriClient, log_channel_name: &str) -> Result<()> {
     client
-        .put_empty(&format!("/asterisk/logging/{log_channel_name}/rotate"))
+        .put_empty(&format!(
+            "/asterisk/logging/{}/rotate",
+            url_encode(log_channel_name)
+        ))
         .await
 }
 
@@ -169,7 +176,10 @@ pub async fn get_config(
 ) -> Result<Vec<ConfigTuple>> {
     client
         .get(&format!(
-            "/asterisk/config/dynamic/{config_class}/{object_type}/{id}"
+            "/asterisk/config/dynamic/{}/{}/{}",
+            url_encode(config_class),
+            url_encode(object_type),
+            url_encode(id)
         ))
         .await
 }
@@ -184,7 +194,12 @@ pub async fn update_config(
 ) -> Result<Vec<ConfigTuple>> {
     client
         .put(
-            &format!("/asterisk/config/dynamic/{config_class}/{object_type}/{id}"),
+            &format!(
+                "/asterisk/config/dynamic/{}/{}/{}",
+                url_encode(config_class),
+                url_encode(object_type),
+                url_encode(id)
+            ),
             &fields,
         )
         .await
@@ -199,7 +214,10 @@ pub async fn delete_config(
 ) -> Result<()> {
     client
         .delete(&format!(
-            "/asterisk/config/dynamic/{config_class}/{object_type}/{id}"
+            "/asterisk/config/dynamic/{}/{}/{}",
+            url_encode(config_class),
+            url_encode(object_type),
+            url_encode(id)
         ))
         .await
 }

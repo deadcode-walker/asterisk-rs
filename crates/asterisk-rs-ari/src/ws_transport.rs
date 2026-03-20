@@ -19,6 +19,7 @@ use asterisk_rs_core::event::EventBus;
 use crate::error::{AriError, Result};
 use crate::event::{AriEvent, AriMessage};
 use crate::transport::TransportResponse;
+use crate::util::redact_url;
 
 static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -145,7 +146,7 @@ async fn ws_loop(
             return;
         }
 
-        tracing::info!(url = %ws_url, attempt, "connecting to ARI websocket (unified mode)");
+        tracing::info!(url = %redact_url(&ws_url), attempt, "connecting to ARI websocket (unified mode)");
 
         match tokio_tungstenite::connect_async(&ws_url).await {
             Ok((ws_stream, _response)) => {

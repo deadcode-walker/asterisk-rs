@@ -201,13 +201,17 @@ fn response_parse_negative_result() {
 
 #[test]
 fn command_format_simple_command() {
-    assert_eq!(command::format_command(command::ANSWER, &[]), "ANSWER\n");
+    assert_eq!(
+        command::format_command(command::ANSWER, &[]).expect("valid command"),
+        "ANSWER\n"
+    );
 }
 
 #[test]
 fn command_format_command_with_args() {
     assert_eq!(
-        command::format_command(command::STREAM_FILE, &["hello-world", "#"]),
+        command::format_command(command::STREAM_FILE, &["hello-world", "#"])
+            .expect("valid command"),
         "STREAM FILE hello-world #\n"
     );
 }
@@ -215,7 +219,7 @@ fn command_format_command_with_args() {
 #[test]
 fn command_format_command_with_spaces_in_arg() {
     assert_eq!(
-        command::format_command(command::VERBOSE, &["hello world", "1"]),
+        command::format_command(command::VERBOSE, &["hello world", "1"]).expect("valid command"),
         "VERBOSE \"hello world\" 1\n"
     );
 }
@@ -223,7 +227,7 @@ fn command_format_command_with_spaces_in_arg() {
 #[test]
 fn command_format_command_with_embedded_quotes() {
     assert_eq!(
-        command::format_command(command::VERBOSE, &["say \"hi\"", "1"]),
+        command::format_command(command::VERBOSE, &["say \"hi\"", "1"]).expect("valid command"),
         "VERBOSE \"say \\\"hi\\\"\" 1\n"
     );
 }
@@ -231,51 +235,81 @@ fn command_format_command_with_embedded_quotes() {
 #[test]
 fn command_format_hangup_with_optional_channel() {
     assert_eq!(
-        command::format_command(command::HANGUP, &["SIP/100-00000001"]),
+        command::format_command(command::HANGUP, &["SIP/100-00000001"]).expect("valid command"),
         "HANGUP SIP/100-00000001\n"
     );
 }
 
 #[test]
 fn command_format_record_file_command() {
-    let cmd = command::format_command(command::RECORD_FILE, &["myfile", "wav", "#", "5000"]);
+    let cmd = command::format_command(command::RECORD_FILE, &["myfile", "wav", "#", "5000"])
+        .expect("valid command");
     assert_eq!(cmd, "RECORD FILE myfile wav # 5000\n");
 }
 
 #[test]
 fn command_format_database_get_command() {
-    let cmd = command::format_command(command::DATABASE_GET, &["cidname", "12125551234"]);
+    let cmd = command::format_command(command::DATABASE_GET, &["cidname", "12125551234"])
+        .expect("valid command");
     assert_eq!(cmd, "DATABASE GET cidname 12125551234\n");
 }
 
 #[test]
 fn command_format_gosub_command() {
-    let cmd = command::format_command(command::GOSUB, &["default", "s", "1"]);
+    let cmd =
+        command::format_command(command::GOSUB, &["default", "s", "1"]).expect("valid command");
     assert_eq!(cmd, "GOSUB default s 1\n");
 }
 
 #[test]
 fn command_format_say_alpha_command() {
-    let cmd = command::format_command(command::SAY_ALPHA, &["hello", "#"]);
+    let cmd = command::format_command(command::SAY_ALPHA, &["hello", "#"]).expect("valid command");
     assert_eq!(cmd, "SAY ALPHA hello #\n");
 }
 
 #[test]
 fn command_format_speech_create_command() {
-    let cmd = command::format_command(command::SPEECH_CREATE, &["lumenvox"]);
+    let cmd =
+        command::format_command(command::SPEECH_CREATE, &["lumenvox"]).expect("valid command");
     assert_eq!(cmd, "SPEECH CREATE lumenvox\n");
 }
 
 #[test]
 fn command_format_set_callerid_command() {
-    let cmd = command::format_command(command::SET_CALLERID, &["\"John\" <1234>"]);
+    let cmd = command::format_command(command::SET_CALLERID, &["\"John\" <1234>"])
+        .expect("valid command");
     assert_eq!(cmd, "SET CALLERID \"\\\"John\\\" <1234>\"\n");
 }
 
 #[test]
 fn command_format_set_music_command() {
-    let cmd = command::format_command(command::SET_MUSIC, &["on", "default"]);
+    let cmd =
+        command::format_command(command::SET_MUSIC, &["on", "default"]).expect("valid command");
     assert_eq!(cmd, "SET MUSIC on default\n");
+}
+
+#[test]
+fn command_format_rejects_newline_in_argument() {
+    let result = command::format_command(command::SET_VARIABLE, &["foo", "bar\nbaz"]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn command_format_rejects_cr_in_argument() {
+    let result = command::format_command(command::SET_VARIABLE, &["foo", "bar\rbaz"]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn command_format_rejects_crlf_in_command_name() {
+    let result = command::format_command("ANSWER\r\n", &[]);
+    assert!(result.is_err());
+}
+
+#[test]
+fn command_format_empty_arg_quoted() {
+    let cmd = command::format_command(command::STREAM_FILE, &["hello", ""]).expect("valid command");
+    assert_eq!(cmd, "STREAM FILE hello \"\"\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -631,8 +665,11 @@ async fn channel_control_stream_file_defaults() {
         .await
         .expect("control_stream_file defaults");
     let cmd = server.await.expect("server");
-    // default skipms 3000, empty strings for optional chars
-    assert_eq!(cmd, "CONTROL STREAM FILE hello-world # 3000   \n");
+    // default skipms 3000, empty optional chars quoted per AGI spec
+    assert_eq!(
+        cmd,
+        "CONTROL STREAM FILE hello-world # 3000 \"\" \"\" \"\"\n"
+    );
 }
 
 #[tokio::test]

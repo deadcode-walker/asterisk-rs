@@ -8,6 +8,7 @@ use futures_util::StreamExt;
 use tokio::sync::watch;
 
 use crate::event::AriMessage;
+use crate::util::redact_url;
 
 /// background websocket listener that connects to the ARI event stream,
 /// deserializes events, and publishes them to an event bus
@@ -61,7 +62,7 @@ async fn ws_loop(
             return;
         }
 
-        tracing::info!(url = %ws_url, attempt, "connecting to ARI websocket");
+        tracing::info!(url = %redact_url(&ws_url), attempt, "connecting to ARI websocket");
 
         match tokio_tungstenite::connect_async(&ws_url).await {
             Ok((ws_stream, _response)) => {

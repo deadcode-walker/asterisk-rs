@@ -16,6 +16,9 @@ pub enum AgiError {
     #[error("AGI command failed with code {code}: {message}")]
     CommandFailed { code: u16, message: String },
 
+    #[error("invalid AGI argument: {details}")]
+    InvalidArgument { details: String },
+
     #[error("protocol error: {0}")]
     Protocol(#[from] ProtocolError),
 }

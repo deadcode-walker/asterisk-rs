@@ -189,6 +189,46 @@ impl Encoder<RawAmiMessage> for AmiCodec {
     type Error = AmiError;
 
     fn encode(&mut self, item: RawAmiMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        // reject any header key or value containing CR or LF — either can inject
+        // extra AMI headers or split the frame boundary
+        let contains_line_terminator = |s: &str| s.bytes().any(|b| b == b'\r' || b == b'\n');
+        for (key, value) in &item.headers {
+            if contains_line_terminator(key) {
+                return Err(AmiError::Protocol(
+                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                        details: format!("header key contains illegal line terminator: {:?}", key),
+                    },
+                ));
+            }
+            if contains_line_terminator(value) {
+                return Err(AmiError::Protocol(
+                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                        details: "header value contains illegal line terminator".to_owned(),
+                    },
+                ));
+            }
+        }
+        for (name, value) in &item.channel_variables {
+            if contains_line_terminator(name) {
+                return Err(AmiError::Protocol(
+                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                        details: format!(
+                            "channel variable name contains illegal line terminator: {:?}",
+                            name
+                        ),
+                    },
+                ));
+            }
+            if contains_line_terminator(value) {
+                return Err(AmiError::Protocol(
+                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                        details: "channel variable value contains illegal line terminator"
+                            .to_owned(),
+                    },
+                ));
+            }
+        }
+
         for (key, value) in &item.headers {
             dst.extend_from_slice(key.as_bytes());
             dst.extend_from_slice(b": ");

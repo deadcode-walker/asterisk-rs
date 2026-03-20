@@ -99,7 +99,11 @@ impl BridgeHandle {
     /// set the video source for the bridge
     pub async fn set_video_source(&self, channel_id: &str) -> Result<()> {
         self.client
-            .post_empty(&format!("/bridges/{}/videoSource/{}", self.id, channel_id))
+            .post_empty(&format!(
+                "/bridges/{}/videoSource/{}",
+                self.id,
+                url_encode(channel_id)
+            ))
             .await
     }
 

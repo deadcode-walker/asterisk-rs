@@ -21,12 +21,20 @@ pub async fn list(client: &AriClient) -> Result<Vec<Endpoint>> {
 
 /// list endpoints for a specific technology
 pub async fn list_by_tech(client: &AriClient, tech: &str) -> Result<Vec<Endpoint>> {
-    client.get(&format!("/endpoints/{tech}")).await
+    client
+        .get(&format!("/endpoints/{}", url_encode(tech)))
+        .await
 }
 
 /// get a specific endpoint
 pub async fn get(client: &AriClient, tech: &str, resource: &str) -> Result<Endpoint> {
-    client.get(&format!("/endpoints/{tech}/{resource}")).await
+    client
+        .get(&format!(
+            "/endpoints/{}/{}",
+            url_encode(tech),
+            url_encode(resource)
+        ))
+        .await
 }
 
 /// send a message to some technology uri or endpoint
@@ -63,7 +71,9 @@ pub async fn send_message_to_endpoint(
 ) -> Result<()> {
     client
         .put_empty(&format!(
-            "/endpoints/{tech}/{resource}/sendMessage?from={}&body={}",
+            "/endpoints/{}/{}/sendMessage?from={}&body={}",
+            url_encode(tech),
+            url_encode(resource),
             url_encode(from),
             url_encode(body)
         ))
@@ -80,7 +90,9 @@ pub async fn refer_to_endpoint(
 ) -> Result<()> {
     client
         .post_empty(&format!(
-            "/endpoints/{tech}/{resource}/refer?from={}&refer_to={}",
+            "/endpoints/{}/{}/refer?from={}&refer_to={}",
+            url_encode(tech),
+            url_encode(resource),
             url_encode(from),
             url_encode(refer_to)
         ))

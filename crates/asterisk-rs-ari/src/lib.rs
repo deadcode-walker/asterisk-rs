@@ -12,6 +12,7 @@ pub mod pending;
 pub mod resources;
 pub mod server;
 pub(crate) mod transport;
+pub(crate) mod util;
 pub mod websocket;
 pub(crate) mod ws_transport;
 
