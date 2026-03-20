@@ -995,7 +995,8 @@ fn queue_strategy_from_str_name_invalid() {
 
 const EXTENSION_STATE_CASES: &[(i32, ExtensionState, &str)] = &[
     (-2, ExtensionState::Removed, "removed"),
-    (-1, ExtensionState::Idle, "idle"),
+    (-1, ExtensionState::Deactivated, "deactivated"),
+    (0, ExtensionState::NotInUse, "not in use"),
     (1, ExtensionState::InUse, "in use"),
     (2, ExtensionState::Busy, "busy"),
     (4, ExtensionState::Unavailable, "unavailable"),
@@ -1022,12 +1023,13 @@ fn extension_state_code_round_trip() {
 }
 
 #[test]
-fn extension_state_from_code_invalid() {
-    for code in [0, 3, 5, 32, -3] {
+fn extension_state_from_code_other() {
+    // bitmask combinations and unrecognized codes map to Other, not None
+    for code in [3, 5, 9, 17, 32, -3] {
         assert_eq!(
             ExtensionState::from_code(code),
-            None,
-            "from_code({code}) should return None",
+            Some(ExtensionState::Other(code)),
+            "from_code({code}) should return Other({code})",
         );
     }
 }

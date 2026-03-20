@@ -29,6 +29,9 @@ pub enum AmiError {
 
     #[error("action response channel closed")]
     ResponseChannelClosed,
+
+    #[error("invalid configuration: {details}")]
+    InvalidConfig { details: String },
 }
 
 pub type Result<T> = std::result::Result<T, AmiError>;

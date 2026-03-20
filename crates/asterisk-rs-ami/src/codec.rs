@@ -112,27 +112,43 @@ impl Decoder for AmiCodec {
             }
         }
 
-        // find the end of the header block (\r\n\r\n)
-        let header_end = match find_double_crlf(src) {
+        // AMI Response: Follows frames embed output lines between the header
+        // lines and a --END COMMAND-- marker, all terminated by \r\n\r\n.
+        // the output lines lack a colon-separated key, so the line parser
+        // already puts them in `output`. the only framing concern is that
+        // we must not accept a \r\n\r\n that appears before the end marker.
+        const END_MARKER: &[u8] = b"--END COMMAND--";
+
+        let first_blank = match find_double_crlf(src) {
             Some(pos) => pos,
-            None => return Ok(None), // need more data
+            None => return Ok(None),
         };
 
-        // for Response: Follows, the real frame extends past the header block
-        // to include the command output body terminated by --END COMMAND--\r\n
-        const END_MARKER: &[u8] = b"--END COMMAND--\r\n";
-        let (frame_end, output) = if is_follows_response(&src[..header_end]) {
-            let body_start = header_end + 4; // skip \r\n\r\n
-            match find_subsequence(&src[body_start..], END_MARKER) {
-                Some(marker_offset) => {
-                    let output_end = body_start + marker_offset;
-                    let lines = parse_output_lines(&src[body_start..output_end]);
-                    (output_end + END_MARKER.len(), lines)
+        // peek: does this frame contain a Follows header?
+        // if so, the real terminator is \r\n\r\n *after* --END COMMAND--
+        let frame_end = if is_follows_response(&src[..first_blank]) {
+            // the marker may appear after the first \r\n\r\n because the
+            // output body can contain blank lines in some edge cases.
+            // scan the entire buffer for --END COMMAND--\r\n\r\n
+            match find_subsequence(src, END_MARKER) {
+                Some(marker_pos) => {
+                    let after_marker = marker_pos + END_MARKER.len();
+                    // expect \r\n after the marker (Asterisk always sends it)
+                    if src.len() < after_marker + 2 {
+                        return Ok(None);
+                    }
+                    // then look for \r\n\r\n immediately after the marker line
+                    if &src[after_marker..after_marker + 2] != b"\r\n" {
+                        return Ok(None);
+                    }
+                    // frame ends after marker + \r\n
+                    after_marker + 2
                 }
-                None => return Ok(None), // --END COMMAND-- not yet in buffer
+                None => return Ok(None),
             }
         } else {
-            (header_end + 4, Vec::new())
+            // regular message: frame ends at first \r\n\r\n + 4
+            first_blank + 4
         };
 
         // size check on the individual message, not the whole buffer
@@ -144,12 +160,19 @@ impl Decoder for AmiCodec {
             ));
         }
 
-        // parse headers from the header block only
+        // parse all lines in the frame: key:value pairs go to headers,
+        // everything else goes to output (command body for Response: Follows)
+        let message_bytes = &src[..frame_end];
         let mut headers = Vec::new();
+        let mut output = Vec::new();
         let mut channel_variables = HashMap::new();
-        for line in src[..header_end].split(|&b| b == b'\n') {
+
+        for line in message_bytes.split(|&b| b == b'\n') {
             let line = line.strip_suffix(b"\r").unwrap_or(line);
             if line.is_empty() {
+                continue;
+            }
+            if line == END_MARKER {
                 continue;
             }
             if let Some(colon_pos) = line.iter().position(|&b| b == b':') {
@@ -170,6 +193,9 @@ impl Decoder for AmiCodec {
                 } else {
                     headers.push((key, value));
                 }
+            } else {
+                // non-key-value line: command output
+                output.push(String::from_utf8_lossy(line).into_owned());
             }
         }
 
@@ -270,13 +296,4 @@ fn is_follows_response(header_bytes: &[u8]) -> bool {
 /// find the starting position of `needle` in `haystack`
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
-}
-
-/// split body bytes into non-empty lines, stripping \r\n
-fn parse_output_lines(body: &[u8]) -> Vec<String> {
-    body.split(|&b| b == b'\n')
-        .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
-        .filter(|line| !line.is_empty())
-        .map(|line| String::from_utf8_lossy(line).into_owned())
-        .collect()
 }

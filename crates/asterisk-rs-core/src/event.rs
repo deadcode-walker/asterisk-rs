@@ -18,6 +18,8 @@ pub struct EventBus<E: Event> {
 impl<E: Event> EventBus<E> {
     /// create a new event bus with the given channel capacity
     pub fn new(capacity: usize) -> Self {
+        // broadcast::channel panics on 0 capacity; clamp to 1 as a safe floor
+        let capacity = capacity.max(1);
         let (sender, _) = broadcast::channel(capacity);
         Self { sender }
     }

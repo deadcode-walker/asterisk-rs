@@ -102,11 +102,16 @@ impl AriConfigBuilder {
 
     /// build the config, constructing base and websocket URLs
     ///
-    /// fails if app_name is empty or URLs cannot be parsed
+    /// fails if app_name or username is empty, or URLs cannot be parsed
     pub fn build(self) -> Result<AriConfig> {
         if self.app_name.is_empty() {
             return Err(AriError::InvalidUrl(
                 "app_name must not be empty".to_owned(),
+            ));
+        }
+        if self.username.is_empty() {
+            return Err(AriError::InvalidUrl(
+                "username must not be empty".to_owned(),
             ));
         }
 

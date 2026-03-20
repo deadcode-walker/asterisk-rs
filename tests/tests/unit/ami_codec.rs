@@ -101,10 +101,12 @@ fn reject_oversized_message() {
     let mut codec = AmiCodec::new();
     // feed banner first so codec advances past it
     let banner = b"Asterisk Call Manager/6.0.0\r\n";
-    let payload = vec![b'A'; 64 * 1024 + 1];
-    let mut buf = BytesMut::with_capacity(banner.len() + payload.len());
+    // build a message that exceeds 64KB when terminated
+    let oversized_value = "X".repeat(64 * 1024);
+    let msg = format!("Response: Success\r\nData: {}\r\n\r\n", oversized_value);
+    let mut buf = BytesMut::with_capacity(banner.len() + msg.len());
     buf.extend_from_slice(banner);
-    buf.extend_from_slice(&payload);
+    buf.extend_from_slice(msg.as_bytes());
     assert!(codec.decode(&mut buf).is_err());
 }
 
@@ -566,10 +568,11 @@ fn decode_after_oversized_rejection() {
     // verify the error itself is correct
     let mut codec = AmiCodec::new();
     let banner = b"Asterisk Call Manager/6.0.0\r\n";
-    let payload = vec![b'X'; 64 * 1024 + 1];
-    let mut buf = BytesMut::with_capacity(banner.len() + payload.len());
+    let oversized_value = "X".repeat(64 * 1024);
+    let msg = format!("Response: Success\r\nData: {}\r\n\r\n", oversized_value);
+    let mut buf = BytesMut::with_capacity(banner.len() + msg.len());
     buf.extend_from_slice(banner);
-    buf.extend_from_slice(&payload);
+    buf.extend_from_slice(msg.as_bytes());
     let err = codec.decode(&mut buf).expect_err("should reject oversized");
     let msg = err.to_string();
     assert!(msg.contains("limit"), "error should mention limit: {msg}");

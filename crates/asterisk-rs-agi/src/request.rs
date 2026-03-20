@@ -29,6 +29,14 @@ impl AgiRequest {
                 break;
             }
 
+            // guard against maliciously large lines exhausting memory
+            if line.len() > 8192 {
+                return Err(crate::error::AgiError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "agi prelude line exceeds 8192 bytes",
+                )));
+            }
+
             let trimmed = line.trim();
             if let Some((key, value)) = trimmed.split_once(':') {
                 let key = key.trim();

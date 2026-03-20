@@ -646,59 +646,78 @@ impl fmt::Display for QueueStrategy {
 // ---------------------------------------------------------------------------
 
 /// extension hint state values
+///
+/// the base states map to Asterisk's `AST_EXTENSION_*` constants.
+/// bitmask combinations (e.g. `InUse | Ringing` = 9) are represented by `Other`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-#[repr(i32)]
 pub enum ExtensionState {
-    /// not found or removed
-    Removed = -2,
-    /// idle, no active calls
-    Idle = -1,
-    /// in use
-    InUse = 1,
-    /// busy
-    Busy = 2,
-    /// unavailable
-    Unavailable = 4,
-    /// ringing
-    Ringing = 8,
-    /// on hold
-    OnHold = 16,
+    /// extension removed from the system (-2)
+    Removed,
+    /// extension hint deactivated (-1)
+    Deactivated,
+    /// not in use / idle (0)
+    NotInUse,
+    /// in use (1)
+    InUse,
+    /// busy (2)
+    Busy,
+    /// unavailable (4)
+    Unavailable,
+    /// ringing (8)
+    Ringing,
+    /// on hold (16)
+    OnHold,
+    /// bitmask combination or unrecognized state code
+    Other(i32),
 }
 
 impl ExtensionState {
-    /// parse an extension state from its numeric code
+    /// parse an extension state from its numeric code.
+    /// always returns `Some`; unrecognized or bitmask values map to `Other(code)`
     pub fn from_code(code: i32) -> Option<Self> {
         match code {
             -2 => Some(Self::Removed),
-            -1 => Some(Self::Idle),
+            -1 => Some(Self::Deactivated),
+            0 => Some(Self::NotInUse),
             1 => Some(Self::InUse),
             2 => Some(Self::Busy),
             4 => Some(Self::Unavailable),
             8 => Some(Self::Ringing),
             16 => Some(Self::OnHold),
-            _ => None,
+            _ => Some(Self::Other(code)),
         }
     }
 
     /// the numeric state code
     pub fn code(self) -> i32 {
-        self as i32
+        match self {
+            Self::Removed => -2,
+            Self::Deactivated => -1,
+            Self::NotInUse => 0,
+            Self::InUse => 1,
+            Self::Busy => 2,
+            Self::Unavailable => 4,
+            Self::Ringing => 8,
+            Self::OnHold => 16,
+            Self::Other(code) => code,
+        }
     }
 }
 
 impl fmt::Display for ExtensionState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::Removed => "removed",
-            Self::Idle => "idle",
-            Self::InUse => "in use",
-            Self::Busy => "busy",
-            Self::Unavailable => "unavailable",
-            Self::Ringing => "ringing",
-            Self::OnHold => "on hold",
-        };
-        f.write_str(s)
+        match self {
+            Self::Removed => f.write_str("removed"),
+            Self::Deactivated => f.write_str("deactivated"),
+            Self::NotInUse => f.write_str("not in use"),
+            Self::InUse => f.write_str("in use"),
+            Self::Busy => f.write_str("busy"),
+            Self::Unavailable => f.write_str("unavailable"),
+            Self::Ringing => f.write_str("ringing"),
+            Self::OnHold => f.write_str("on hold"),
+            Self::Other(code) => write!(f, "other({code})"),
+        }
     }
 }
 

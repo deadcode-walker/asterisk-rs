@@ -121,9 +121,22 @@ async fn connection_task(
                 let mut writer = FramedWrite::new(write_half, AmiCodec::new());
 
                 // authenticate after connecting
-                if let Err(e) = perform_login(&credentials, &mut reader, &mut writer).await {
-                    tracing::error!(error = %e, "AMI login failed after connect");
-                    continue; // will trigger reconnect
+                // 30s covers the full login exchange (challenge + auth RTTs)
+                let login_result = tokio::time::timeout(
+                    Duration::from_secs(30),
+                    perform_login(&credentials, &mut reader, &mut writer),
+                )
+                .await;
+                match login_result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        tracing::error!(error = %e, "AMI login failed after connect");
+                        continue;
+                    }
+                    Err(_) => {
+                        tracing::error!("AMI login timed out after 30s");
+                        continue;
+                    }
                 }
                 tracing::info!("AMI login successful");
                 attempt = 0; // reset only after successful auth
@@ -134,6 +147,8 @@ async fn connection_task(
                 if let Some(ref mut timer) = ping_timer {
                     timer.tick().await; // consume the immediate first tick
                 }
+                // tracks the receiver for the most recently sent ping
+                let mut pending_pong_rx: Option<tokio::sync::oneshot::Receiver<AmiResponse>> = None;
 
                 // process messages until disconnect
                 loop {
@@ -190,8 +205,24 @@ async fn connection_task(
                                 None => std::future::pending().await,
                             }
                         } => {
-                            let ping = PingAction;
-                            let (_, ping_msg) = ping.to_message();
+                            // if we sent a ping and haven't received the pong yet,
+                            // the connection is dead
+                            if let Some(mut rx) = pending_pong_rx.take() {
+                                match rx.try_recv() {
+                                    Ok(_) => {} // pong received in time
+                                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                                        tracing::warn!("keep-alive pong not received, treating connection as dead");
+                                        break;
+                                    }
+                                    Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                                        tracing::warn!("keep-alive pong channel closed unexpectedly");
+                                        break;
+                                    }
+                                }
+                            }
+                            let (action_id, ping_msg) = PingAction.to_message();
+                            let pong_rx = pending.lock().await.register(action_id);
+                            pending_pong_rx = Some(pong_rx);
                             if let Err(e) = writer.send(ping_msg).await {
                                 tracing::warn!(error = %e, "keep-alive ping failed, reconnecting");
                                 break;

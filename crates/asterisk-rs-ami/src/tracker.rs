@@ -61,7 +61,12 @@ impl CallTracker {
         let (completed_tx, completed_rx) = mpsc::channel(256);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-        let task_handle = tokio::spawn(track_loop(subscription, completed_tx, shutdown_rx));
+        let task_handle = tokio::spawn(track_loop(
+            subscription,
+            completed_tx,
+            shutdown_rx,
+            DEFAULT_CALL_TTL,
+        ));
 
         let tracker = Self {
             shutdown_tx,
@@ -84,10 +89,13 @@ impl Drop for CallTracker {
     }
 }
 
+const DEFAULT_CALL_TTL: Duration = Duration::from_secs(3600);
+
 async fn track_loop(
     mut subscription: EventSubscription<AmiEvent>,
     completed_tx: mpsc::Sender<CompletedCall>,
     mut shutdown_rx: watch::Receiver<bool>,
+    ttl: Duration,
 ) {
     let mut active: HashMap<String, ActiveCall> = HashMap::new();
 
@@ -95,7 +103,8 @@ async fn track_loop(
         tokio::select! {
             event = subscription.recv() => {
                 let Some(event) = event else { break };
-                handle_event(&mut active, &completed_tx, event).await;
+                evict_stale(&mut active, &completed_tx, ttl);
+                handle_event(&mut active, &completed_tx, event);
             }
             _ = shutdown_rx.changed() => {
                 break;
@@ -104,7 +113,7 @@ async fn track_loop(
     }
 }
 
-async fn handle_event(
+fn handle_event(
     active: &mut HashMap<String, ActiveCall>,
     completed_tx: &mpsc::Sender<CompletedCall>,
     event: AmiEvent,
@@ -125,6 +134,20 @@ async fn handle_event(
             events: vec![event],
         };
         active.insert(call.unique_id.clone(), call);
+        return;
+    }
+
+    // rename — update the tracked channel name before appending
+    if let AmiEvent::Rename {
+        ref unique_id,
+        ref new_name,
+        ..
+    } = event
+    {
+        if let Some(call) = active.get_mut(unique_id.as_str()) {
+            call.channel = new_name.clone();
+            call.events.push(event);
+        }
         return;
     }
 
@@ -151,8 +174,10 @@ async fn handle_event(
                 cause_txt,
                 events: call.events,
             };
-            // receiver may have been dropped — ignore send errors
-            let _ = completed_tx.send(completed).await;
+            // receiver may have been dropped or channel full — drop rather than block the tracker
+            if completed_tx.try_send(completed).is_err() {
+                tracing::warn!("completed_tx full or closed, dropping completed call");
+            }
         }
         return;
     }
@@ -363,4 +388,37 @@ fn extract_unique_id(event: &AmiEvent) -> Option<&str> {
         | AmiEvent::DeadlockStart
         | AmiEvent::Unknown { .. } => None,
     }
+}
+
+/// emit completed records for calls that have exceeded the maximum tracked age
+///
+/// called on every incoming event so the sweep cost is proportional to churn, not wall-clock time.
+/// stale calls are emitted with cause 0 and a synthetic cause_txt so callers can distinguish them
+/// from normal hangups.
+fn evict_stale(
+    active: &mut HashMap<String, ActiveCall>,
+    completed_tx: &mpsc::Sender<CompletedCall>,
+    ttl: Duration,
+) {
+    let now = Instant::now();
+    active.retain(|_, call| {
+        if now.duration_since(call.start_time) <= ttl {
+            return true;
+        }
+        let completed = CompletedCall {
+            channel: call.channel.clone(),
+            unique_id: call.unique_id.clone(),
+            linked_id: call.linked_id.clone(),
+            start_time: call.start_time,
+            end_time: now,
+            duration: now.duration_since(call.start_time),
+            cause: 0,
+            cause_txt: "ttl eviction: no hangup received".to_string(),
+            events: std::mem::take(&mut call.events),
+        };
+        if completed_tx.try_send(completed).is_err() {
+            tracing::warn!(unique_id = %call.unique_id, "completed_tx full, dropping stale evicted call");
+        }
+        false
+    });
 }

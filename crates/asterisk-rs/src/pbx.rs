@@ -1,15 +1,17 @@
 //! high-level PBX abstraction for call management over AMI
 //!
-//! wraps [`AmiClient`](asterisk_rs_ami::AmiClient) with call lifecycle
+//! wraps [`AmiClient`] with call lifecycle
 //! tracking and convenience methods for common telephony operations
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use asterisk_rs_ami::action::{HangupAction, OriginateAction};
 use asterisk_rs_ami::event::AmiEvent;
 use asterisk_rs_ami::tracker::{CallTracker, CompletedCall};
 use asterisk_rs_ami::AmiClient;
-use tokio::sync::mpsc;
+use asterisk_rs_core::event::EventSubscription;
+use tokio::sync::{mpsc, Mutex};
 
 /// a live call being tracked by the PBX
 ///
@@ -22,6 +24,10 @@ pub struct Call {
     /// per-channel unique identifier
     pub unique_id: String,
     client: AmiClient,
+    // pre-started subscription created before originate so that any Newstate/Hangup
+    // events arriving before wait_for_answer is called are buffered and not lost;
+    // Arc+Mutex keeps Call Clone and lets wait_for_answer take &self
+    answer_sub: Arc<Mutex<EventSubscription<AmiEvent>>>,
 }
 
 impl Call {
@@ -38,29 +44,31 @@ impl Call {
     /// returns Err if the channel hangs up before answering
     pub async fn wait_for_answer(&self, timeout: Duration) -> Result<(), PbxError> {
         let uid = self.unique_id.clone();
-        let mut sub = self.client.subscribe_filtered(move |e| match e {
-            AmiEvent::Newstate { unique_id, .. } | AmiEvent::Hangup { unique_id, .. } => {
-                *unique_id == uid
-            }
-            _ => false,
-        });
 
         let result = tokio::time::timeout(timeout, async {
+            let mut sub = self.answer_sub.lock().await;
             loop {
-                match sub.recv().await {
-                    Some(AmiEvent::Newstate {
-                        channel_state_desc, ..
-                    }) => {
+                let Some(event) = sub.recv().await else {
+                    return Err(PbxError::Disconnected);
+                };
+                match event {
+                    AmiEvent::Newstate {
+                        unique_id,
+                        channel_state_desc,
+                        ..
+                    } if unique_id == uid => {
                         if channel_state_desc == "Up" {
                             return Ok(());
                         }
                     }
-                    Some(AmiEvent::Hangup {
-                        cause, cause_txt, ..
-                    }) => {
+                    AmiEvent::Hangup {
+                        unique_id,
+                        cause,
+                        cause_txt,
+                        ..
+                    } if unique_id == uid => {
                         return Err(PbxError::CallFailed { cause, cause_txt });
                     }
-                    None => return Err(PbxError::Disconnected),
                     _ => {}
                 }
             }
@@ -168,14 +176,26 @@ impl Pbx {
         if let Some(ms) = opts.timeout_ms {
             action = action.timeout_ms(ms);
         }
+        if let Some(ref vars) = opts.variables {
+            for (k, v) in vars {
+                action = action.variable(k, v);
+            }
+        }
 
-        // subscribe to OriginateResponse before sending the action
-        // so we don't miss the event
+        // subscribe to answer-state events BEFORE sending the originate action;
+        // events arriving between originate and wait_for_answer are buffered
+        // in the broadcast channel and will not be missed
+        let answer_sub = Arc::new(Mutex::new(self.client.subscribe()));
+
+        // subscribe to OriginateResponse before sending so we don't miss a fast
+        // response; we don't know action_id yet, so filter by type here and match
+        // by action_id in the loop below
         let mut orig_sub = self
             .client
             .subscribe_filtered(move |e| matches!(e, AmiEvent::OriginateResponse { .. }));
 
-        self.client.originate(action).await?;
+        let orig_response = self.client.originate(action).await?;
+        let expected_action_id = orig_response.action_id;
 
         // wait for the OriginateResponse event with a timeout
         let originate_timeout =
@@ -183,17 +203,20 @@ impl Pbx {
 
         let event = tokio::time::timeout(originate_timeout, async {
             loop {
-                match orig_sub.recv().await {
-                    Some(AmiEvent::OriginateResponse {
-                        channel,
-                        unique_id,
-                        response,
-                        ..
-                    }) => {
+                let Some(event) = orig_sub.recv().await else {
+                    return Err(PbxError::Disconnected);
+                };
+                if let AmiEvent::OriginateResponse {
+                    action_id,
+                    channel,
+                    unique_id,
+                    response,
+                    ..
+                } = event
+                {
+                    if action_id == expected_action_id {
                         return Ok((channel, unique_id, response));
                     }
-                    Some(_) => continue,
-                    None => return Err(PbxError::Disconnected),
                 }
             }
         })
@@ -213,6 +236,7 @@ impl Pbx {
             channel,
             unique_id,
             client: self.client.clone(),
+            answer_sub,
         })
     }
 

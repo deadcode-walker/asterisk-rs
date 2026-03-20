@@ -14,8 +14,8 @@ fn generate_pending_id(prefix: &str) -> String {
     format!("{prefix}-pending-{id}")
 }
 
-/// extracts the channel from an event, if present as a direct field
-fn event_channel_id(event: &AriEvent) -> Option<&str> {
+/// returns true if the event involves the given channel id
+fn event_matches_channel_id(event: &AriEvent, id: &str) -> bool {
     match event {
         AriEvent::StasisStart { channel, .. }
         | AriEvent::StasisEnd { channel }
@@ -32,21 +32,69 @@ fn event_channel_id(event: &AriEvent) -> Option<&str> {
         | AriEvent::ChannelTalkingStarted { channel }
         | AriEvent::ChannelTalkingFinished { channel, .. }
         | AriEvent::ChannelToneDetected { channel }
-        | AriEvent::ChannelTransfer { channel, .. } => Some(&channel.id),
-        _ => None,
+        | AriEvent::ChannelTransfer { channel, .. }
+        | AriEvent::ChannelEnteredBridge { channel, .. }
+        | AriEvent::ChannelLeftBridge { channel, .. }
+        | AriEvent::ApplicationMoveFailed { channel, .. } => channel.id == id,
+        // dial events involve multiple participants; any could be the watched channel
+        AriEvent::Dial {
+            peer,
+            caller,
+            forwarded,
+            ..
+        } => {
+            peer.id == id
+                || caller.as_ref().is_some_and(|c| c.id == id)
+                || forwarded.as_ref().is_some_and(|c| c.id == id)
+        }
+        // blind transfer involves the transferring channel and the transferee
+        AriEvent::BridgeBlindTransfer {
+            channel,
+            transferee,
+            replace_channel,
+            ..
+        } => {
+            channel.id == id
+                || transferee.as_ref().is_some_and(|c| c.id == id)
+                || replace_channel.as_ref().is_some_and(|c| c.id == id)
+        }
+        _ => false,
     }
 }
 
-/// extracts the bridge id from an event, if present as a direct field
-fn event_bridge_id(event: &AriEvent) -> Option<&str> {
+/// returns true if the event involves the given bridge id
+fn event_matches_bridge_id(event: &AriEvent, id: &str) -> bool {
     match event {
         AriEvent::BridgeCreated { bridge }
         | AriEvent::BridgeDestroyed { bridge }
         | AriEvent::ChannelEnteredBridge { bridge, .. }
         | AriEvent::ChannelLeftBridge { bridge, .. }
-        | AriEvent::BridgeMerged { bridge, .. }
-        | AriEvent::BridgeVideoSourceChanged { bridge, .. } => Some(&bridge.id),
-        _ => None,
+        | AriEvent::BridgeVideoSourceChanged { bridge, .. } => bridge.id == id,
+        // both bridges checked: the merged-from bridge may be the one being watched
+        AriEvent::BridgeMerged {
+            bridge,
+            bridge_from,
+        } => bridge.id == id || bridge_from.id == id,
+        // bridge is optional on blind transfer
+        AriEvent::BridgeBlindTransfer { bridge, .. } => bridge.as_ref().is_some_and(|b| b.id == id),
+        // attended transfer may route through several optional bridge legs
+        AriEvent::BridgeAttendedTransfer {
+            transferer_first_leg_bridge,
+            transferer_second_leg_bridge,
+            destination_threeway_bridge,
+            ..
+        } => {
+            transferer_first_leg_bridge
+                .as_ref()
+                .is_some_and(|b| b.id == id)
+                || transferer_second_leg_bridge
+                    .as_ref()
+                    .is_some_and(|b| b.id == id)
+                || destination_threeway_bridge
+                    .as_ref()
+                    .is_some_and(|b| b.id == id)
+        }
+        _ => false,
     }
 }
 
@@ -77,9 +125,8 @@ impl PendingChannel {
     pub(crate) fn new(client: AriClient) -> Self {
         let id = generate_pending_id("channel");
         let filter_id = id.clone();
-        let events = client.subscribe_filtered(move |msg| {
-            event_channel_id(&msg.event).is_some_and(|ch_id| ch_id == filter_id)
-        });
+        let events =
+            client.subscribe_filtered(move |msg| event_matches_channel_id(&msg.event, &filter_id));
 
         Self { id, client, events }
     }
@@ -125,9 +172,8 @@ impl PendingBridge {
     pub(crate) fn new(client: AriClient) -> Self {
         let id = generate_pending_id("bridge");
         let filter_id = id.clone();
-        let events = client.subscribe_filtered(move |msg| {
-            event_bridge_id(&msg.event).is_some_and(|br_id| br_id == filter_id)
-        });
+        let events =
+            client.subscribe_filtered(move |msg| event_matches_bridge_id(&msg.event, &filter_id));
 
         Self { id, client, events }
     }

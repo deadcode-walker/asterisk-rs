@@ -951,7 +951,7 @@ async fn record_file_with_options() {
 
     // minimal: no beep, no silence
     let cmd = client.read_command().await.expect("RECORD FILE minimal");
-    assert_eq!(cmd, "RECORD FILE minimal gsm  3000");
+    assert_eq!(cmd, "RECORD FILE minimal gsm \"\" 3000");
     client
         .send_response("200 result=0 (timeout) endpos=3000")
         .await;

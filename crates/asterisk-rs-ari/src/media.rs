@@ -248,6 +248,12 @@ impl MediaChannel {
     /// data should be encoded in the format negotiated during MEDIA_START.
     /// Asterisk will re-frame if buffering mode is active. max 65500 bytes.
     pub async fn send_audio(&self, data: Vec<u8>) -> Result<()> {
+        if data.len() > 65500 {
+            return Err(AriError::WebSocket(format!(
+                "audio frame too large: {} bytes (max 65500)",
+                data.len()
+            )));
+        }
         self.command_tx
             .send(InternalCmd::Audio(data))
             .await
@@ -342,9 +348,15 @@ async fn media_loop<S>(
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<MediaEvent>(&text) {
                             Ok(event) => {
-                                if event_tx.send(event).await.is_err() {
-                                    // receiver dropped
-                                    return;
+                                match event_tx.try_send(event) {
+                                    Ok(()) => {}
+                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                        tracing::warn!("media event channel full, dropping event");
+                                    }
+                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                        // receiver dropped
+                                        return;
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -356,9 +368,15 @@ async fn media_loop<S>(
                         }
                     }
                     Some(Ok(Message::Binary(data))) => {
-                        if audio_tx.send(data).await.is_err() {
-                            // receiver dropped
-                            return;
+                        match audio_tx.try_send(data) {
+                            Ok(()) => {}
+                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                tracing::debug!("audio channel full, dropping frame");
+                            }
+                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                // receiver dropped
+                                return;
+                            }
                         }
                     }
                     Some(Ok(Message::Close(_))) => {

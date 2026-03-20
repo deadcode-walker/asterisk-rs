@@ -31,6 +31,8 @@ use std::time::Duration;
 #[test]
 fn build_default_config() {
     let config = AriConfigBuilder::new("myapp")
+        .username("admin")
+        .password("secret")
         .build()
         .expect("default config should build");
 
@@ -47,6 +49,8 @@ fn build_with_custom_host_port() {
     let config = AriConfigBuilder::new("myapp")
         .host("10.0.0.1")
         .port(9999)
+        .username("admin")
+        .password("secret")
         .build()
         .expect("custom host/port should build");
 
@@ -66,6 +70,8 @@ fn build_with_custom_host_port() {
 fn build_secure_uses_https_wss() {
     let config = AriConfigBuilder::new("myapp")
         .secure(true)
+        .username("admin")
+        .password("secret")
         .build()
         .expect("secure config should build");
 
@@ -84,6 +90,8 @@ fn build_secure_uses_https_wss() {
 #[test]
 fn build_empty_app_name_fails() {
     let err = AriConfigBuilder::new("")
+        .username("admin")
+        .password("secret")
         .build()
         .expect_err("empty app_name via constructor should fail");
 
@@ -102,6 +110,8 @@ fn build_empty_app_name_fails() {
 fn build_empty_app_name_via_setter_fails() {
     let err = AriConfigBuilder::new("valid")
         .app_name("")
+        .username("admin")
+        .password("secret")
         .build()
         .expect_err("empty app_name via setter should fail");
 
@@ -119,6 +129,8 @@ fn build_empty_app_name_via_setter_fails() {
 #[test]
 fn ws_url_contains_app_name() {
     let config = AriConfigBuilder::new("test_app")
+        .username("admin")
+        .password("secret")
         .build()
         .expect("config should build");
 
@@ -150,6 +162,8 @@ fn build_with_custom_reconnect_policy() {
 
     let config = AriConfigBuilder::new("myapp")
         .reconnect(policy)
+        .username("admin")
+        .password("secret")
         .build()
         .expect("config with reconnect policy should build");
 
@@ -199,6 +213,8 @@ fn builder_fluent_chain() {
 #[test]
 fn default_host_is_localhost() {
     let config = AriConfigBuilder::new("myapp")
+        .username("admin")
+        .password("secret")
         .build()
         .expect("default config should build");
 
@@ -212,6 +228,8 @@ fn default_host_is_localhost() {
 #[test]
 fn default_port_is_8088() {
     let config = AriConfigBuilder::new("myapp")
+        .username("admin")
+        .password("secret")
         .build()
         .expect("default config should build");
 
@@ -2442,6 +2460,8 @@ fn transport_mode_variants_distinct() {
 #[test]
 fn config_default_transport_mode_is_http() {
     let config = AriConfigBuilder::new("myapp")
+        .username("admin")
+        .password("secret")
         .build()
         .expect("default config should build");
     assert_eq!(config.transport_mode, TransportMode::Http);

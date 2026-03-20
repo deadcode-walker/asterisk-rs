@@ -54,7 +54,10 @@ impl AmiResponse {
 
     /// get a header value from the response
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.headers.get(key).map(|s| s.as_str())
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v.as_str())
     }
 
     /// get a channel variable by name

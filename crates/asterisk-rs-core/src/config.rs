@@ -60,7 +60,9 @@ impl ReconnectPolicy {
             return Duration::ZERO;
         }
         let base = self.initial_delay.as_secs_f64() * self.backoff_factor.powi(attempt as i32);
-        let capped = base.min(self.max_delay.as_secs_f64());
+        // f64::max/min return the non-NaN operand when one is NaN, so this handles
+        // NaN, negative, and infinite backoff_factor without panicking in from_secs_f64
+        let capped = base.max(0.0).min(self.max_delay.as_secs_f64());
 
         if self.jitter {
             let jitter_factor = jitter_factor();

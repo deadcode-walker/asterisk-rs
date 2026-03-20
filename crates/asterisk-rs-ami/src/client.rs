@@ -237,6 +237,17 @@ impl AmiClientBuilder {
             asterisk_rs_core::error::AuthError::InvalidCredentials,
         ))?;
 
+        if self.event_capacity == 0 {
+            return Err(AmiError::InvalidConfig {
+                details: "event_capacity must be greater than zero".to_owned(),
+            });
+        }
+        if self.ping_interval == Some(Duration::ZERO) {
+            return Err(AmiError::InvalidConfig {
+                details: "ping_interval must be greater than zero".to_owned(),
+            });
+        }
+
         let event_bus = EventBus::new(self.event_capacity);
         let address = format!("{}:{}", self.host, self.port);
 

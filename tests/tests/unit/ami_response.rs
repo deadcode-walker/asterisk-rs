@@ -478,6 +478,7 @@ fn originate_response_event_parses_as_event() {
             unique_id,
             response,
             reason,
+            ..
         } => {
             assert_eq!(channel, "PJSIP/100-00000001");
             assert_eq!(unique_id, "1234.5");

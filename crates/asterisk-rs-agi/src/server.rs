@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
@@ -61,6 +62,8 @@ impl<H: AgiHandler> AgiServer<H> {
                         Ok(conn) => conn,
                         Err(err) => {
                             tracing::warn!(%err, "failed to accept connection");
+                            // brief backoff prevents CPU spin on persistent errors (EMFILE/ENFILE)
+                            tokio::time::sleep(Duration::from_millis(100)).await;
                             continue;
                         }
                     };
@@ -68,18 +71,29 @@ impl<H: AgiHandler> AgiServer<H> {
                     tracing::debug!(%peer, "new AGI connection");
 
                     let handler = Arc::clone(&self.handler);
-                    let permit = match &semaphore {
-                        Some(sem) => match sem.clone().acquire_owned().await {
-                            Ok(p) => Some(p),
-                            Err(_) => {
-                                // semaphore closed — should not happen during normal operation
-                                tracing::error!("connection semaphore closed unexpectedly");
-                                return Err(AgiError::Io(std::io::Error::other(
-                                    "connection semaphore closed",
-                                )));
+
+                    // acquire a permit if max_connections is configured; race against shutdown
+                    // so a saturated server still responds promptly to stop signals
+                    let permit = if let Some(sem) = &semaphore {
+                        let acquire = sem.clone().acquire_owned();
+                        tokio::select! {
+                            result = acquire => match result {
+                                Ok(p) => Some(p),
+                                Err(_) => {
+                                    // semaphore closed — should not happen during normal operation
+                                    tracing::error!("connection semaphore closed unexpectedly");
+                                    return Err(AgiError::Io(std::io::Error::other(
+                                        "connection semaphore closed",
+                                    )));
+                                }
+                            },
+                            _ = self.shutdown_rx.changed() => {
+                                tracing::info!("AGI server shutting down");
+                                return Ok(());
                             }
-                        },
-                        None => None,
+                        }
+                    } else {
+                        None
                     };
 
                     tokio::spawn(async move {
@@ -91,8 +105,9 @@ impl<H: AgiHandler> AgiServer<H> {
                         }
                     });
                 }
-                _ = self.shutdown_rx.changed() => {
-                    if *self.shutdown_rx.borrow() {
+                result = self.shutdown_rx.changed() => {
+                    // Err means all senders were dropped — treat as shutdown signal
+                    if result.is_err() || *self.shutdown_rx.borrow() {
                         tracing::info!("AGI server shutting down");
                         return Ok(());
                     }
@@ -110,8 +125,19 @@ async fn handle_connection<H: AgiHandler>(
     let (read_half, write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
 
-    // read the AGI environment variables sent by asterisk
-    let request = AgiRequest::parse_from_reader(&mut reader).await?;
+    // 30s deadline prevents slow/malicious clients from holding a connection slot indefinitely
+    let request = match tokio::time::timeout(
+        Duration::from_secs(30),
+        AgiRequest::parse_from_reader(&mut reader),
+    )
+    .await
+    {
+        Ok(result) => result?,
+        Err(_elapsed) => {
+            tracing::warn!("AGI prelude read timed out after 30s");
+            return Ok(());
+        }
+    };
 
     let channel = AgiChannel::new(reader, write_half);
     handler.handle(request, channel).await
