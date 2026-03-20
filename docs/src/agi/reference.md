@@ -59,7 +59,7 @@
 
 | Method | Description |
 |--------|-------------|
-| `send_command()` | send a raw command string and parse the response  the command should already be formatted with a trailing newline. checks the hung_up flag before sending to avoid writing to a dead channel. |
+| `send_command()` | send a raw command string and parse the response  # cancel safety  this function is **not** cancel-safe. dropping the future after the write but before the read completes leaves an unread response in the buffer. subsequent calls will observe `ChannelState::InFlight` and return `AgiError::CommandInFlight` to prevent reading stale data.  the command should already be formatted with a trailing newline. |
 | `answer()` | answer the channel |
 | `hangup()` | hang up the channel, optionally specifying which channel to hang up |
 | `stream_file()` | stream a sound file, allowing the caller to interrupt with escape digits |

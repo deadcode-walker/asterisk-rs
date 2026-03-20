@@ -154,17 +154,19 @@ queue member selection strategy
 
 ## `ExtensionState`
 
-extension hint state values
+extension hint state values  the base states map to Asterisk's `AST_EXTENSION_*` constants. bitmask combinations (e.g. `InUse | Ringing` = 9) are represented by `Other`.
 
 | Variant | Description |
 |---------|-------------|
-| `Removed = -2` | not found or removed |
-| `Idle = -1` | idle, no active calls |
-| `InUse = 1` | in use |
-| `Busy = 2` | busy |
-| `Unavailable = 4` | unavailable |
-| `Ringing = 8` | ringing |
-| `OnHold = 16` | on hold |
+| `Removed` | extension removed from the system (-2) |
+| `Deactivated` | extension hint deactivated (-1) |
+| `NotInUse` | not in use / idle (0) |
+| `InUse` | in use (1) |
+| `Busy` | busy (2) |
+| `Unavailable` | unavailable (4) |
+| `Ringing` | ringing (8) |
+| `OnHold` | on hold (16) |
+| `Other` | bitmask combination or unrecognized state code |
 
 ## `AgiStatus`
 
