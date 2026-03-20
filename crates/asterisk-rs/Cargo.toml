@@ -1,7 +1,7 @@
 [package]
 name = "asterisk-rs"
 version = "0.1.6"
-description = "Production Rust client for Asterisk AMI, AGI, and ARI"
+description = "Async Rust client for Asterisk AMI, AGI, and ARI"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -27,6 +27,10 @@ default = ["ami", "agi", "ari"]
 ami = ["dep:asterisk-rs-ami"]
 agi = ["dep:asterisk-rs-agi"]
 ari = ["dep:asterisk-rs-ari"]
+
+[[example]]
+name = "pbx_dial"
+required-features = ["ami"]
 
 [dev-dependencies]
 tracing.workspace = true
