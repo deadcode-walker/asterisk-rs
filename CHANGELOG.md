@@ -23,6 +23,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Other
+- release ([#16](https://github.com/deadcode-walker/asterisk-rs/pull/16))
+- updated crate description to async
+
+
+### Testing
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Added
+- add #[must_use] to builder types and doc comments to public items
+
+
+### Documentation
+- added examples and improved READMEs ([#15](https://github.com/deadcode-walker/asterisk-rs/pull/15))
+
+
+### Fixed
+- resource management, validation, and correctness improvements
+- *(protocol)* corrected AMI framing, reconnect, AGI safety, ARI error handling
+- *(security)* rejected protocol injection and credential leaks
+
+
+### Other
+- release ([#16](https://github.com/deadcode-walker/asterisk-rs/pull/16))
+
+
+### Added
+- add #[must_use] to builder types and doc comments to public items
+
+
+### Documentation
+- added examples and improved READMEs ([#15](https://github.com/deadcode-walker/asterisk-rs/pull/15))
+
+
+### Fixed
+- credential zeroize, ChanVariable propagation, test rigor, endpos parsing
+- resource management, validation, and correctness improvements
+- *(protocol)* corrected AMI framing, reconnect, AGI safety, ARI error handling
+- *(security)* rejected protocol injection and credential leaks
+
+
+### Other
+- release ([#16](https://github.com/deadcode-walker/asterisk-rs/pull/16))
+
+
+### Documentation
+- added examples and improved READMEs ([#15](https://github.com/deadcode-walker/asterisk-rs/pull/15))
+
+
+### Fixed
+- credential zeroize, ChanVariable propagation, test rigor, endpos parsing
+- resource management, validation, and correctness improvements
+- *(protocol)* corrected AMI framing, reconnect, AGI safety, ARI error handling
+- *(security)* rejected protocol injection and credential leaks
+
+
+### Other
+- release ([#16](https://github.com/deadcode-walker/asterisk-rs/pull/16))
+
+
+### Testing
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Documentation
+- added examples and improved READMEs ([#15](https://github.com/deadcode-walker/asterisk-rs/pull/15))
+
+
+### Fixed
+- credential zeroize, ChanVariable propagation, test rigor, endpos parsing
+- resource management, validation, and correctness improvements
+
+
+### Other
+- release ([#16](https://github.com/deadcode-walker/asterisk-rs/pull/16))
+
+
+### Testing
+- restructure test architecture + add massive coverage
+- add 120 unit tests across all crates (Wave 1)
+
+
+### Added
+- add #[must_use] to builder types and doc comments to public items
+
+
+### Documentation
+- added examples and improved READMEs ([#15](https://github.com/deadcode-walker/asterisk-rs/pull/15))
+
+
+### Fixed
+- resource management, validation, and correctness improvements
+- credential zeroize, ChanVariable propagation, test rigor, endpos parsing
+- *(protocol)* corrected AMI framing, reconnect, AGI safety, ARI error handling
+- *(security)* rejected protocol injection and credential leaks
+
+
+### Other
 - updated crate description to async
 
 
