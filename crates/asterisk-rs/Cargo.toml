@@ -27,3 +27,8 @@ default = ["ami", "agi", "ari"]
 ami = ["dep:asterisk-rs-ami"]
 agi = ["dep:asterisk-rs-agi"]
 ari = ["dep:asterisk-rs-ari"]
+
+[dev-dependencies]
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio = { workspace = true, features = ["full"] }

@@ -339,9 +339,15 @@ Located in each crate's `examples/` directory (not workspace root):
 |---------|-------|-------------|
 | `ami_originate.rs` | asterisk-rs-ami | Builder, OriginateAction, response handling |
 | `ami_events.rs` | asterisk-rs-ami | Event subscription loop |
+| `ami_call_tracker.rs` | asterisk-rs-ami | CallTracker, CompletedCall records, background task |
 | `agi_server.rs` | asterisk-rs-agi | AgiHandler impl, channel operations |
+| `agi_ivr.rs` | asterisk-rs-agi | IVR menu, DTMF, AstDB, variables, branching |
 | `ari_stasis_app.rs` | asterisk-rs-ari | Stasis event loop, ChannelHandle |
 | `ari_bridge.rs` | asterisk-rs-ari | Bridge creation, channel origination |
+| `ari_recording.rs` | asterisk-rs-ari | Channel recording and playback |
+| `ari_pending.rs` | asterisk-rs-ari | Race-free PendingChannel origination |
+| `ari_websocket_transport.rs` | asterisk-rs-ari | Unified WebSocket transport mode |
+| `pbx_dial.rs` | asterisk-rs | Pbx high-level dial, wait_for_answer, CompletedCall |
 
 All examples require a running Asterisk instance and use `tracing_subscriber` (dev-dependency).
 

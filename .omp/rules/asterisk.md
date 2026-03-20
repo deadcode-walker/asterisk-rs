@@ -36,3 +36,9 @@ globs:
 - REST endpoints use Basic Auth on every request; credentials are not session-based.
 - Resources: channels, bridges, endpoints, device states, mailboxes, sounds, recordings, playbacks.
 - Stasis application model: channels enter stasis via dialplan `Stasis(appname)`, controlled via REST.
+
+
+## Testing
+
+- No inline tests (`#[cfg(test)]`) in any protocol crate. All tests live in `tests/` (`asterisk-rs-tests` crate).
+- Mock servers for each protocol are in `tests/src/mock/` (MockAmiServer, MockAriServer, MockAgiClient).
