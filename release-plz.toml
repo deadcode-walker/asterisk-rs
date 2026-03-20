@@ -1,6 +1,4 @@
 [workspace]
-# single changelog at workspace root
-changelog_path = "./CHANGELOG.md"
 
 # disable git releases for all packages by default
 git_release_enable = false
