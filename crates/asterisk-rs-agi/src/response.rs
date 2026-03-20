@@ -76,10 +76,23 @@ impl AgiResponse {
 
         // extract optional endpos=N
         let endpos = if let Some(ep_str) = remainder.strip_prefix("endpos=") {
+            // endpos= present but empty or non-numeric is a protocol error
             let ep_end = ep_str
                 .find(|c: char| !c.is_ascii_digit())
                 .unwrap_or(ep_str.len());
-            ep_str[..ep_end].parse().ok()
+            let digits = &ep_str[..ep_end];
+            if digits.is_empty() {
+                return Err(AgiError::InvalidResponse {
+                    raw: remainder.to_owned(),
+                });
+            }
+            Some(
+                digits
+                    .parse::<u64>()
+                    .map_err(|_| AgiError::InvalidResponse {
+                        raw: remainder.to_owned(),
+                    })?,
+            )
         } else {
             None
         };

@@ -952,6 +952,8 @@ pub enum AmiEvent {
         priority: u32,
         seconds: u32,
         bridge_id: String,
+        /// channel variables present on the channel at query time
+        channel_variables: HashMap<String, String>,
     },
 
     /// status listing complete
@@ -968,6 +970,8 @@ pub enum AmiEvent {
         application_data: String,
         duration: String,
         bridge_id: String,
+        /// channel variables present on the channel at query time
+        channel_variables: HashMap<String, String>,
     },
 
     /// core show channels complete
@@ -2148,6 +2152,7 @@ impl AmiEvent {
                     .unwrap_or(0),
                 seconds: raw.get("Seconds").and_then(|s| s.parse().ok()).unwrap_or(0),
                 bridge_id: get(raw, "BridgeID"),
+                channel_variables: raw.channel_variables.clone(),
             },
             "StatusComplete" => Self::StatusComplete {
                 items: raw.get("Items").and_then(|s| s.parse().ok()).unwrap_or(0),
@@ -2162,6 +2167,7 @@ impl AmiEvent {
                 application_data: get(raw, "ApplicationData"),
                 duration: get(raw, "Duration"),
                 bridge_id: get(raw, "BridgeID"),
+                channel_variables: raw.channel_variables.clone(),
             },
             "CoreShowChannelsComplete" => Self::CoreShowChannelsComplete {
                 listed_channels: raw

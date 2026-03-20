@@ -1541,6 +1541,36 @@ async fn event_bus_lag_with_filtered_subscription() {
     assert!(event.is_some(), "filtered recv should survive lag");
 }
 
+#[tokio::test]
+async fn event_bus_lag() {
+    // capacity-2 bus: at most 2 events survive in the ring buffer
+    let bus = EventBus::<TestEvent>::new(2);
+    let mut sub = bus.subscribe();
+
+    // publish 5 events without reading — forces lag on the slow subscriber.
+    // after all 5 are sent, the buffer retains the 2 most recent: evt-3 and evt-4.
+    for i in 0..5u32 {
+        bus.publish(TestEvent(format!("evt-{i}")));
+    }
+
+    // recv recovers from lag (skips lost events) and returns the oldest surviving event
+    let first = sub.recv().await.expect("should recover from lag");
+    assert_eq!(
+        first.0, "evt-3",
+        "first post-lag event should be oldest in buffer"
+    );
+
+    // second recv delivers the next buffered event without further lag
+    let second = sub
+        .recv()
+        .await
+        .expect("second recv should succeed after lag recovery");
+    assert_eq!(
+        second.0, "evt-4",
+        "second post-lag event should be newest in buffer"
+    );
+}
+
 // =============================================================================
 // reconnect policy adversarial tests
 // =============================================================================

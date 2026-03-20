@@ -19,6 +19,7 @@ tracing.workspace = true
 tokio = { workspace = true, features = ["sync", "time"] }
 serde = { workspace = true, optional = true }
 pin-project-lite.workspace = true
+zeroize.workspace = true
 
 [features]
 default = []

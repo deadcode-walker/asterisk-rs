@@ -9,6 +9,14 @@ use asterisk_rs_tests::mock::ami_server::{
     get_header, handle_login, handle_login_reject, MockAmiServer,
 };
 
+fn assert_server_ok(result: Result<(), tokio::task::JoinError>) {
+    if let Err(e) = result {
+        if e.is_panic() {
+            std::panic::resume_unwind(e.into_panic());
+        }
+    }
+}
+
 #[tokio::test]
 async fn connect_and_login() {
     init_tracing();
@@ -40,7 +48,7 @@ async fn connect_and_login() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -86,7 +94,7 @@ async fn login_rejected() {
         .await;
 
     assert!(result.is_err(), "login should fail when rejected");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -137,7 +145,7 @@ async fn send_ping() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -182,7 +190,7 @@ async fn send_action_timeout() {
 
     // drop client to close connection
     drop(client);
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -232,7 +240,7 @@ async fn receive_events() {
     assert_eq!(event.event_name(), "FullyBooted");
 
     drop(client);
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -285,7 +293,7 @@ async fn graceful_disconnect() {
         "should be disconnected after disconnect()"
     );
 
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -354,7 +362,7 @@ async fn concurrent_actions() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -424,7 +432,7 @@ async fn md5_challenge_auth() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -489,7 +497,7 @@ async fn plaintext_fallback() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -567,7 +575,7 @@ async fn command_response() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -650,7 +658,7 @@ async fn filtered_subscription() {
     }
 
     drop(client);
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -755,7 +763,7 @@ async fn send_collecting_event_list() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -813,7 +821,7 @@ async fn channel_variables_in_response() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1006,7 +1014,7 @@ async fn connection_state_transitions() {
         "should be disconnected after disconnect"
     );
 
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1074,7 +1082,7 @@ async fn concurrent_stress_50_actions() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1108,7 +1116,7 @@ async fn connection_drop_cancels_pending_actions() {
         "ping should fail when connection is dropped"
     );
 
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1171,7 +1179,7 @@ async fn multiple_subscribers_all_receive() {
     assert_eq!(e3.event_name(), "FullyBooted");
 
     drop(client);
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1247,7 +1255,7 @@ async fn ping_interval_sends_periodic_pings() {
     );
 
     drop(client);
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1287,7 +1295,7 @@ async fn send_on_disconnected_client_returns_error() {
     let result = client.ping().await;
     assert!(result.is_err(), "ping on disconnected client should fail");
 
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1349,7 +1357,7 @@ async fn originate_action_success() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1396,7 +1404,7 @@ async fn originate_action_failure() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1445,7 +1453,7 @@ async fn hangup_action_success() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1494,7 +1502,7 @@ async fn hangup_action_with_cause() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1572,7 +1580,7 @@ async fn send_collecting_status() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1653,7 +1661,7 @@ async fn send_collecting_core_show_channels() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1737,7 +1745,7 @@ async fn send_collecting_queue_status() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1800,7 +1808,7 @@ async fn send_collecting_no_events() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1847,7 +1855,7 @@ async fn action_failed_response_with_message() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1890,7 +1898,7 @@ async fn action_timeout_on_no_response() {
     );
 
     drop(client);
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -1971,7 +1979,7 @@ async fn concurrent_actions_interleaved_responses() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -2034,7 +2042,7 @@ async fn event_bus_continues_during_action() {
     assert_eq!(event.event_name(), "PeerStatus");
 
     drop(client);
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -2088,7 +2096,7 @@ async fn server_closes_during_action() {
         "action should fail when server closes connection"
     );
 
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -2127,7 +2135,7 @@ async fn rapid_disconnect_reconnect_disabled() {
         }
     }
 
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -2174,7 +2182,7 @@ async fn builder_custom_event_capacity() {
     assert_eq!(event.event_name(), "FullyBooted");
 
     drop(client);
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -2218,7 +2226,7 @@ async fn builder_custom_timeout() {
     );
 
     drop(client);
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -2245,7 +2253,7 @@ async fn reconnect_login_failure_gives_up() {
         result.is_err(),
         "build should fail when login is rejected with no retries"
     );
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -2348,7 +2356,7 @@ async fn pending_action_cancelled_on_disconnect() {
         "error should indicate channel closed or timeout: {err}"
     );
 
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -2414,7 +2422,7 @@ async fn events_delivered_during_connected() {
         "subscription should close after client is dropped"
     );
 
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 #[tokio::test]
@@ -2465,7 +2473,7 @@ async fn connection_state_connected_then_disconnected() {
         "should be disconnected after disconnect"
     );
 
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }
 
 // ── call tracker mock tests ───────────────────────────────
@@ -2554,5 +2562,5 @@ async fn call_tracker_via_mock_ami() {
     );
 
     drop(client);
-    let _ = handle.await;
+    assert_server_ok(handle.await);
 }

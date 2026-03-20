@@ -1,17 +1,19 @@
 //! Authentication primitives shared across protocols.
 
+use zeroize::Zeroizing;
+
 /// credentials for connecting to Asterisk
 #[derive(Clone)]
 pub struct Credentials {
     username: String,
-    secret: String,
+    secret: Zeroizing<String>,
 }
 
 impl Credentials {
     pub fn new(username: impl Into<String>, secret: impl Into<String>) -> Self {
         Self {
             username: username.into(),
-            secret: secret.into(),
+            secret: Zeroizing::new(secret.into()),
         }
     }
 
