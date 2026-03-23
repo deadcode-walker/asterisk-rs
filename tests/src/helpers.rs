@@ -3,6 +3,16 @@ pub fn init_tracing() {
     let _ = tracing_subscriber::fmt::try_init();
 }
 
+/// re-raise panics from spawned server tasks so test failures point at the
+/// actual panic location instead of producing misleading messages
+pub fn assert_server_ok(result: Result<(), tokio::task::JoinError>) {
+    if let Err(e) = result {
+        if e.is_panic() {
+            std::panic::resume_unwind(e.into_panic());
+        }
+    }
+}
+
 /// read test config from environment or use defaults
 pub fn ami_host() -> String {
     std::env::var("ASTERISK_AMI_HOST").unwrap_or_else(|_| "127.0.0.1".into())

@@ -4,18 +4,10 @@ use std::time::Duration;
 
 use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_core::config::{ConnectionState, ReconnectPolicy};
-use asterisk_rs_tests::helpers::init_tracing;
+use asterisk_rs_tests::helpers::{assert_server_ok, init_tracing};
 use asterisk_rs_tests::mock::ami_server::{
     get_header, handle_login, handle_login_reject, MockAmiServer,
 };
-
-fn assert_server_ok(result: Result<(), tokio::task::JoinError>) {
-    if let Err(e) = result {
-        if e.is_panic() {
-            std::panic::resume_unwind(e.into_panic());
-        }
-    }
-}
 
 #[tokio::test]
 async fn connect_and_login() {
@@ -953,7 +945,7 @@ async fn reconnect_on_disconnect() {
     assert_eq!(response.get("Ping"), Some("Pong"));
 
     client.disconnect().await.expect("disconnect");
-    let _ = mock_handle.await;
+    assert_server_ok(mock_handle.await);
 }
 
 #[tokio::test]
