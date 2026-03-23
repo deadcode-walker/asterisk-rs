@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- harden credential handling, codec safety, and API consistency
+
+
+### Other
+- apply rustfmt formatting fixes
+
+
 ## [0.1.4](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-v0.1.3...asterisk-rs-v0.1.4) - 2026-03-18
 
 ### Other
