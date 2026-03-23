@@ -4,8 +4,11 @@
 
 use crate::codec::RawAmiMessage;
 use std::sync::atomic::{AtomicU64, Ordering};
+use zeroize::Zeroizing;
 
-/// global action ID counter
+// relaxed is sufficient: fetch_add is an atomic RMW — it cannot return
+// the same value to two threads. no other memory operations need
+// ordering relative to this counter
 static ACTION_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// generate a unique action ID
@@ -45,7 +48,29 @@ pub trait AmiAction {
 /// login with plaintext credentials
 pub struct LoginAction {
     pub username: String,
-    pub secret: String,
+    secret: Zeroizing<String>,
+}
+
+impl LoginAction {
+    pub fn new(username: impl Into<String>, secret: impl Into<String>) -> Self {
+        Self {
+            username: username.into(),
+            secret: Zeroizing::new(secret.into()),
+        }
+    }
+
+    pub fn secret(&self) -> &str {
+        &self.secret
+    }
+}
+
+impl std::fmt::Debug for LoginAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoginAction")
+            .field("username", &self.username)
+            .field("secret", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl AmiAction for LoginAction {
@@ -56,7 +81,7 @@ impl AmiAction for LoginAction {
     fn to_headers(&self) -> Vec<(String, String)> {
         vec![
             ("Username".into(), self.username.clone()),
-            ("Secret".into(), self.secret.clone()),
+            ("Secret".into(), self.secret().to_string()),
         ]
     }
 }

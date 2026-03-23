@@ -446,10 +446,7 @@ fn challenge_action_headers() {
 
 #[test]
 fn login_action_headers() {
-    let action = LoginAction {
-        username: "admin".into(),
-        secret: "pass".into(),
-    };
+    let action = LoginAction::new("admin", "pass");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
     assert_eq!(get_header(&msg, "Action"), Some("Login".into()));
@@ -2574,4 +2571,38 @@ fn to_message_output_and_channel_variables_empty() {
     let (_, msg) = action.to_message();
     assert!(msg.output.is_empty());
     assert!(msg.channel_variables.is_empty());
+}
+
+#[test]
+fn login_action_new_creates_correctly() {
+    let action = LoginAction::new("admin", "secret123");
+    assert_eq!(action.username, "admin");
+    assert_eq!(action.secret(), "secret123");
+}
+
+#[test]
+fn login_action_debug_redacts_secret() {
+    let action = LoginAction::new("admin", "super_secret_password");
+    let debug_output = format!("{:?}", action);
+    assert!(
+        !debug_output.contains("super_secret_password"),
+        "debug output must not contain the secret: {debug_output}"
+    );
+    assert!(
+        debug_output.contains("[REDACTED]"),
+        "debug output should contain [REDACTED]: {debug_output}"
+    );
+    assert!(
+        debug_output.contains("admin"),
+        "debug output should contain username: {debug_output}"
+    );
+}
+
+#[test]
+fn login_action_new_headers_match() {
+    let action = LoginAction::new("testuser", "testpass");
+    let (_, msg) = action.to_message();
+    assert_eq!(get_header(&msg, "Action"), Some("Login".into()));
+    assert_eq!(get_header(&msg, "Username"), Some("testuser".into()));
+    assert_eq!(get_header(&msg, "Secret"), Some("testpass".into()));
 }

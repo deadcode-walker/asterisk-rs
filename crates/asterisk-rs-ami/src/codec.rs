@@ -96,12 +96,10 @@ impl Decoder for AmiCodec {
                 let line = &src[..pos];
                 // validate it looks like an AMI banner
                 if !line.starts_with(b"Asterisk Call Manager") {
+                    let preview = String::from_utf8_lossy(&line[..line.len().min(64)]);
                     return Err(AmiError::Protocol(
                         asterisk_rs_core::error::ProtocolError::MalformedMessage {
-                            details: format!(
-                                "expected AMI banner, got: {}",
-                                String::from_utf8_lossy(line)
-                            ),
+                            details: format!("expected AMI banner, got: {}", preview),
                         },
                     ));
                 }
@@ -288,11 +286,19 @@ fn find_double_crlf(buf: &[u8]) -> Option<usize> {
     buf.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
-/// returns true if the header block contains `Response: Follows`
+/// returns true if the header block contains a `Response: Follows` header,
+/// tolerating optional whitespace after the colon (e.g. `Response:Follows`)
 fn is_follows_response(header_bytes: &[u8]) -> bool {
     header_bytes.split(|&b| b == b'\n').any(|line| {
         let line = line.strip_suffix(b"\r").unwrap_or(line);
-        line.eq_ignore_ascii_case(b"response: follows")
+        if let Some(colon_pos) = line.iter().position(|&b| b == b':') {
+            let key = &line[..colon_pos];
+            let value = &line[colon_pos + 1..];
+            let value_trimmed = value.strip_prefix(b" ").unwrap_or(value);
+            key.eq_ignore_ascii_case(b"response") && value_trimmed.eq_ignore_ascii_case(b"follows")
+        } else {
+            false
+        }
     })
 }
 

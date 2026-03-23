@@ -10,6 +10,7 @@ use asterisk_rs_core::config::{ConnectionState, ReconnectPolicy};
 use asterisk_rs_core::event::EventBus;
 
 use futures_util::{SinkExt, StreamExt};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -151,17 +152,25 @@ async fn connection_task(
                 if let Some(ref mut timer) = ping_timer {
                     timer.tick().await; // consume the immediate first tick
                 }
-                // tracks the receiver for the most recently sent ping
-                let mut pending_pong_rx: Option<tokio::sync::oneshot::Receiver<AmiResponse>> = None;
+                // shared flag set by dispatch_message when a pong arrives;
+                // avoids the try_recv race where select! picks the timer
+                // arm before the reader arm has dispatched a buffered pong
+                let pong_received = Arc::new(AtomicBool::new(false));
+                let mut awaiting_pong = false;
 
                 // process messages until disconnect
                 loop {
+                    // biased: always drain incoming frames before checking
+                    // the ping timer, preventing false "missed pong" when the
+                    // response is buffered but not yet dispatched
                     tokio::select! {
-                        // incoming message from AMI
+                        biased;
+
+                        // incoming message from AMI (highest priority)
                         frame = reader.next() => {
                             match frame {
                                 Some(Ok(raw)) => {
-                                    dispatch_message(raw, &pending, &event_bus).await;
+                                    dispatch_message(raw, &pending, &event_bus, &pong_received).await;
                                 }
                                 Some(Err(e)) => {
                                     tracing::error!(error = %e, "AMI codec error");
@@ -202,31 +211,23 @@ async fn connection_task(
                                 }
                             }
                         }
-                        // keep-alive ping
+                        // keep-alive ping (lowest priority due to biased select)
                         _ = async {
                             match ping_timer.as_mut() {
                                 Some(timer) => timer.tick().await,
                                 None => std::future::pending().await,
                             }
                         } => {
-                            // if we sent a ping and haven't received the pong yet,
-                            // the connection is dead
-                            if let Some(mut rx) = pending_pong_rx.take() {
-                                match rx.try_recv() {
-                                    Ok(_) => {} // pong received in time
-                                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
-                                        tracing::warn!("keep-alive pong not received, treating connection as dead");
-                                        break;
-                                    }
-                                    Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                                        tracing::warn!("keep-alive pong channel closed unexpectedly");
-                                        break;
-                                    }
-                                }
+                            if awaiting_pong && !pong_received.load(Ordering::Acquire) {
+                                tracing::warn!("keep-alive pong not received, treating connection as dead");
+                                break;
                             }
+                            // send a new ping
+                            pong_received.store(false, Ordering::Release);
                             let (action_id, ping_msg) = PingAction.to_message();
-                            let pong_rx = pending.lock().await.register(action_id);
-                            pending_pong_rx = Some(pong_rx);
+                            // register so the response routes through dispatch_message
+                            let _pong_rx = pending.lock().await.register(action_id);
+                            awaiting_pong = true;
                             if let Err(e) = writer.send(ping_msg).await {
                                 tracing::warn!(error = %e, "keep-alive ping failed, reconnecting");
                                 break;
@@ -270,9 +271,16 @@ async fn connection_task(
                         let _ = state_tx.send(ConnectionState::Disconnected);
                         return;
                     }
-                    Some(_) => {
-                        // non-shutdown command while disconnected; it will time out on the
-                        // caller side — nothing we can do until reconnected
+                    Some(ConnectionCommand::SendAction { response_tx, .. }) => {
+                        // fail fast: drop the sender so the caller gets
+                        // ResponseChannelClosed immediately instead of waiting
+                        // for the action timeout to expire
+                        tracing::debug!("dropping action received during reconnect backoff");
+                        drop(response_tx);
+                    }
+                    Some(ConnectionCommand::SendEventGeneratingAction { response_tx, .. }) => {
+                        tracing::debug!("dropping event-list action received during reconnect backoff");
+                        drop(response_tx);
                     }
                 }
             }
@@ -333,10 +341,7 @@ async fn perform_login(
 
     // fall back to plaintext
     tracing::warn!("MD5 challenge auth unavailable, falling back to plaintext login");
-    let login = LoginAction {
-        username: credentials.username().to_string(),
-        secret: credentials.secret().to_string(),
-    };
+    let login = LoginAction::new(credentials.username(), credentials.secret());
     let (_, login_msg) = login.to_message();
     writer.send(login_msg).await?;
 
@@ -381,19 +386,24 @@ async fn dispatch_message(
     raw: RawAmiMessage,
     pending: &Arc<Mutex<PendingActions>>,
     event_bus: &EventBus<AmiEvent>,
+    pong_received: &AtomicBool,
 ) {
     // try as response first
     if let Some(response) = AmiResponse::from_raw(&raw) {
         let mut guard = pending.lock().await;
 
         if guard.contains_event_list(&response.action_id) {
+            // any inbound response proves the connection is alive
+            pong_received.store(true, Ordering::Release);
             guard.deliver_event_list_response(response);
             return;
         }
 
         // regular action response
         let action_id = response.action_id.clone();
-        if !guard.deliver(response) {
+        if guard.deliver(response) {
+            pong_received.store(true, Ordering::Release);
+        } else {
             tracing::debug!(action_id, "received response for unknown action");
         }
         return;
