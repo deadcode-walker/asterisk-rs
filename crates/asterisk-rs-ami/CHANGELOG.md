@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- harden credential handling, codec safety, and API consistency
+
+
 ## [0.4.0](https://github.com/deadcode-walker/asterisk-rs/compare/asterisk-rs-ami-v0.3.0...asterisk-rs-ami-v0.4.0) - 2026-03-18
 
 ### Added
