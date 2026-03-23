@@ -23,6 +23,7 @@ use asterisk_rs_core::event::{EventBus, EventSubscription, FilteredSubscription}
 
 use crate::error::{AriError, Result};
 use crate::event::{AriEvent, AriMessage};
+use crate::ws_proto::WsRestRequest;
 
 /// per-session request id counter — only needs uniqueness within a session,
 /// but a global counter keeps ids distinct across sessions for tracing
@@ -35,22 +36,6 @@ fn next_request_id() -> String {
 
 /// default timeout for REST-over-WS requests
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-
-// --- REST-over-WS protocol types (duplicated from ws_transport to keep modules decoupled) ---
-
-/// REST request envelope sent over websocket
-#[derive(serde::Serialize)]
-struct WsRestRequest {
-    #[serde(rename = "type")]
-    type_field: &'static str,
-    request_id: String,
-    method: String,
-    uri: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    content_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    message_body: Option<String>,
-}
 
 /// internal command sent from request methods to the session background task
 struct SessionCommand {
@@ -474,11 +459,8 @@ fn route_message(
             }
         }
         Err(e) => {
-            tracing::warn!(
-                error = %e,
-                payload = %text,
-                "failed to deserialize ARI message in session"
-            );
+            tracing::warn!(error = %e, "failed to deserialize ARI message in session");
+            tracing::trace!(payload = %text, "raw ARI session message payload");
         }
     }
 }

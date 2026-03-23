@@ -27,8 +27,8 @@ pub struct AriClient {
 impl std::fmt::Debug for AriClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AriClient")
-            .field("base_url", &self.config.base_url)
-            .field("transport_mode", &self.config.transport_mode)
+            .field("base_url", self.config.base_url())
+            .field("transport_mode", &self.config.transport_mode())
             .finish_non_exhaustive()
     }
 }
@@ -41,23 +41,22 @@ impl AriClient {
     pub async fn connect(config: AriConfig) -> Result<Self> {
         let event_bus = EventBus::new(256);
 
-        let transport = match config.transport_mode {
+        let transport = match config.transport_mode() {
             TransportMode::Http => {
                 let http = HttpTransport::new(
-                    config.base_url.as_str(),
-                    config.username.clone(),
-                    config.password.clone(),
-                    config.ws_url.to_string(),
+                    config.base_url().as_str(),
+                    config.credentials().clone(),
+                    config.ws_url().to_string(),
                     event_bus.clone(),
-                    config.reconnect_policy.clone(),
+                    config.reconnect_policy().clone(),
                 )?;
                 TransportInner::Http(http)
             }
             TransportMode::WebSocket => {
                 let ws = WsTransport::spawn(
-                    config.ws_url.to_string(),
+                    config.ws_url().to_string(),
                     event_bus.clone(),
-                    config.reconnect_policy.clone(),
+                    config.reconnect_policy().clone(),
                 );
                 TransportInner::WebSocket(ws)
             }

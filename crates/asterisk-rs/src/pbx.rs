@@ -41,7 +41,14 @@ impl Call {
     /// wait for this channel to reach "Up" state (answered)
     ///
     /// listens for Newstate events with channel_state_desc "Up".
-    /// returns Err if the channel hangs up before answering
+    /// returns Err if the channel hangs up before answering.
+    ///
+    /// the inner subscription is protected by a tokio Mutex so that
+    /// [`Call`] can remain `Clone`. if multiple clones call this
+    /// concurrently, only one acquires the lock at a time — the
+    /// winner consumes events while the others block on the mutex.
+    /// callers that need concurrent waiting should create separate
+    /// subscriptions via [`Pbx::client`].
     pub async fn wait_for_answer(&self, timeout: Duration) -> Result<(), PbxError> {
         let uid = self.unique_id.clone();
 

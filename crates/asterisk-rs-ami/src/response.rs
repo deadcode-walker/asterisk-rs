@@ -156,6 +156,11 @@ impl PendingActions {
         );
     }
 
+    /// check whether an action_id has a pending event list
+    pub fn contains_event_list(&self, action_id: &str) -> bool {
+        self.pending_event_lists.contains_key(action_id)
+    }
+
     /// deliver the initial response for an event-generating action
     ///
     /// returns true if this action_id has a pending event list

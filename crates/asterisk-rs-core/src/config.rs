@@ -107,8 +107,13 @@ fn jitter_factor() -> f64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_nanos();
-    let thread_id = std::thread::current().id();
-    let hash = nanos ^ (format!("{thread_id:?}").len() as u32).wrapping_mul(0x9E3779B9);
+    let thread_id = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::thread::current().id().hash(&mut hasher);
+        hasher.finish() as u32
+    };
+    let hash = nanos ^ thread_id.wrapping_mul(0x9E3779B9);
     let normalized = (hash as f64) / (u32::MAX as f64);
     0.5 + 0.5 * normalized
 }

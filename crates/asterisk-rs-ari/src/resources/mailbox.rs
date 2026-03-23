@@ -1,6 +1,6 @@
 //! mailbox operations.
 
-use crate::client::AriClient;
+use crate::client::{url_encode, AriClient};
 use crate::error::Result;
 
 /// ari mailbox representation
@@ -18,7 +18,9 @@ pub async fn list(client: &AriClient) -> Result<Vec<Mailbox>> {
 
 /// get a specific mailbox
 pub async fn get(client: &AriClient, name: &str) -> Result<Mailbox> {
-    client.get(&format!("/mailboxes/{name}")).await
+    client
+        .get(&format!("/mailboxes/{}", url_encode(name)))
+        .await
 }
 
 /// update a mailbox message count
@@ -33,12 +35,15 @@ pub async fn update(
 ) -> Result<()> {
     client
         .post_empty(&format!(
-            "/mailboxes/{name}?oldMessages={old_messages}&newMessages={new_messages}"
+            "/mailboxes/{}?oldMessages={old_messages}&newMessages={new_messages}",
+            url_encode(name)
         ))
         .await
 }
 
 /// delete a mailbox
 pub async fn delete(client: &AriClient, name: &str) -> Result<()> {
-    client.delete(&format!("/mailboxes/{name}")).await
+    client
+        .delete(&format!("/mailboxes/{}", url_encode(name)))
+        .await
 }

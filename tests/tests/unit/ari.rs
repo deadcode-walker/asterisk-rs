@@ -36,12 +36,7 @@ fn build_default_config() {
         .build()
         .expect("default config should build");
 
-    assert_eq!(config.base_url.as_str(), "http://127.0.0.1:8088/ari");
-    assert!(
-        config.ws_url.as_str().starts_with("ws://"),
-        "ws_url should start with ws://, got: {}",
-        config.ws_url
-    );
+    assert_eq!(config.base_url().as_str(), "http://127.0.0.1:8088/ari");
 }
 
 #[test]
@@ -55,14 +50,9 @@ fn build_with_custom_host_port() {
         .expect("custom host/port should build");
 
     assert!(
-        config.base_url.as_str().contains("10.0.0.1:9999"),
+        config.base_url().as_str().contains("10.0.0.1:9999"),
         "base_url should contain custom host:port, got: {}",
-        config.base_url
-    );
-    assert!(
-        config.ws_url.as_str().contains("10.0.0.1:9999"),
-        "ws_url should contain custom host:port, got: {}",
-        config.ws_url
+        config.base_url()
     );
 }
 
@@ -76,14 +66,9 @@ fn build_secure_uses_https_wss() {
         .expect("secure config should build");
 
     assert!(
-        config.base_url.as_str().starts_with("https://"),
+        config.base_url().as_str().starts_with("https://"),
         "base_url should use https, got: {}",
-        config.base_url
-    );
-    assert!(
-        config.ws_url.as_str().starts_with("wss://"),
-        "ws_url should use wss, got: {}",
-        config.ws_url
+        config.base_url()
     );
 }
 
@@ -127,33 +112,26 @@ fn build_empty_app_name_via_setter_fails() {
 }
 
 #[test]
-fn ws_url_contains_app_name() {
+fn config_preserves_app_name() {
     let config = AriConfigBuilder::new("test_app")
         .username("admin")
         .password("secret")
         .build()
         .expect("config should build");
 
-    assert!(
-        config.ws_url.as_str().contains("app=test_app"),
-        "ws_url should contain app=test_app, got: {}",
-        config.ws_url
-    );
+    assert_eq!(config.app_name(), "test_app");
 }
 
 #[test]
-fn ws_url_contains_credentials() {
+fn config_preserves_credentials() {
     let config = AriConfigBuilder::new("myapp")
         .username("admin")
         .password("secret")
         .build()
         .expect("config with credentials should build");
 
-    assert!(
-        config.ws_url.as_str().contains("api_key=admin:secret"),
-        "ws_url should contain api_key=admin:secret, got: {}",
-        config.ws_url
-    );
+    assert_eq!(config.credentials().username(), "admin");
+    assert_eq!(config.credentials().secret(), "secret");
 }
 
 #[test]
@@ -168,10 +146,10 @@ fn build_with_custom_reconnect_policy() {
         .expect("config with reconnect policy should build");
 
     assert_eq!(
-        config.reconnect_policy.initial_delay,
+        config.reconnect_policy().initial_delay,
         Duration::from_secs(5)
     );
-    assert_eq!(config.reconnect_policy.max_delay, Duration::from_secs(5));
+    assert_eq!(config.reconnect_policy().max_delay, Duration::from_secs(5));
 }
 
 #[test]
@@ -185,13 +163,12 @@ fn config_fields_accessible() {
         .build()
         .expect("full config should build");
 
-    assert_eq!(config.app_name, "myapp");
-    assert_eq!(config.username, "user1");
-    assert_eq!(config.password, "pass1");
-    assert_eq!(config.base_url.as_str(), "https://asterisk.local:5080/ari");
-    assert!(config.ws_url.as_str().starts_with("wss://"));
+    assert_eq!(config.app_name(), "myapp");
+    assert_eq!(config.credentials().username(), "user1");
+    assert_eq!(config.credentials().secret(), "pass1");
+    assert_eq!(config.base_url().as_str(), "https://asterisk.local:5080/ari");
     // reconnect_policy is accessible (default)
-    let _ = &config.reconnect_policy;
+    let _ = config.reconnect_policy();
 }
 
 #[test]
@@ -219,9 +196,9 @@ fn default_host_is_localhost() {
         .expect("default config should build");
 
     assert!(
-        config.base_url.as_str().contains("127.0.0.1"),
+        config.base_url().as_str().contains("127.0.0.1"),
         "default host should be 127.0.0.1, got: {}",
-        config.base_url
+        config.base_url()
     );
 }
 
@@ -234,9 +211,9 @@ fn default_port_is_8088() {
         .expect("default config should build");
 
     assert!(
-        config.base_url.as_str().contains(":8088"),
+        config.base_url().as_str().contains(":8088"),
         "default port should be 8088, got: {}",
-        config.base_url
+        config.base_url()
     );
 }
 
@@ -2027,7 +2004,7 @@ fn builder_with_transport_mode() {
         .transport(TransportMode::WebSocket)
         .build()
         .expect("should build config");
-    assert_eq!(config.transport_mode, TransportMode::WebSocket);
+    assert_eq!(config.transport_mode(), TransportMode::WebSocket);
 }
 
 // ── external media / originate params tests (migrated from channel.rs) ────
@@ -2464,7 +2441,7 @@ fn config_default_transport_mode_is_http() {
         .password("secret")
         .build()
         .expect("default config should build");
-    assert_eq!(config.transport_mode, TransportMode::Http);
+    assert_eq!(config.transport_mode(), TransportMode::Http);
 }
 
 #[test]

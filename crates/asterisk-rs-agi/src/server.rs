@@ -166,11 +166,8 @@ impl<H: AgiHandler> AgiServerBuilder<H> {
     ///
     /// returns the server and a handle that can signal graceful shutdown
     pub async fn build(self) -> Result<(AgiServer<H>, ShutdownHandle)> {
-        let handler = self.handler.ok_or_else(|| {
-            AgiError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "handler is required",
-            ))
+        let handler = self.handler.ok_or_else(|| AgiError::InvalidConfig {
+            details: "handler is required".to_owned(),
         })?;
 
         let listener = TcpListener::bind(&self.bind_addr).await?;

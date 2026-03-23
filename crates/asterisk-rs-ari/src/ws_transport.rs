@@ -20,26 +20,13 @@ use crate::error::{AriError, Result};
 use crate::event::{AriEvent, AriMessage};
 use crate::transport::TransportResponse;
 use crate::util::redact_url;
+use crate::ws_proto::WsRestRequest;
 
 static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn next_request_id() -> String {
     let id = REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("wsreq-{id}")
-}
-
-/// REST request envelope sent over websocket
-#[derive(serde::Serialize)]
-struct WsRestRequest {
-    #[serde(rename = "type")]
-    type_field: &'static str,
-    request_id: String,
-    method: String,
-    uri: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    content_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    message_body: Option<String>,
 }
 
 /// internal command sent from request() to the background task
@@ -324,11 +311,8 @@ fn route_text_message(
             }
         }
         Err(e) => {
-            tracing::warn!(
-                error = %e,
-                payload = %text,
-                "failed to deserialize ARI message"
-            );
+            tracing::warn!(error = %e, "failed to deserialize ARI message");
+            tracing::trace!(payload = %text, "raw ARI message payload");
         }
     }
 }
