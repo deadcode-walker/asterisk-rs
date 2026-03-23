@@ -805,3 +805,85 @@ fn empty_message_skipped() {
         .expect("should skip empty and return real message");
     assert_eq!(msg.get("Event"), Some("Real"));
 }
+
+#[test]
+fn decode_follows_with_space() {
+    let mut codec = AmiCodec::new();
+    let raw = with_banner(
+        "Response: Follows\r\n\
+         ActionID: 1\r\n\
+         line one\r\n\
+         --END COMMAND--\r\n\
+         \r\n",
+    );
+    let mut buf = BytesMut::from(raw.as_str());
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should produce a message");
+    assert_eq!(msg.get("Response"), Some("Follows"));
+    assert_eq!(msg.output, vec!["line one"]);
+}
+
+#[test]
+fn decode_follows_without_space() {
+    let mut codec = AmiCodec::new();
+    let raw = with_banner(
+        "Response:Follows\r\n\
+         ActionID: 1\r\n\
+         line one\r\n\
+         --END COMMAND--\r\n\
+         \r\n",
+    );
+    let mut buf = BytesMut::from(raw.as_str());
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should produce a message");
+    assert_eq!(msg.get("Response"), Some("Follows"));
+    assert_eq!(msg.output, vec!["line one"]);
+}
+
+#[test]
+fn decode_follows_case_insensitive() {
+    let mut codec = AmiCodec::new();
+    let raw = with_banner(
+        "response: follows\r\n\
+         ActionID: 1\r\n\
+         output\r\n\
+         --END COMMAND--\r\n\
+         \r\n",
+    );
+    let mut buf = BytesMut::from(raw.as_str());
+    let msg = codec
+        .decode(&mut buf)
+        .expect("decode should succeed")
+        .expect("should produce a message");
+    assert_eq!(msg.get("response"), Some("follows"));
+    assert_eq!(msg.output, vec!["output"]);
+}
+
+#[test]
+fn banner_error_truncates_long_content() {
+    let mut codec = AmiCodec::new();
+    let long_banner = format!("{}\r\n", "X".repeat(200));
+    let mut buf = BytesMut::from(long_banner.as_str());
+    let err = codec
+        .decode(&mut buf)
+        .expect_err("should reject non-AMI banner");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("expected AMI banner"),
+        "error should mention banner: {msg}"
+    );
+    // the error message should not contain the full 200-char string
+    assert!(
+        !msg.contains(&"X".repeat(200)),
+        "error should truncate long banner content"
+    );
+    // but should contain the truncated version (64 X's)
+    assert!(
+        msg.contains(&"X".repeat(64)),
+        "error should contain truncated banner: {msg}"
+    );
+}
