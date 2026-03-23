@@ -17,3 +17,8 @@ updates:
       github-actions:
         patterns:
           - "*"
+
+  - package-ecosystem: rust
+    directory: /
+    schedule:
+      interval: monthly
