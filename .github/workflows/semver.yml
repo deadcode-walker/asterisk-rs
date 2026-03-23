@@ -8,6 +8,8 @@ jobs:
   semver:
     name: Semver Checks
     runs-on: ubuntu-latest
+    # informational only — release-plz owns version bumps
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:

@@ -25,7 +25,7 @@ jobs:
          - uses: Swatinem/rust-cache@v2
 
          - name: Install mdBook
-           run: cargo install mdbook --no-default-features --features search
+           uses: taiki-e/install-action@mdbook
 
          - name: Build rustdoc
            run: cargo doc --workspace --all-features --no-deps
