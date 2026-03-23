@@ -1144,13 +1144,11 @@ fn max_retries_returns_zero_after_exhausted() {
 
 #[test]
 fn jitter_stays_in_range() {
+    // jitter_factor is in [0.5, 1.5), so 10s base -> [5s, 15s)
     let policy = ReconnectPolicy::exponential(Duration::from_secs(10), Duration::from_secs(60));
     let delay = policy.delay_for_attempt(0);
     assert!(delay >= Duration::from_secs(5), "delay too low: {delay:?}");
-    assert!(
-        delay <= Duration::from_secs(10),
-        "delay too high: {delay:?}"
-    );
+    assert!(delay < Duration::from_secs(15), "delay too high: {delay:?}");
 }
 
 #[test]
@@ -1280,15 +1278,15 @@ fn zero_duration_policy_no_panic() {
 fn jitter_produces_values_in_expected_range() {
     // run multiple times to get some statistical coverage
     let policy = ReconnectPolicy::exponential(Duration::from_secs(100), Duration::from_secs(1000));
-    for _ in 0..20 {
+    for _ in 0..100 {
         let delay = policy.delay_for_attempt(0);
-        // base = 100s, jitter range = [0.5 * 100, 1.0 * 100] = [50, 100]
+        // base = 100s, jitter range = [0.5 * 100, 1.5 * 100) = [50, 150)
         assert!(
             delay >= Duration::from_secs(50),
             "jitter delay too low: {delay:?}"
         );
         assert!(
-            delay <= Duration::from_secs(100),
+            delay < Duration::from_secs(150),
             "jitter delay too high: {delay:?}"
         );
     }
@@ -1622,4 +1620,23 @@ fn reconnect_policy_attempt_at_max_retries_returns_zero() {
 
     // attempt below max_retries returns non-zero
     assert_ne!(policy.delay_for_attempt(2), Duration::ZERO);
+}
+
+// =============================================================================
+// jitter entropy tests
+// =============================================================================
+
+#[test]
+fn jitter_produces_varying_delays() {
+    let policy = ReconnectPolicy::exponential(Duration::from_secs(1), Duration::from_secs(60));
+    let delays: Vec<Duration> = (0..20).map(|_| policy.delay_for_attempt(0)).collect();
+    // with 20 samples from a range of 1000 discrete values, at least 2 should differ
+    let unique = delays
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    assert!(
+        unique > 1,
+        "expected varying jitter values, got {unique} unique out of 20"
+    );
 }

@@ -324,6 +324,14 @@ impl Drop for MediaChannel {
     }
 }
 
+/// whether an event is a critical control event that must not be dropped
+fn is_critical_event(event: &MediaEvent) -> bool {
+    matches!(
+        event,
+        MediaEvent::MediaStart { .. } | MediaEvent::MediaBufferingCompleted { .. }
+    )
+}
+
 /// background task that bridges a websocket stream into typed channels.
 ///
 /// generic over the stream type so it works for both outbound
@@ -348,14 +356,20 @@ async fn media_loop<S>(
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<MediaEvent>(&text) {
                             Ok(event) => {
-                                match event_tx.try_send(event) {
-                                    Ok(()) => {}
-                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                        tracing::warn!("media event channel full, dropping event");
-                                    }
-                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                        // receiver dropped
+                                if is_critical_event(&event) {
+                                    // critical control events must not be dropped
+                                    if event_tx.send(event).await.is_err() {
                                         return;
+                                    }
+                                } else {
+                                    match event_tx.try_send(event) {
+                                        Ok(()) => {}
+                                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                            tracing::warn!("media event channel full, dropping event");
+                                        }
+                                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                            return;
+                                        }
                                     }
                                 }
                             }
