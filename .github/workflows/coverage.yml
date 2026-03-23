@@ -18,7 +18,7 @@ jobs:
          - uses: Swatinem/rust-cache@v2
          - uses: taiki-e/install-action@cargo-llvm-cov
          - name: Generate coverage
-           run: cargo llvm-cov --workspace --all-features --exclude asterisk-rs-tests --lcov --output-path lcov.info
+           run: cargo llvm-cov --workspace --all-features --exclude asterisk-rs-tests --fail-under-lines 60 --lcov --output-path lcov.info
          - uses: codecov/codecov-action@v5
            with:
               files: lcov.info
