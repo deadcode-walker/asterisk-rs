@@ -100,20 +100,18 @@ impl std::fmt::Display for ConnectionState {
     }
 }
 
-/// jitter factor between 0.5 and 1.0 using system time for entropy
+/// jitter factor in [0.5, 1.5) using OS-seeded entropy via RandomState
 fn jitter_factor() -> f64 {
-    // mix system time nanos with thread id for per-instance variation
+    use std::hash::{BuildHasher, Hasher};
+
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos();
-    let thread_id = {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        std::thread::current().id().hash(&mut hasher);
-        hasher.finish() as u32
-    };
-    let hash = nanos ^ thread_id.wrapping_mul(0x9E3779B9);
-    let normalized = (hash as f64) / (u32::MAX as f64);
-    0.5 + 0.5 * normalized
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u32(nanos);
+    let hash = hasher.finish();
+
+    0.5 + (hash % 1000) as f64 / 1000.0
 }

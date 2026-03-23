@@ -1,6 +1,8 @@
 //! call correlation engine — tracks AMI events by UniqueID into call lifecycle objects.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::{mpsc, watch};
@@ -47,6 +49,7 @@ struct ActiveCall {
 pub struct CallTracker {
     shutdown_tx: watch::Sender<bool>,
     task_handle: tokio::task::JoinHandle<()>,
+    dropped_count: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for CallTracker {
@@ -60,20 +63,28 @@ impl CallTracker {
     pub fn new(subscription: EventSubscription<AmiEvent>) -> (Self, mpsc::Receiver<CompletedCall>) {
         let (completed_tx, completed_rx) = mpsc::channel(256);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let dropped_count = Arc::new(AtomicU64::new(0));
 
         let task_handle = tokio::spawn(track_loop(
             subscription,
             completed_tx,
             shutdown_rx,
             DEFAULT_CALL_TTL,
+            Arc::clone(&dropped_count),
         ));
 
         let tracker = Self {
             shutdown_tx,
             task_handle,
+            dropped_count,
         };
 
         (tracker, completed_rx)
+    }
+
+    /// number of completed calls dropped because the receiver channel was full or closed
+    pub fn dropped_count(&self) -> u64 {
+        self.dropped_count.load(Ordering::Relaxed)
     }
 
     /// stop the background tracking task
@@ -96,6 +107,7 @@ async fn track_loop(
     completed_tx: mpsc::Sender<CompletedCall>,
     mut shutdown_rx: watch::Receiver<bool>,
     ttl: Duration,
+    dropped_count: Arc<AtomicU64>,
 ) {
     let mut active: HashMap<String, ActiveCall> = HashMap::new();
 
@@ -103,8 +115,8 @@ async fn track_loop(
         tokio::select! {
             event = subscription.recv() => {
                 let Some(event) = event else { break };
-                evict_stale(&mut active, &completed_tx, ttl);
-                handle_event(&mut active, &completed_tx, event);
+                evict_stale(&mut active, &completed_tx, ttl, &dropped_count);
+                handle_event(&mut active, &completed_tx, event, &dropped_count);
             }
             _ = shutdown_rx.changed() => {
                 break;
@@ -117,6 +129,7 @@ fn handle_event(
     active: &mut HashMap<String, ActiveCall>,
     completed_tx: &mpsc::Sender<CompletedCall>,
     event: AmiEvent,
+    dropped_count: &AtomicU64,
 ) {
     // handle new channel creation
     if let AmiEvent::NewChannel {
@@ -176,6 +189,7 @@ fn handle_event(
             };
             // receiver may have been dropped or channel full — drop rather than block the tracker
             if completed_tx.try_send(completed).is_err() {
+                dropped_count.fetch_add(1, Ordering::Relaxed);
                 tracing::warn!("completed_tx full or closed, dropping completed call");
             }
         }
@@ -399,6 +413,7 @@ fn evict_stale(
     active: &mut HashMap<String, ActiveCall>,
     completed_tx: &mpsc::Sender<CompletedCall>,
     ttl: Duration,
+    dropped_count: &AtomicU64,
 ) {
     let now = Instant::now();
     active.retain(|_, call| {
@@ -417,6 +432,7 @@ fn evict_stale(
             events: std::mem::take(&mut call.events),
         };
         if completed_tx.try_send(completed).is_err() {
+            dropped_count.fetch_add(1, Ordering::Relaxed);
             tracing::warn!(unique_id = %call.unique_id, "completed_tx full, dropping stale evicted call");
         }
         false

@@ -256,3 +256,14 @@ async fn test_tracker_shutdown_stops_processing() {
         "no CompletedCall should be produced after shutdown"
     );
 }
+
+#[tokio::test]
+async fn test_tracker_dropped_count_starts_at_zero() {
+    let bus = EventBus::<AmiEvent>::new(64);
+    let sub = bus.subscribe();
+    let (tracker, _rx) = CallTracker::new(sub);
+
+    assert_eq!(tracker.dropped_count(), 0);
+
+    tracker.shutdown();
+}
