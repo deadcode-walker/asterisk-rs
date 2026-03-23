@@ -63,9 +63,9 @@ impl AgiResponse {
 
         // extract optional parenthesized data
         let (data, remainder) = if let Some(start) = remainder.find('(') {
-            if let Some(end) = remainder[start..].find(')') {
-                let data_str = &remainder[start + 1..start + end];
-                let after = remainder[start + end + 1..].trim();
+            if let Some(end) = remainder.rfind(')') {
+                let data_str = &remainder[start + 1..end];
+                let after = remainder[end + 1..].trim();
                 (Some(data_str.to_owned()), after)
             } else {
                 (None, remainder)
