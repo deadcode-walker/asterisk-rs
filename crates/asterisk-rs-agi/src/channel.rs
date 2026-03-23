@@ -50,13 +50,13 @@ impl AgiChannel {
     ///
     /// the command should already be formatted with a trailing newline.
     pub async fn send_command(&mut self, command: &str) -> Result<AgiResponse> {
+        if self.hung_up {
+            return Err(AgiError::ChannelHungUp);
+        }
         match self.state {
             ChannelState::InFlight => return Err(AgiError::CommandInFlight),
             ChannelState::Poisoned => return Err(AgiError::ChannelPoisoned),
             ChannelState::Ready => {}
-        }
-        if self.hung_up {
-            return Err(AgiError::ChannelHungUp);
         }
 
         // mark in-flight before write so that a cancellation between write and
@@ -83,7 +83,7 @@ impl AgiChannel {
 
         if bytes_read == 0 {
             self.hung_up = true;
-            self.state = ChannelState::Ready;
+            self.state = ChannelState::Poisoned;
             return Err(AgiError::ChannelHungUp);
         }
 
@@ -103,7 +103,7 @@ impl AgiChannel {
                 };
                 if n == 0 {
                     self.hung_up = true;
-                    self.state = ChannelState::Ready;
+                    self.state = ChannelState::Poisoned;
                     return Err(AgiError::ChannelHungUp);
                 }
                 let trimmed = next.trim();
@@ -133,7 +133,7 @@ impl AgiChannel {
         // 511 means the channel is dead
         if response.code == 511 {
             self.hung_up = true;
-            self.state = ChannelState::Ready;
+            self.state = ChannelState::Poisoned;
             return Err(AgiError::ChannelHungUp);
         }
 

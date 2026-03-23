@@ -1094,3 +1094,42 @@ async fn channel_send_command_on_511_response_sets_hung_up() {
         "expected ChannelHungUp, got {err:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// backslash escaping in format_command
+// ---------------------------------------------------------------------------
+
+#[test]
+fn command_format_escapes_backslash_in_quoted_arg() {
+    // arg contains both backslash and quote — both must be escaped
+    let cmd = command::format_command(command::EXEC, &["a\\\"b"]).expect("valid command");
+    assert_eq!(cmd, "EXEC \"a\\\\\\\"b\"\n");
+}
+
+#[test]
+fn command_format_backslash_in_unquoted_arg() {
+    // backslash in an arg without spaces or quotes passes through unquoted
+    let cmd = command::format_command(command::SET_VARIABLE, &["path\\to", "val"])
+        .expect("valid command");
+    assert_eq!(cmd, "SET VARIABLE path\\to val\n");
+}
+
+// ---------------------------------------------------------------------------
+// nested parentheses in response parsing
+// ---------------------------------------------------------------------------
+
+#[test]
+fn response_parse_nested_parentheses() {
+    let resp = AgiResponse::parse("200 result=1 (outer(inner))").expect("should parse");
+    assert_eq!(resp.code, 200);
+    assert_eq!(resp.result, 1);
+    assert_eq!(resp.data.as_deref(), Some("outer(inner)"));
+}
+
+#[test]
+fn response_parse_simple_parentheses_still_works() {
+    let resp = AgiResponse::parse("200 result=1 (hello)").expect("should parse");
+    assert_eq!(resp.code, 200);
+    assert_eq!(resp.result, 1);
+    assert_eq!(resp.data.as_deref(), Some("hello"));
+}

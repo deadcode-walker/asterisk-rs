@@ -82,6 +82,9 @@ pub fn format_command(name: &str, args: &[&str]) -> Result<String> {
         if arg.is_empty() || arg.contains(' ') || arg.contains('"') {
             cmd.push('"');
             for ch in arg.chars() {
+                if ch == '\\' {
+                    cmd.push('\\');
+                }
                 if ch == '"' {
                     cmd.push('\\');
                 }

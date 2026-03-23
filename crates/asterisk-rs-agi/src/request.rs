@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use tokio::io::AsyncBufReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 
 /// parsed AGI request environment sent by asterisk on connection
 #[derive(Debug, Clone)]
@@ -22,15 +22,17 @@ impl AgiRequest {
 
         loop {
             line.clear();
-            let bytes_read = reader.read_line(&mut line).await?;
+            // limit bytes read per line to prevent OOM from a malicious client
+            // sending an unbounded line without a newline
+            let bytes_read = (&mut *reader).take(8193).read_line(&mut line).await?;
 
             // eof or blank line terminates the environment block
             if bytes_read == 0 || line.trim().is_empty() {
                 break;
             }
 
-            // guard against maliciously large lines exhausting memory
-            if line.len() > 8192 {
+            // reject lines that hit the byte limit without a newline
+            if line.len() >= 8193 && !line.ends_with('\n') {
                 return Err(crate::error::AgiError::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "agi prelude line exceeds 8192 bytes",

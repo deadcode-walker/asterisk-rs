@@ -4,6 +4,7 @@ use std::time::Duration;
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 use tokio::sync::{watch, Semaphore};
+use tokio::task::JoinHandle;
 
 use crate::channel::AgiChannel;
 use crate::error::{AgiError, Result};
@@ -43,7 +44,7 @@ impl<H: AgiHandler> AgiServer<H> {
     /// create a new builder for configuring the server
     pub fn builder() -> AgiServerBuilder<H> {
         AgiServerBuilder {
-            bind_addr: "0.0.0.0:4573".to_owned(),
+            bind_addr: "127.0.0.1:4573".to_owned(),
             handler: None,
             max_connections: None,
         }
@@ -54,6 +55,7 @@ impl<H: AgiHandler> AgiServer<H> {
     /// runs until shutdown is signaled or an unrecoverable error occurs
     pub async fn run(mut self) -> Result<()> {
         let semaphore = self.max_connections.map(|n| Arc::new(Semaphore::new(n)));
+        let mut handles: Vec<JoinHandle<()>> = Vec::new();
 
         loop {
             tokio::select! {
@@ -96,14 +98,17 @@ impl<H: AgiHandler> AgiServer<H> {
                         None
                     };
 
-                    tokio::spawn(async move {
+                    // prune completed handles to prevent unbounded growth
+                    handles.retain(|h| !h.is_finished());
+
+                    handles.push(tokio::spawn(async move {
                         // permit is held until the task completes, then dropped automatically
                         let _permit = permit;
 
                         if let Err(err) = handle_connection(handler, stream).await {
                             tracing::warn!(%peer, %err, "AGI session error");
                         }
-                    });
+                    }));
                 }
                 result = self.shutdown_rx.changed() => {
                     // Err means all senders were dropped — treat as shutdown signal
