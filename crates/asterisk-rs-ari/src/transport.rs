@@ -2,11 +2,11 @@
 
 use std::time::Duration;
 
-use asterisk_rs_core::auth::Credentials;
 use crate::error::{AriError, Result};
 use crate::event::AriMessage;
 use crate::websocket::WsEventListener;
 use crate::ws_transport::WsTransport;
+use asterisk_rs_core::auth::Credentials;
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_core::event::EventBus;
 
