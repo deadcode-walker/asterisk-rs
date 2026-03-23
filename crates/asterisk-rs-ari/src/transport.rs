@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use asterisk_rs_core::auth::Credentials;
 use crate::error::{AriError, Result};
 use crate::event::AriMessage;
 use crate::websocket::WsEventListener;
@@ -48,16 +49,14 @@ impl TransportInner {
 pub(crate) struct HttpTransport {
     client: reqwest::Client,
     base_url: String,
-    username: String,
-    password: String,
+    credentials: Credentials,
     ws_listener: WsEventListener,
 }
 
 impl HttpTransport {
     pub fn new(
         base_url: &str,
-        username: String,
-        password: String,
+        credentials: Credentials,
         ws_url: String,
         event_bus: EventBus<AriMessage>,
         reconnect: ReconnectPolicy,
@@ -73,8 +72,7 @@ impl HttpTransport {
         Ok(Self {
             client,
             base_url: base_url.trim_end_matches('/').to_owned(),
-            username,
-            password,
+            credentials,
             ws_listener,
         })
     }
@@ -91,7 +89,7 @@ impl HttpTransport {
         let mut req = self
             .client
             .request(http_method, &url)
-            .basic_auth(&self.username, Some(&self.password));
+            .basic_auth(self.credentials.username(), Some(self.credentials.secret()));
 
         if let Some(json_body) = body {
             req = req

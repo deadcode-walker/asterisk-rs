@@ -1574,7 +1574,7 @@ async fn mailbox_get() {
 
     let body = r#"{"name":"2000@default","old_messages":0,"new_messages":1}"#;
     let server = MockAriServerBuilder::new()
-        .route("GET", "/ari/mailboxes/2000@default", 200, body)
+        .route("GET", "/ari/mailboxes/2000%40default", 200, body)
         .start()
         .await;
 
@@ -1597,7 +1597,7 @@ async fn mailbox_update() {
     let server = MockAriServerBuilder::new()
         .route(
             "POST",
-            "/ari/mailboxes/1000@default?oldMessages=3&newMessages=7",
+            "/ari/mailboxes/1000%40default?oldMessages=3&newMessages=7",
             204,
             "",
         )
@@ -1618,7 +1618,7 @@ async fn mailbox_delete() {
     init_tracing();
 
     let server = MockAriServerBuilder::new()
-        .route("DELETE", "/ari/mailboxes/1000@default", 204, "")
+        .route("DELETE", "/ari/mailboxes/1000%40default", 204, "")
         .start()
         .await;
 
@@ -1664,7 +1664,7 @@ async fn device_state_get() {
 
     let body = r#"{"name":"Stasis:phone2","state":"INUSE"}"#;
     let server = MockAriServerBuilder::new()
-        .route("GET", "/ari/deviceStates/Stasis:phone2", 200, body)
+        .route("GET", "/ari/deviceStates/Stasis%3Aphone2", 200, body)
         .start()
         .await;
 
@@ -1687,7 +1687,7 @@ async fn device_state_update() {
     let server = MockAriServerBuilder::new()
         .route(
             "POST",
-            "/ari/deviceStates/Stasis:phone1?deviceState=INUSE",
+            "/ari/deviceStates/Stasis%3Aphone1?deviceState=INUSE",
             204,
             "",
         )
@@ -1708,7 +1708,7 @@ async fn device_state_delete() {
     init_tracing();
 
     let server = MockAriServerBuilder::new()
-        .route("DELETE", "/ari/deviceStates/Stasis:phone1", 204, "")
+        .route("DELETE", "/ari/deviceStates/Stasis%3Aphone1", 204, "")
         .start()
         .await;
 

@@ -27,14 +27,15 @@
 pub mod action;
 pub mod client;
 pub mod codec;
-pub mod connection;
+pub(crate) mod connection;
 pub mod error;
 pub mod event;
 pub mod response;
 pub mod tracker;
 
 pub use client::{AmiClient, AmiClientBuilder};
+pub use codec::{AmiCodec, RawAmiMessage};
 pub use error::AmiError;
 pub use event::AmiEvent;
-pub use response::EventListResponse;
+pub use response::{AmiResponse, EventListResponse};
 pub use tracker::{CallTracker, CompletedCall};

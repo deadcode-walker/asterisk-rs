@@ -1,6 +1,6 @@
 //! sound query operations (read-only).
 
-use crate::client::AriClient;
+use crate::client::{url_encode, AriClient};
 use crate::error::Result;
 
 /// format information for a sound
@@ -27,5 +27,7 @@ pub async fn list(client: &AriClient) -> Result<Vec<Sound>> {
 
 /// get a specific sound
 pub async fn get(client: &AriClient, sound_id: &str) -> Result<Sound> {
-    client.get(&format!("/sounds/{sound_id}")).await
+    client
+        .get(&format!("/sounds/{}", url_encode(sound_id)))
+        .await
 }

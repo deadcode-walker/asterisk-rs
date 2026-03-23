@@ -1,6 +1,6 @@
 //! recording control operations — live and stored.
 
-use crate::client::AriClient;
+use crate::client::{url_encode, AriClient};
 use crate::error::Result;
 use crate::event::LiveRecording;
 
@@ -33,42 +33,57 @@ impl RecordingHandle {
     /// stop the live recording
     pub async fn stop(&self) -> Result<()> {
         self.client
-            .post_empty(&format!("/recordings/live/{}/stop", self.name))
+            .post_empty(&format!(
+                "/recordings/live/{}/stop",
+                url_encode(&self.name)
+            ))
             .await
     }
 
     /// pause the live recording
     pub async fn pause(&self) -> Result<()> {
         self.client
-            .post_empty(&format!("/recordings/live/{}/pause", self.name))
+            .post_empty(&format!(
+                "/recordings/live/{}/pause",
+                url_encode(&self.name)
+            ))
             .await
     }
 
     /// unpause the live recording
     pub async fn unpause(&self) -> Result<()> {
         self.client
-            .delete(&format!("/recordings/live/{}/pause", self.name))
+            .delete(&format!(
+                "/recordings/live/{}/pause",
+                url_encode(&self.name)
+            ))
             .await
     }
 
     /// mute the live recording
     pub async fn mute(&self) -> Result<()> {
         self.client
-            .post_empty(&format!("/recordings/live/{}/mute", self.name))
+            .post_empty(&format!(
+                "/recordings/live/{}/mute",
+                url_encode(&self.name)
+            ))
             .await
     }
 
     /// unmute the live recording
     pub async fn unmute(&self) -> Result<()> {
         self.client
-            .delete(&format!("/recordings/live/{}/mute", self.name))
+            .delete(&format!(
+                "/recordings/live/{}/mute",
+                url_encode(&self.name)
+            ))
             .await
     }
 
     /// get current live recording state
     pub async fn get(&self) -> Result<LiveRecording> {
         self.client
-            .get(&format!("/recordings/live/{}", self.name))
+            .get(&format!("/recordings/live/{}", url_encode(&self.name)))
             .await
     }
 }

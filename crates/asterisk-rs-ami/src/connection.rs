@@ -48,6 +48,7 @@ impl ConnectionManager {
         event_bus: EventBus<AmiEvent>,
         reconnect_policy: ReconnectPolicy,
         ping_interval: Option<Duration>,
+        require_challenge: bool,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::channel(256);
         let (state_tx, state_rx) = watch::channel(ConnectionState::Disconnected);
@@ -60,6 +61,7 @@ impl ConnectionManager {
             state_tx,
             reconnect_policy,
             ping_interval,
+            require_challenge,
         ));
 
         Self {
@@ -96,6 +98,7 @@ impl ConnectionManager {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn connection_task(
     address: String,
     credentials: Credentials,
@@ -104,6 +107,7 @@ async fn connection_task(
     state_tx: watch::Sender<ConnectionState>,
     reconnect_policy: ReconnectPolicy,
     ping_interval: Option<Duration>,
+    require_challenge: bool,
 ) {
     let pending = Arc::new(Mutex::new(PendingActions::new()));
     let mut attempt: u32 = 0;
@@ -124,7 +128,7 @@ async fn connection_task(
                 // 30s covers the full login exchange (challenge + auth RTTs)
                 let login_result = tokio::time::timeout(
                     Duration::from_secs(30),
-                    perform_login(&credentials, &mut reader, &mut writer),
+                    perform_login(&credentials, &mut reader, &mut writer, require_challenge),
                 )
                 .await;
                 match login_result {
@@ -279,11 +283,14 @@ async fn connection_task(
 
 /// perform the AMI login sequence over the raw framed connection
 ///
-/// tries MD5 challenge-response first, falls back to plaintext
+/// tries MD5 challenge-response first.  when `require_challenge` is
+/// false, falls back to plaintext login (only safe over trusted
+/// loopback connections).
 async fn perform_login(
     credentials: &Credentials,
     reader: &mut FramedRead<tokio::net::tcp::OwnedReadHalf, AmiCodec>,
     writer: &mut FramedWrite<tokio::net::tcp::OwnedWriteHalf, AmiCodec>,
+    require_challenge: bool,
 ) -> Result<()> {
     // try MD5 challenge-response first
     let (_, challenge_msg) = ChallengeAction.to_message();
@@ -313,7 +320,19 @@ async fn perform_login(
         }
     }
 
+    // challenge auth did not produce a Challenge field
+    if require_challenge {
+        return Err(AmiError::Auth(
+            asterisk_rs_core::error::AuthError::Rejected {
+                reason: "server did not provide MD5 challenge; plaintext fallback is disabled \
+                         (set require_challenge(false) for trusted loopback connections)"
+                    .to_owned(),
+            },
+        ));
+    }
+
     // fall back to plaintext
+    tracing::warn!("MD5 challenge auth unavailable, falling back to plaintext login");
     let login = LoginAction {
         username: credentials.username().to_string(),
         secret: credentials.secret().to_string(),
@@ -367,8 +386,8 @@ async fn dispatch_message(
     if let Some(response) = AmiResponse::from_raw(&raw) {
         let mut guard = pending.lock().await;
 
-        // check if this is for an event-generating action
-        if guard.deliver_event_list_response(response.clone()) {
+        if guard.contains_event_list(&response.action_id) {
+            guard.deliver_event_list_response(response);
             return;
         }
 

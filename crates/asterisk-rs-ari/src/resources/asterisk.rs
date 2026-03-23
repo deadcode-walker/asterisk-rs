@@ -81,28 +81,28 @@ pub async fn list_modules(client: &AriClient) -> Result<Vec<Module>> {
 /// get details for a specific module
 pub async fn get_module(client: &AriClient, module_name: &str) -> Result<Module> {
     client
-        .get(&format!("/asterisk/modules/{module_name}"))
+        .get(&format!("/asterisk/modules/{}", url_encode(module_name)))
         .await
 }
 
 /// load a module
 pub async fn load_module(client: &AriClient, module_name: &str) -> Result<()> {
     client
-        .post_empty(&format!("/asterisk/modules/{module_name}"))
+        .post_empty(&format!("/asterisk/modules/{}", url_encode(module_name)))
         .await
 }
 
 /// unload a module
 pub async fn unload_module(client: &AriClient, module_name: &str) -> Result<()> {
     client
-        .delete(&format!("/asterisk/modules/{module_name}"))
+        .delete(&format!("/asterisk/modules/{}", url_encode(module_name)))
         .await
 }
 
 /// reload a module
 pub async fn reload_module(client: &AriClient, module_name: &str) -> Result<()> {
     client
-        .put_empty(&format!("/asterisk/modules/{module_name}"))
+        .put_empty(&format!("/asterisk/modules/{}", url_encode(module_name)))
         .await
 }
 

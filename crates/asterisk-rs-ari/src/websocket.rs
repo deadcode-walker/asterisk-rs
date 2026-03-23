@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_core::event::EventBus;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use tokio::sync::watch;
 
 use crate::event::AriMessage;
@@ -124,7 +124,7 @@ async fn read_messages(
     event_bus: &EventBus<AriMessage>,
     shutdown_rx: &mut watch::Receiver<bool>,
 ) -> std::result::Result<(), bool> {
-    let (_write, mut read) = ws_stream.split();
+    let (mut write, mut read) = ws_stream.split();
 
     loop {
         tokio::select! {
@@ -145,6 +145,9 @@ async fn read_messages(
             }
             _ = shutdown_rx.changed() => {
                 if *shutdown_rx.borrow() {
+                    if let Err(e) = write.send(tokio_tungstenite::tungstenite::Message::Close(None)).await {
+                        tracing::debug!(error = %e, "failed to send websocket close frame");
+                    }
                     return Err(true);
                 }
             }
@@ -166,7 +169,8 @@ fn handle_message(
                 event_bus.publish(event);
             }
             Err(e) => {
-                tracing::warn!(error = %e, payload = %text, "failed to deserialize ARI event");
+                tracing::warn!(error = %e, "failed to deserialize ARI event");
+                tracing::trace!(payload = %text, "raw ARI event payload");
             }
         },
         Message::Close(_) => {

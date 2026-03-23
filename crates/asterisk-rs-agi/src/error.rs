@@ -27,6 +27,9 @@ pub enum AgiError {
 
     #[error("protocol error: {0}")]
     Protocol(#[from] ProtocolError),
+
+    #[error("invalid configuration: {details}")]
+    InvalidConfig { details: String },
 }
 
 pub type Result<T> = std::result::Result<T, AgiError>;

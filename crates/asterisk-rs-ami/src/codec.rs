@@ -119,98 +119,101 @@ impl Decoder for AmiCodec {
         // we must not accept a \r\n\r\n that appears before the end marker.
         const END_MARKER: &[u8] = b"--END COMMAND--";
 
-        let first_blank = match find_double_crlf(src) {
-            Some(pos) => pos,
-            None => return Ok(None),
-        };
-
-        // peek: does this frame contain a Follows header?
-        // if so, the real terminator is \r\n\r\n *after* --END COMMAND--
-        let frame_end = if is_follows_response(&src[..first_blank]) {
-            // the marker may appear after the first \r\n\r\n because the
-            // output body can contain blank lines in some edge cases.
-            // scan the entire buffer for --END COMMAND--\r\n\r\n
-            match find_subsequence(src, END_MARKER) {
-                Some(marker_pos) => {
-                    let after_marker = marker_pos + END_MARKER.len();
-                    // expect \r\n after the marker (Asterisk always sends it)
-                    if src.len() < after_marker + 2 {
-                        return Ok(None);
-                    }
-                    // then look for \r\n\r\n immediately after the marker line
-                    if &src[after_marker..after_marker + 2] != b"\r\n" {
-                        return Ok(None);
-                    }
-                    // frame ends after marker + \r\n
-                    after_marker + 2
-                }
+        // loop to skip empty frames instead of recursing
+        loop {
+            let first_blank = match find_double_crlf(src) {
+                Some(pos) => pos,
                 None => return Ok(None),
-            }
-        } else {
-            // regular message: frame ends at first \r\n\r\n + 4
-            first_blank + 4
-        };
+            };
 
-        // size check on the individual message, not the whole buffer
-        if frame_end > MAX_MESSAGE_SIZE {
-            return Err(AmiError::Protocol(
-                asterisk_rs_core::error::ProtocolError::MalformedMessage {
-                    details: format!("message exceeds {} byte limit", MAX_MESSAGE_SIZE),
-                },
-            ));
-        }
-
-        // parse all lines in the frame: key:value pairs go to headers,
-        // everything else goes to output (command body for Response: Follows)
-        let message_bytes = &src[..frame_end];
-        let mut headers = Vec::new();
-        let mut output = Vec::new();
-        let mut channel_variables = HashMap::new();
-
-        for line in message_bytes.split(|&b| b == b'\n') {
-            let line = line.strip_suffix(b"\r").unwrap_or(line);
-            if line.is_empty() {
-                continue;
-            }
-            if line == END_MARKER {
-                continue;
-            }
-            if let Some(colon_pos) = line.iter().position(|&b| b == b':') {
-                let key = String::from_utf8_lossy(&line[..colon_pos])
-                    .trim()
-                    .to_string();
-                let value_start = colon_pos + 1;
-                let value = if value_start < line.len() {
-                    String::from_utf8_lossy(&line[value_start..])
-                        .trim()
-                        .to_string()
-                } else {
-                    String::new()
-                };
-                if key.starts_with("ChanVariable(") && key.ends_with(')') {
-                    let var_name = &key["ChanVariable(".len()..key.len() - 1];
-                    channel_variables.insert(var_name.to_string(), value);
-                } else {
-                    headers.push((key, value));
+            // peek: does this frame contain a Follows header?
+            // if so, the real terminator is \r\n\r\n *after* --END COMMAND--
+            let frame_end = if is_follows_response(&src[..first_blank]) {
+                // the marker may appear after the first \r\n\r\n because the
+                // output body can contain blank lines in some edge cases.
+                // scan the entire buffer for --END COMMAND--\r\n\r\n
+                match find_subsequence(src, END_MARKER) {
+                    Some(marker_pos) => {
+                        let after_marker = marker_pos + END_MARKER.len();
+                        // expect \r\n after the marker (Asterisk always sends it)
+                        if src.len() < after_marker + 2 {
+                            return Ok(None);
+                        }
+                        // then look for \r\n\r\n immediately after the marker line
+                        if &src[after_marker..after_marker + 2] != b"\r\n" {
+                            return Ok(None);
+                        }
+                        // frame ends after marker + \r\n
+                        after_marker + 2
+                    }
+                    None => return Ok(None),
                 }
             } else {
-                // non-key-value line: command output
-                output.push(String::from_utf8_lossy(line).into_owned());
+                // regular message: frame ends at first \r\n\r\n + 4
+                first_blank + 4
+            };
+
+            // size check on the individual message, not the whole buffer
+            if frame_end > MAX_MESSAGE_SIZE {
+                return Err(AmiError::Protocol(
+                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                        details: format!("message exceeds {} byte limit", MAX_MESSAGE_SIZE),
+                    },
+                ));
             }
+
+            // parse all lines in the frame: key:value pairs go to headers,
+            // everything else goes to output (command body for Response: Follows)
+            let message_bytes = &src[..frame_end];
+            let mut headers = Vec::new();
+            let mut output = Vec::new();
+            let mut channel_variables = HashMap::new();
+
+            for line in message_bytes.split(|&b| b == b'\n') {
+                let line = line.strip_suffix(b"\r").unwrap_or(line);
+                if line.is_empty() {
+                    continue;
+                }
+                if line == END_MARKER {
+                    continue;
+                }
+                if let Some(colon_pos) = line.iter().position(|&b| b == b':') {
+                    let key = String::from_utf8_lossy(&line[..colon_pos])
+                        .trim()
+                        .to_string();
+                    let value_start = colon_pos + 1;
+                    let value = if value_start < line.len() {
+                        String::from_utf8_lossy(&line[value_start..])
+                            .trim()
+                            .to_string()
+                    } else {
+                        String::new()
+                    };
+                    if key.starts_with("ChanVariable(") && key.ends_with(')') {
+                        let var_name = &key["ChanVariable(".len()..key.len() - 1];
+                        channel_variables.insert(var_name.to_string(), value);
+                    } else {
+                        headers.push((key, value));
+                    }
+                } else {
+                    // non-key-value line: command output
+                    output.push(String::from_utf8_lossy(line).into_owned());
+                }
+            }
+
+            src.advance(frame_end);
+
+            if headers.is_empty() {
+                // empty frame, skip and try next
+                continue;
+            }
+
+            return Ok(Some(RawAmiMessage {
+                headers,
+                output,
+                channel_variables,
+            }));
         }
-
-        src.advance(frame_end);
-
-        if headers.is_empty() {
-            // empty message, try next
-            return self.decode(src);
-        }
-
-        Ok(Some(RawAmiMessage {
-            headers,
-            output,
-            channel_variables,
-        }))
     }
 }
 

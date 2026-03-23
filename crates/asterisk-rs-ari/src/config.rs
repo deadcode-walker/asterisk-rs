@@ -1,5 +1,6 @@
 //! ARI client configuration and builder.
 
+use asterisk_rs_core::auth::Credentials;
 use asterisk_rs_core::config::ReconnectPolicy;
 use url::Url;
 
@@ -19,22 +20,65 @@ pub enum TransportMode {
 }
 
 /// ARI connection configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AriConfig {
     /// http base url for rest requests
-    pub base_url: Url,
-    /// ari username
-    pub username: String,
-    /// ari password
-    pub password: String,
+    pub(crate) base_url: Url,
+    /// ari credentials
+    pub(crate) credentials: Credentials,
     /// stasis application name
-    pub app_name: String,
+    pub(crate) app_name: String,
     /// websocket url for event subscription
-    pub ws_url: Url,
+    pub(crate) ws_url: Url,
     /// policy controlling reconnect behavior
-    pub reconnect_policy: ReconnectPolicy,
+    pub(crate) reconnect_policy: ReconnectPolicy,
     /// transport mode for rest communication
-    pub transport_mode: TransportMode,
+    pub(crate) transport_mode: TransportMode,
+}
+
+impl std::fmt::Debug for AriConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AriConfig")
+            .field("base_url", &self.base_url)
+            .field("credentials", &self.credentials)
+            .field("app_name", &self.app_name)
+            .field("ws_url", &"[redacted]")
+            .field("reconnect_policy", &self.reconnect_policy)
+            .field("transport_mode", &self.transport_mode)
+            .finish()
+    }
+}
+
+impl AriConfig {
+    /// http base url for rest requests
+    pub fn base_url(&self) -> &Url {
+        &self.base_url
+    }
+
+    /// ari credentials
+    pub fn credentials(&self) -> &Credentials {
+        &self.credentials
+    }
+
+    /// stasis application name
+    pub fn app_name(&self) -> &str {
+        &self.app_name
+    }
+
+    /// websocket url for event subscription (internal only — contains credentials)
+    pub(crate) fn ws_url(&self) -> &Url {
+        &self.ws_url
+    }
+
+    /// policy controlling reconnect behavior
+    pub fn reconnect_policy(&self) -> &ReconnectPolicy {
+        &self.reconnect_policy
+    }
+
+    /// transport mode for rest communication
+    pub fn transport_mode(&self) -> TransportMode {
+        self.transport_mode
+    }
 }
 
 /// builder for constructing an [`AriConfig`] with validation
@@ -118,7 +162,7 @@ impl AriConfigBuilder {
 
     /// build the config, constructing base and websocket URLs
     ///
-    /// fails if app_name or username is empty, or URLs cannot be parsed
+    /// fails if app_name, username, or password is empty, or URLs cannot be parsed
     pub fn build(self) -> Result<AriConfig> {
         if self.app_name.is_empty() {
             return Err(AriError::InvalidUrl(
@@ -128,6 +172,11 @@ impl AriConfigBuilder {
         if self.username.is_empty() {
             return Err(AriError::InvalidUrl(
                 "username must not be empty".to_owned(),
+            ));
+        }
+        if self.password.is_empty() {
+            return Err(AriError::InvalidUrl(
+                "password must not be empty".to_owned(),
             ));
         }
 
@@ -145,10 +194,11 @@ impl AriConfigBuilder {
         );
         let ws_url = Url::parse(&ws_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
 
+        let credentials = Credentials::new(self.username, self.password);
+
         Ok(AriConfig {
             base_url,
-            username: self.username,
-            password: self.password,
+            credentials,
             app_name: self.app_name,
             ws_url,
             reconnect_policy: self.reconnect_policy,

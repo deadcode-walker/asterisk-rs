@@ -172,6 +172,7 @@ pub struct AmiClientBuilder {
     timeout: Duration,
     event_capacity: usize,
     ping_interval: Option<Duration>,
+    require_challenge: bool,
 }
 
 impl Default for AmiClientBuilder {
@@ -184,6 +185,7 @@ impl Default for AmiClientBuilder {
             timeout: DEFAULT_TIMEOUT,
             event_capacity: 1024,
             ping_interval: None,
+            require_challenge: true,
         }
     }
 }
@@ -225,6 +227,17 @@ impl AmiClientBuilder {
         self
     }
 
+    /// allow plaintext login fallback when MD5 challenge auth fails
+    ///
+    /// when `true` (the default), login fails if the server does not
+    /// support challenge-response authentication.  set to `false` only
+    /// for connections over a trusted loopback — plaintext login sends
+    /// the secret in cleartext.
+    pub fn require_challenge(mut self, require: bool) -> Self {
+        self.require_challenge = require;
+        self
+    }
+
     /// set the interval for keep-alive pings
     ///
     /// when set, the client sends periodic Ping actions to detect
@@ -263,6 +276,7 @@ impl AmiClientBuilder {
             event_bus.clone(),
             self.reconnect_policy,
             self.ping_interval,
+            self.require_challenge,
         );
 
         // wait for connection + login to complete
