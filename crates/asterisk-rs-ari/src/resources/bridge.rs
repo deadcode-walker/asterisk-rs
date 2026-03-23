@@ -28,7 +28,7 @@ impl BridgeHandle {
         self.client
             .post_empty(&format!(
                 "/bridges/{}/addChannel?channel={}",
-                self.id,
+                url_encode(&self.id),
                 url_encode(channel_id)
             ))
             .await
@@ -39,7 +39,7 @@ impl BridgeHandle {
         self.client
             .post_empty(&format!(
                 "/bridges/{}/removeChannel?channel={}",
-                self.id,
+                url_encode(&self.id),
                 url_encode(channel_id)
             ))
             .await
@@ -49,7 +49,7 @@ impl BridgeHandle {
     pub async fn play(&self, media: &str) -> Result<Playback> {
         self.client
             .post(
-                &format!("/bridges/{}/play", self.id),
+                &format!("/bridges/{}/play", url_encode(&self.id)),
                 &serde_json::json!({"media": media}),
             )
             .await
@@ -59,7 +59,7 @@ impl BridgeHandle {
     pub async fn record(&self, name: &str, format: &str) -> Result<LiveRecording> {
         self.client
             .post(
-                &format!("/bridges/{}/record", self.id),
+                &format!("/bridges/{}/record", url_encode(&self.id)),
                 &serde_json::json!({"name": name, "format": format}),
             )
             .await
@@ -67,14 +67,16 @@ impl BridgeHandle {
 
     /// destroy this bridge
     pub async fn destroy(&self) -> Result<()> {
-        self.client.delete(&format!("/bridges/{}", self.id)).await
+        self.client
+            .delete(&format!("/bridges/{}", url_encode(&self.id)))
+            .await
     }
 
     /// start music on hold for the bridge
     pub async fn start_moh(&self, moh_class: Option<&str>) -> Result<()> {
         let path = match moh_class {
-            Some(c) => format!("/bridges/{}/moh?mohClass={}", self.id, url_encode(c)),
-            None => format!("/bridges/{}/moh", self.id),
+            Some(c) => format!("/bridges/{}/moh?mohClass={}", url_encode(&self.id), url_encode(c)),
+            None => format!("/bridges/{}/moh", url_encode(&self.id)),
         };
         self.client.post_empty(&path).await
     }
@@ -82,7 +84,7 @@ impl BridgeHandle {
     /// stop music on hold for the bridge
     pub async fn stop_moh(&self) -> Result<()> {
         self.client
-            .delete(&format!("/bridges/{}/moh", self.id))
+            .delete(&format!("/bridges/{}/moh", url_encode(&self.id)))
             .await
     }
 
@@ -90,7 +92,7 @@ impl BridgeHandle {
     pub async fn play_with_id(&self, playback_id: &str, media: &str) -> Result<Playback> {
         self.client
             .post(
-                &format!("/bridges/{}/play/{}", self.id, playback_id),
+                &format!("/bridges/{}/play/{}", url_encode(&self.id), url_encode(playback_id)),
                 &serde_json::json!({"media": media}),
             )
             .await
@@ -101,7 +103,7 @@ impl BridgeHandle {
         self.client
             .post_empty(&format!(
                 "/bridges/{}/videoSource/{}",
-                self.id,
+                url_encode(&self.id),
                 url_encode(channel_id)
             ))
             .await
@@ -110,7 +112,7 @@ impl BridgeHandle {
     /// clear the video source for the bridge
     pub async fn clear_video_source(&self) -> Result<()> {
         self.client
-            .delete(&format!("/bridges/{}/videoSource", self.id))
+            .delete(&format!("/bridges/{}/videoSource", url_encode(&self.id)))
             .await
     }
 }

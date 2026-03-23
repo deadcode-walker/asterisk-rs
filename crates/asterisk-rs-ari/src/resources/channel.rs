@@ -147,15 +147,15 @@ impl ChannelHandle {
     /// answer the channel
     pub async fn answer(&self) -> Result<()> {
         self.client
-            .post_empty(&format!("/channels/{}/answer", self.id))
+            .post_empty(&format!("/channels/{}/answer", url_encode(&self.id)))
             .await
     }
 
     /// hang up the channel with an optional reason
     pub async fn hangup(&self, reason: Option<&str>) -> Result<()> {
         let path = match reason {
-            Some(r) => format!("/channels/{}?reason={}", self.id, url_encode(r)),
-            None => format!("/channels/{}", self.id),
+            Some(r) => format!("/channels/{}?reason={}", url_encode(&self.id), url_encode(r)),
+            None => format!("/channels/{}", url_encode(&self.id)),
         };
         self.client.delete(&path).await
     }
@@ -164,7 +164,7 @@ impl ChannelHandle {
     pub async fn play(&self, media: &str) -> Result<Playback> {
         self.client
             .post(
-                &format!("/channels/{}/play", self.id),
+                &format!("/channels/{}/play", url_encode(&self.id)),
                 &serde_json::json!({"media": media}),
             )
             .await
@@ -174,7 +174,7 @@ impl ChannelHandle {
     pub async fn record(&self, name: &str, format: &str) -> Result<LiveRecording> {
         self.client
             .post(
-                &format!("/channels/{}/record", self.id),
+                &format!("/channels/{}/record", url_encode(&self.id)),
                 &serde_json::json!({"name": name, "format": format}),
             )
             .await
@@ -183,8 +183,8 @@ impl ChannelHandle {
     /// mute the channel, optionally specifying direction (both, in, out)
     pub async fn mute(&self, direction: Option<&str>) -> Result<()> {
         let path = match direction {
-            Some(d) => format!("/channels/{}/mute?direction={}", self.id, url_encode(d)),
-            None => format!("/channels/{}/mute", self.id),
+            Some(d) => format!("/channels/{}/mute?direction={}", url_encode(&self.id), url_encode(d)),
+            None => format!("/channels/{}/mute", url_encode(&self.id)),
         };
         self.client.post_empty(&path).await
     }
@@ -192,8 +192,8 @@ impl ChannelHandle {
     /// unmute the channel, optionally specifying direction
     pub async fn unmute(&self, direction: Option<&str>) -> Result<()> {
         let path = match direction {
-            Some(d) => format!("/channels/{}/mute?direction={}", self.id, url_encode(d)),
-            None => format!("/channels/{}/mute", self.id),
+            Some(d) => format!("/channels/{}/mute?direction={}", url_encode(&self.id), url_encode(d)),
+            None => format!("/channels/{}/mute", url_encode(&self.id)),
         };
         self.client.delete(&path).await
     }
@@ -201,14 +201,14 @@ impl ChannelHandle {
     /// place the channel on hold
     pub async fn hold(&self) -> Result<()> {
         self.client
-            .post_empty(&format!("/channels/{}/hold", self.id))
+            .post_empty(&format!("/channels/{}/hold", url_encode(&self.id)))
             .await
     }
 
     /// remove the channel from hold
     pub async fn unhold(&self) -> Result<()> {
         self.client
-            .delete(&format!("/channels/{}/hold", self.id))
+            .delete(&format!("/channels/{}/hold", url_encode(&self.id)))
             .await
     }
 
@@ -217,7 +217,7 @@ impl ChannelHandle {
         self.client
             .post_empty(&format!(
                 "/channels/{}/dtmf?dtmf={}",
-                self.id,
+                url_encode(&self.id),
                 url_encode(dtmf)
             ))
             .await
@@ -228,7 +228,7 @@ impl ChannelHandle {
         self.client
             .get(&format!(
                 "/channels/{}/variable?variable={}",
-                self.id,
+                url_encode(&self.id),
                 url_encode(name)
             ))
             .await
@@ -239,7 +239,7 @@ impl ChannelHandle {
         self.client
             .post_empty(&format!(
                 "/channels/{}/variable?variable={}&value={}",
-                self.id,
+                url_encode(&self.id),
                 url_encode(name),
                 url_encode(value)
             ))
@@ -253,7 +253,7 @@ impl ChannelHandle {
         extension: Option<&str>,
         priority: Option<i64>,
     ) -> Result<()> {
-        let mut path = format!("/channels/{}/continue", self.id);
+        let mut path = format!("/channels/{}/continue", url_encode(&self.id));
         let mut params = Vec::new();
         if let Some(c) = context {
             params.push(format!("context={}", url_encode(c)));
@@ -288,7 +288,7 @@ impl ChannelHandle {
         let query = params.join("&");
         self.client
             .post(
-                &format!("/channels/{}/snoop?{}", self.id, query),
+                &format!("/channels/{}/snoop?{}", url_encode(&self.id), query),
                 &serde_json::json!({}),
             )
             .await
@@ -299,7 +299,7 @@ impl ChannelHandle {
         self.client
             .post_empty(&format!(
                 "/channels/{}/redirect?context={}&extension={}&priority={}",
-                self.id,
+                url_encode(&self.id),
                 url_encode(context),
                 url_encode(extension),
                 priority
@@ -310,28 +310,28 @@ impl ChannelHandle {
     /// start ringing on the channel
     pub async fn ring(&self) -> Result<()> {
         self.client
-            .post_empty(&format!("/channels/{}/ring", self.id))
+            .post_empty(&format!("/channels/{}/ring", url_encode(&self.id)))
             .await
     }
 
     /// stop ringing on the channel
     pub async fn ring_stop(&self) -> Result<()> {
         self.client
-            .delete(&format!("/channels/{}/ring", self.id))
+            .delete(&format!("/channels/{}/ring", url_encode(&self.id)))
             .await
     }
 
     /// start silence on the channel
     pub async fn start_silence(&self) -> Result<()> {
         self.client
-            .post_empty(&format!("/channels/{}/silence", self.id))
+            .post_empty(&format!("/channels/{}/silence", url_encode(&self.id)))
             .await
     }
 
     /// stop silence on the channel
     pub async fn stop_silence(&self) -> Result<()> {
         self.client
-            .delete(&format!("/channels/{}/silence", self.id))
+            .delete(&format!("/channels/{}/silence", url_encode(&self.id)))
             .await
     }
 
@@ -339,7 +339,7 @@ impl ChannelHandle {
     pub async fn play_with_id(&self, playback_id: &str, media: &str) -> Result<Playback> {
         self.client
             .post(
-                &format!("/channels/{}/play/{}", self.id, playback_id),
+                &format!("/channels/{}/play/{}", url_encode(&self.id), url_encode(playback_id)),
                 &serde_json::json!({"media": media}),
             )
             .await
@@ -360,14 +360,14 @@ impl ChannelHandle {
             format!("?{}", params.join("&"))
         };
         self.client
-            .post_empty(&format!("/channels/{}/dial{}", self.id, query))
+            .post_empty(&format!("/channels/{}/dial{}", url_encode(&self.id), query))
             .await
     }
 
     /// get rtp statistics for the channel
     pub async fn rtp_statistics(&self) -> Result<serde_json::Value> {
         self.client
-            .get(&format!("/channels/{}/rtp_statistics", self.id))
+            .get(&format!("/channels/{}/rtp_statistics", url_encode(&self.id)))
             .await
     }
 

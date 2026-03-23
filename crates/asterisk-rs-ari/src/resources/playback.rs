@@ -1,6 +1,6 @@
 //! playback control operations.
 
-use crate::client::AriClient;
+use crate::client::{url_encode, AriClient};
 use crate::error::Result;
 use crate::event::Playback;
 
@@ -28,18 +28,23 @@ impl PlaybackHandle {
         self.client
             .post_empty(&format!(
                 "/playbacks/{}/control?operation={}",
-                self.id, operation
+                url_encode(&self.id),
+                url_encode(operation)
             ))
             .await
     }
 
     /// stop the playback
     pub async fn stop(&self) -> Result<()> {
-        self.client.delete(&format!("/playbacks/{}", self.id)).await
+        self.client
+            .delete(&format!("/playbacks/{}", url_encode(&self.id)))
+            .await
     }
 
     /// get current playback state
     pub async fn get(&self) -> Result<Playback> {
-        self.client.get(&format!("/playbacks/{}", self.id)).await
+        self.client
+            .get(&format!("/playbacks/{}", url_encode(&self.id)))
+            .await
     }
 }
