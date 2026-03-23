@@ -4,7 +4,7 @@ use asterisk_rs_ari::config::AriConfigBuilder;
 use asterisk_rs_ari::{AriClient, AriError};
 use asterisk_rs_core::config::ReconnectPolicy;
 
-use asterisk_rs_tests::helpers::init_tracing;
+use asterisk_rs_tests::helpers::{assert_server_ok, init_tracing};
 use asterisk_rs_tests::mock::ari_server::MockAriServerBuilder;
 
 /// build an ARI client pointed at the mock server
@@ -3181,7 +3181,7 @@ async fn outbound_ws_server_accepts_connection() {
         .expect("session channel should not be closed");
 
     handle.shutdown();
-    let _ = server_task.await;
+    assert_server_ok(server_task.await);
 }
 
 #[tokio::test]
@@ -3261,7 +3261,7 @@ async fn outbound_ws_server_delivers_events_to_session() {
     );
 
     handle.shutdown();
-    let _ = server_task.await;
+    assert_server_ok(server_task.await);
 }
 
 #[tokio::test]
@@ -3291,7 +3291,7 @@ async fn media_channel_connect_and_disconnect() {
         .expect("media channel connect should succeed");
 
     media.disconnect();
-    let _ = server_task.await;
+    assert_server_ok(server_task.await);
 }
 
 #[tokio::test]
@@ -3344,7 +3344,7 @@ async fn media_channel_sends_command() {
     );
 
     media.disconnect();
-    let _ = server_task.await;
+    assert_server_ok(server_task.await);
 }
 
 #[tokio::test]
@@ -3411,7 +3411,7 @@ async fn media_channel_receives_event() {
     }
 
     media.disconnect();
-    let _ = server_task.await;
+    assert_server_ok(server_task.await);
 }
 
 #[tokio::test]
@@ -3466,5 +3466,5 @@ async fn media_channel_sends_and_receives_audio() {
     );
 
     media.disconnect();
-    let _ = server_task.await;
+    assert_server_ok(server_task.await);
 }

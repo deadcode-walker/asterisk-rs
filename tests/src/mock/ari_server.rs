@@ -27,7 +27,7 @@ struct ServerState {
     routes: HashMap<(String, String), MockRoute>,
     event_tx: broadcast::Sender<String>,
     ws_clients: AtomicUsize,
-    ws_connected: Arc<Notify>,
+    ws_connected: Notify,
 }
 
 /// mock ARI server binding HTTP and WebSocket on one port
@@ -66,8 +66,14 @@ impl MockAriServer {
 
     /// wait until at least one websocket client has connected
     pub async fn wait_for_ws_client(&self) {
-        while self.state.ws_clients.load(Ordering::Acquire) == 0 {
-            self.state.ws_connected.notified().await;
+        loop {
+            // register the notification future before the load to avoid a
+            // race where the signal fires between the check and the await
+            let notified = self.state.ws_connected.notified();
+            if self.state.ws_clients.load(Ordering::Acquire) > 0 {
+                return;
+            }
+            notified.await;
         }
     }
 }
@@ -118,7 +124,7 @@ impl MockAriServerBuilder {
             routes: self.routes,
             event_tx: event_tx.clone(),
             ws_clients: AtomicUsize::new(0),
-            ws_connected: Arc::new(Notify::new()),
+            ws_connected: Notify::new(),
         });
 
         let task = tokio::spawn(accept_loop(listener, Arc::clone(&state), shutdown_rx));
