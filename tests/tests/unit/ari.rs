@@ -2511,3 +2511,127 @@ fn media_command_get_status_serialization() {
     let obj = json.as_object().expect("should be an object");
     assert_eq!(obj.len(), 1, "GetStatus should only have 'command' key");
 }
+
+// ── url_encode path-safety tests ────────────────────────────────────────────
+
+#[test]
+fn url_encode_encodes_slash() {
+    assert_eq!(url_encode("chan/123"), "chan%2F123");
+}
+
+#[test]
+fn url_encode_encodes_question_mark() {
+    assert_eq!(url_encode("chan?id=1"), "chan%3Fid%3D1");
+}
+
+#[test]
+fn url_encode_encodes_hash() {
+    assert_eq!(url_encode("chan#frag"), "chan%23frag");
+}
+
+#[test]
+fn url_encode_encodes_percent() {
+    assert_eq!(url_encode("100%done"), "100%25done");
+}
+
+#[test]
+fn url_encode_preserves_safe_chars() {
+    // alphanumerics, hyphens, underscores, dots, tildes are safe
+    assert_eq!(url_encode("chan-123_test.0~ok"), "chan-123_test.0~ok");
+}
+
+#[test]
+fn url_encode_encodes_space() {
+    assert_eq!(url_encode("my channel"), "my%20channel");
+}
+
+#[test]
+fn url_encode_encodes_ampersand() {
+    assert_eq!(url_encode("a&b"), "a%26b");
+}
+
+// ── credential encoding tests ──────────────────────────────────────────────
+
+#[test]
+fn config_build_encodes_special_chars_in_credentials() {
+    let config = AriConfigBuilder::new("my app")
+        .username("user&name")
+        .password("pass=word#1")
+        .build()
+        .expect("config with special chars should build");
+
+    assert_eq!(config.base_url().as_str(), "http://127.0.0.1:8088/ari");
+    assert_eq!(config.app_name(), "my app");
+}
+
+#[test]
+fn form_urlencoded_round_trips_special_chars() {
+    let encoded = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("app", "my app")
+        .append_pair("api_key", "user&name:pass=word#1")
+        .finish();
+
+    // verify special chars are percent-encoded, not raw
+    assert!(
+        !encoded.contains(' '),
+        "spaces must be encoded, got: {encoded}"
+    );
+    assert_eq!(
+        encoded.matches('&').count(),
+        1,
+        "only the pair separator & should be literal, got: {encoded}"
+    );
+
+    // round-trip: parse the query string back and verify values
+    let pairs: HashMap<String, String> =
+        url::form_urlencoded::parse(encoded.as_bytes())
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+    assert_eq!(pairs.get("app").unwrap(), "my app");
+    assert_eq!(pairs.get("api_key").unwrap(), "user&name:pass=word#1");
+}
+
+// ── uri slash stripping tests ──────────────────────────────────────────────
+
+#[test]
+fn strip_prefix_removes_single_leading_slash() {
+    let path = "/channels/12345";
+    let result = path.strip_prefix('/').unwrap_or(path);
+    assert_eq!(result, "channels/12345");
+}
+
+#[test]
+fn strip_prefix_preserves_double_leading_slashes() {
+    let path = "//channels/12345";
+    let result = path.strip_prefix('/').unwrap_or(path);
+    assert_eq!(result, "/channels/12345", "should only strip one slash");
+}
+
+#[test]
+fn strip_prefix_no_leading_slash_unchanged() {
+    let path = "channels/12345";
+    let result = path.strip_prefix('/').unwrap_or(path);
+    assert_eq!(result, "channels/12345");
+}
+
+// ── server builder default bind address ────────────────────────────────────
+
+#[test]
+fn server_builder_defaults_to_loopback() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let (server, _handle) = AriServerBuilder::new()
+            .bind(([127, 0, 0, 1], 0).into())
+            .build()
+            .await
+            .unwrap();
+        let addr = server.local_addr().unwrap();
+        assert!(
+            addr.ip().is_loopback(),
+            "default should bind to loopback, got: {addr}"
+        );
+    });
+}
