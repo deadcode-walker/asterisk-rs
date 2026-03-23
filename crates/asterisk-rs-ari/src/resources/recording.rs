@@ -33,10 +33,7 @@ impl RecordingHandle {
     /// stop the live recording
     pub async fn stop(&self) -> Result<()> {
         self.client
-            .post_empty(&format!(
-                "/recordings/live/{}/stop",
-                url_encode(&self.name)
-            ))
+            .post_empty(&format!("/recordings/live/{}/stop", url_encode(&self.name)))
             .await
     }
 
@@ -63,20 +60,14 @@ impl RecordingHandle {
     /// mute the live recording
     pub async fn mute(&self) -> Result<()> {
         self.client
-            .post_empty(&format!(
-                "/recordings/live/{}/mute",
-                url_encode(&self.name)
-            ))
+            .post_empty(&format!("/recordings/live/{}/mute", url_encode(&self.name)))
             .await
     }
 
     /// unmute the live recording
     pub async fn unmute(&self) -> Result<()> {
         self.client
-            .delete(&format!(
-                "/recordings/live/{}/mute",
-                url_encode(&self.name)
-            ))
+            .delete(&format!("/recordings/live/{}/mute", url_encode(&self.name)))
             .await
     }
 

@@ -166,7 +166,10 @@ fn config_fields_accessible() {
     assert_eq!(config.app_name(), "myapp");
     assert_eq!(config.credentials().username(), "user1");
     assert_eq!(config.credentials().secret(), "pass1");
-    assert_eq!(config.base_url().as_str(), "https://asterisk.local:5080/ari");
+    assert_eq!(
+        config.base_url().as_str(),
+        "https://asterisk.local:5080/ari"
+    );
     // reconnect_policy is accessible (default)
     let _ = config.reconnect_policy();
 }
