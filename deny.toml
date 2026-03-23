@@ -21,8 +21,12 @@ multiple-versions = "warn"
 wildcards = "deny"
 highlight = "all"
 
+# test crate uses workspace wildcards and is never published
+[[bans.skip-tree]]
+crate = "asterisk-rs-tests"
+
 [sources]
-unknown-registry = "warn"
-unknown-git = "warn"
+unknown-registry = "deny"
+unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
