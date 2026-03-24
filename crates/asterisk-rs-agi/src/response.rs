@@ -26,8 +26,8 @@ impl AgiResponse {
                 raw: line.to_owned(),
             })?;
 
-        let code: u16 = code_str.parse().map_err(|_| AgiError::InvalidResponse {
-            raw: line.to_owned(),
+        let code: u16 = code_str.parse().map_err(|e| AgiError::InvalidResponse {
+            raw: format!("{line} (code parse error: {e})"),
         })?;
 
         // non-200 responses: treat as error with default result -1
@@ -55,8 +55,8 @@ impl AgiResponse {
         let result: i32 =
             result_value[..result_end]
                 .parse()
-                .map_err(|_| AgiError::InvalidResponse {
-                    raw: line.to_owned(),
+                .map_err(|e| AgiError::InvalidResponse {
+                    raw: format!("{line} (result parse error: {e})"),
                 })?;
 
         let remainder = result_value[result_end..].trim();
@@ -89,8 +89,8 @@ impl AgiResponse {
             Some(
                 digits
                     .parse::<u64>()
-                    .map_err(|_| AgiError::InvalidResponse {
-                        raw: remainder.to_owned(),
+                    .map_err(|e| AgiError::InvalidResponse {
+                        raw: format!("{line} (endpos parse error: {e})"),
                     })?,
             )
         } else {

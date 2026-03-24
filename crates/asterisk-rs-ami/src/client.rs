@@ -40,21 +40,19 @@ impl AmiClient {
         self.connection
             .send(ConnectionCommand::SendAction {
                 message,
-                action_id: action_id.clone(),
+                action_id,
                 response_tx,
             })
             .await?;
 
-        let response = tokio::time::timeout(self.timeout, response_rx)
+        tokio::time::timeout(self.timeout, response_rx)
             .await
             .map_err(|_| {
                 AmiError::Timeout(asterisk_rs_core::error::TimeoutError::Action {
                     elapsed: self.timeout,
                 })
             })?
-            .map_err(|_| AmiError::ResponseChannelClosed)?;
-
-        Ok(response)
+            .map_err(|_| AmiError::ResponseChannelClosed)
     }
 
     /// send a ping (keep-alive)
@@ -107,21 +105,19 @@ impl AmiClient {
         self.connection
             .send(ConnectionCommand::SendEventGeneratingAction {
                 message,
-                action_id: action_id.clone(),
+                action_id,
                 response_tx,
             })
             .await?;
 
-        let result = tokio::time::timeout(self.timeout, response_rx)
+        tokio::time::timeout(self.timeout, response_rx)
             .await
             .map_err(|_| {
                 AmiError::Timeout(asterisk_rs_core::error::TimeoutError::Action {
                     elapsed: self.timeout,
                 })
             })?
-            .map_err(|_| AmiError::ResponseChannelClosed)?;
-
-        Ok(result)
+            .map_err(|_| AmiError::ResponseChannelClosed)
     }
 
     /// subscribe to events matching a filter predicate
@@ -163,6 +159,7 @@ impl std::fmt::Debug for AmiClient {
 }
 
 /// builder for [`AmiClient`]
+#[derive(Debug)]
 #[must_use]
 pub struct AmiClientBuilder {
     host: String,
