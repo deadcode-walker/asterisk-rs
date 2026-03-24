@@ -3,6 +3,7 @@
 use asterisk_rs_core::auth::Credentials;
 use asterisk_rs_core::config::ReconnectPolicy;
 use url::Url;
+use zeroize::Zeroizing;
 
 use crate::error::{AriError, Result};
 
@@ -82,17 +83,30 @@ impl AriConfig {
 }
 
 /// builder for constructing an [`AriConfig`] with validation
-#[derive(Debug)]
 #[must_use]
 pub struct AriConfigBuilder {
     host: String,
     port: u16,
     username: String,
-    password: String,
+    password: Zeroizing<String>,
     app_name: String,
     secure: bool,
     reconnect_policy: ReconnectPolicy,
     transport_mode: TransportMode,
+}
+
+impl std::fmt::Debug for AriConfigBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AriConfigBuilder")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &"[redacted]")
+            .field("app_name", &self.app_name)
+            .field("secure", &self.secure)
+            .field("transport_mode", &self.transport_mode)
+            .finish()
+    }
 }
 
 impl AriConfigBuilder {
@@ -102,7 +116,7 @@ impl AriConfigBuilder {
             host: "127.0.0.1".to_owned(),
             port: 8088,
             username: String::new(),
-            password: String::new(),
+            password: Zeroizing::new(String::new()),
             app_name: app_name.into(),
             secure: false,
             reconnect_policy: ReconnectPolicy::default(),
@@ -130,7 +144,7 @@ impl AriConfigBuilder {
 
     /// set the ari password
     pub fn password(mut self, password: impl Into<String>) -> Self {
-        self.password = password.into();
+        self.password = Zeroizing::new(password.into());
         self
     }
 
@@ -192,7 +206,7 @@ impl AriConfigBuilder {
         // query values so special chars (&, =, #, spaces) don't break the url
         let query = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("app", &self.app_name)
-            .append_pair("api_key", &format!("{}:{}", self.username, self.password))
+            .append_pair("api_key", &format!("{}:{}", self.username, &*self.password))
             .finish();
         let ws_url_str = format!(
             "{ws_scheme}://{}:{}/ari/events?{query}",
@@ -200,7 +214,7 @@ impl AriConfigBuilder {
         );
         let ws_url = Url::parse(&ws_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
 
-        let credentials = Credentials::new(self.username, self.password);
+        let credentials = Credentials::new(self.username, &*self.password);
 
         Ok(AriConfig {
             base_url,

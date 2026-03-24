@@ -16,6 +16,7 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch, Mutex};
 use tokio_util::codec::{FramedRead, FramedWrite};
+use zeroize::Zeroizing;
 
 /// commands sent to the connection task
 pub(crate) enum ConnectionCommand {
@@ -306,7 +307,7 @@ async fn perform_login(
 
     if challenge_resp.success {
         if let Some(challenge) = challenge_resp.get("Challenge") {
-            let key = compute_md5_key(challenge, credentials.secret());
+            let key = Zeroizing::new(compute_md5_key(challenge, credentials.secret()));
             let login = ChallengeLoginAction {
                 username: credentials.username().to_string(),
                 key,

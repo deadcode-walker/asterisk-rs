@@ -458,7 +458,7 @@ fn login_action_headers() {
 fn challenge_login_action_headers() {
     let action = ChallengeLoginAction {
         username: "admin".into(),
-        key: "abc123".into(),
+        key: zeroize::Zeroizing::new("abc123".into()),
     };
     assert_eq!(action.action_name(), "Login");
     let (_, msg) = action.to_message();

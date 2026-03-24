@@ -12,6 +12,12 @@ use crate::error::AmiError;
 /// maximum size of a single AMI message (64 KiB)
 const MAX_MESSAGE_SIZE: usize = 64 * 1024;
 
+/// maximum number of headers in a single AMI message
+///
+/// prevents excessive allocation from a malicious or misbehaving server
+/// sending many tiny headers within the byte limit
+const MAX_HEADERS: usize = 512;
+
 /// raw AMI message as parsed from the wire
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawAmiMessage {
@@ -177,6 +183,13 @@ impl Decoder for AmiCodec {
                     continue;
                 }
                 if let Some(colon_pos) = line.iter().position(|&b| b == b':') {
+                    if headers.len() + channel_variables.len() >= MAX_HEADERS {
+                        return Err(AmiError::Protocol(
+                            asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                                details: format!("message exceeds {} header limit", MAX_HEADERS),
+                            },
+                        ));
+                    }
                     let key = String::from_utf8_lossy(&line[..colon_pos])
                         .trim()
                         .to_string();

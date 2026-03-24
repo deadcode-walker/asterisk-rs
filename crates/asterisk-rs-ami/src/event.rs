@@ -721,6 +721,10 @@ pub enum AmiEvent {
     },
 
     /// voicemail password changed
+    ///
+    /// **security note**: `new_password` contains the plaintext voicemail
+    /// PIN as sent by Asterisk. avoid logging or serializing this event
+    /// without redaction.
     VoicemailPasswordChange {
         context: String,
         mailbox: String,

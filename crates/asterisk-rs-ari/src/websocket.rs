@@ -64,8 +64,19 @@ async fn ws_loop(
 
         tracing::info!(url = %redact_url(&ws_url), attempt, "connecting to ARI websocket");
 
-        match tokio_tungstenite::connect_async(&ws_url).await {
-            Ok((ws_stream, _response)) => {
+        match tokio::time::timeout(
+            Duration::from_secs(10),
+            tokio_tungstenite::connect_async(&ws_url),
+        )
+        .await
+        {
+            Err(_) => {
+                tracing::warn!(attempt, "ARI websocket connection timed out");
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, attempt, "ARI websocket connection failed");
+            }
+            Ok(Ok((ws_stream, _response))) => {
                 tracing::info!("ARI websocket connected");
                 // reset attempt counter on successful connection
                 attempt = 0;
@@ -79,9 +90,6 @@ async fn ws_loop(
                 }
 
                 tracing::warn!("ARI websocket disconnected");
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, attempt, "ARI websocket connection failed");
             }
         }
 
