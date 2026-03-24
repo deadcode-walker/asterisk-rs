@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 - update README install versions
+- update README install versions
+
+
+### Fixed
+- harden ARI config encoding, event-list logic, and resource URL paths
+- improve jitter entropy, track dropped calls, preserve critical media events
+- percent-encode resource IDs in ARI URL path segments
+
+
+### Other
+- release v0.7.0
+
+
+### Documentation
+- update README install versions
 
 
 ### Fixed

@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - percent-encode resource IDs in ARI URL path segments
 
 
+### Other
+- release v0.7.0
+
+
+### Fixed
+- harden ARI config encoding, event-list logic, and resource URL paths
+- improve jitter entropy, track dropped calls, preserve critical media events
+- percent-encode resource IDs in ARI URL path segments
+
+
 ### Fixed
 - harden credential handling, codec safety, and API consistency
 
