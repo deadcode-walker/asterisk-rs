@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ### Fixed
+- code quality sweep — error context, panic safety, unused deps ([#26](https://github.com/deadcode-walker/asterisk-rs/pull/26))
+
+
+### Documentation
+- update README install versions
+
+
+### Fixed
 - improve jitter entropy, track dropped calls, preserve critical media events
 - harden AMI reconnect backoff and fix keep-alive pong tracking
 - harden ARI config encoding, event-list logic, and resource URL paths

@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "asterisk-rs"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "asterisk-rs-agi",
  "asterisk-rs-ami",
@@ -18,7 +18,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-agi"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "asterisk-rs-core",
  "thiserror 2.0.18",
@@ -29,7 +29,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-ami"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "asterisk-rs-core",
  "bytes",
@@ -46,7 +46,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-ari"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "asterisk-rs-core",
  "futures-util",
@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-core"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "serde",
  "thiserror 2.0.18",

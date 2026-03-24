@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- code quality sweep — error context, panic safety, unused deps ([#26](https://github.com/deadcode-walker/asterisk-rs/pull/26))
+
+
+### Fixed
 - improve jitter entropy, track dropped calls, preserve critical media events
 
 
