@@ -10,6 +10,7 @@ use asterisk_rs_core::config::{ConnectionState, ReconnectPolicy};
 use asterisk_rs_core::event::EventBus;
 
 use futures_util::{SinkExt, StreamExt};
+use zeroize::Zeroizing;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -306,7 +307,7 @@ async fn perform_login(
 
     if challenge_resp.success {
         if let Some(challenge) = challenge_resp.get("Challenge") {
-            let key = compute_md5_key(challenge, credentials.secret());
+            let key = Zeroizing::new(compute_md5_key(challenge, credentials.secret()));
             let login = ChallengeLoginAction {
                 username: credentials.username().to_string(),
                 key,

@@ -27,6 +27,7 @@ hyper-util.workspace = true
 http-body-util.workspace = true
 tokio-tungstenite.workspace = true
 url.workspace = true
+zeroize.workspace = true
 
 [features]
 integration = []

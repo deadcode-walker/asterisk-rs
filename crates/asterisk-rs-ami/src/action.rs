@@ -102,7 +102,16 @@ impl AmiAction for ChallengeAction {
 /// login with MD5 challenge-response
 pub struct ChallengeLoginAction {
     pub username: String,
-    pub key: String,
+    pub key: Zeroizing<String>,
+}
+
+impl std::fmt::Debug for ChallengeLoginAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChallengeLoginAction")
+            .field("username", &self.username)
+            .field("key", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl AmiAction for ChallengeLoginAction {
@@ -114,7 +123,7 @@ impl AmiAction for ChallengeLoginAction {
         vec![
             ("AuthType".into(), "md5".into()),
             ("Username".into(), self.username.clone()),
-            ("Key".into(), self.key.clone()),
+            ("Key".into(), self.key.as_str().to_owned()),
         ]
     }
 }
