@@ -2562,6 +2562,67 @@ async fn call_tracker_via_mock_ami() {
     assert_server_ok(handle.await);
 }
 
-// TODO: CONC-001 — test that actions during reconnect backoff fail fast
-// requires connection.rs changes to send Disconnected error on in-flight
-// commands during backoff (not yet implemented)
+#[tokio::test]
+async fn action_during_reconnect_backoff_fails_fast() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+
+    let (handle, ready) = server.accept_loop(move |mut conn, idx| async move {
+        handle_login(&mut conn).await;
+
+        if idx == 0 {
+            // first connection: drop immediately after login to trigger reconnect
+            return;
+        }
+
+        // subsequent connections: stay alive
+        loop {
+            if conn.read_message().await.is_none() {
+                break;
+            }
+        }
+    });
+
+    ready.notified().await;
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .require_challenge(false)
+        .reconnect(ReconnectPolicy::fixed(Duration::from_secs(10)))
+        .timeout(Duration::from_secs(2))
+        .ping_interval(Duration::from_millis(100))
+        .build()
+        .await
+        .expect("client should connect initially");
+
+    // wait for the client to detect the disconnect and enter reconnecting
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if client.connection_state() == ConnectionState::Reconnecting {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("client should enter reconnecting state");
+
+    // send an action while the client is in reconnect backoff —
+    // it should fail immediately (not wait for the 10s reconnect delay)
+    let start = std::time::Instant::now();
+    let result = client.ping().await;
+    let elapsed = start.elapsed();
+
+    assert!(result.is_err(), "action during backoff should fail");
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "action should fail fast (took {elapsed:?}), not wait for reconnect"
+    );
+
+    drop(client);
+    handle.abort();
+}

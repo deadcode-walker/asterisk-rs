@@ -157,6 +157,10 @@ async fn connection_task(
                 // arm before the reader arm has dispatched a buffered pong
                 let pong_received = Arc::new(AtomicBool::new(false));
                 let mut awaiting_pong = false;
+                // keep the pong receiver alive across select iterations so
+                // deliver() returns true (it uses .is_ok() which fails if
+                // the receiver was dropped)
+                let mut _pong_rx: Option<tokio::sync::oneshot::Receiver<AmiResponse>> = None;
 
                 // process messages until disconnect
                 loop {
@@ -225,8 +229,10 @@ async fn connection_task(
                             // send a new ping
                             pong_received.store(false, Ordering::Release);
                             let (action_id, ping_msg) = PingAction.to_message();
-                            // register so the response routes through dispatch_message
-                            let _pong_rx = pending.lock().await.register(action_id);
+                            // register so the response routes through dispatch_message;
+                            // store receiver in outer scope so deliver() succeeds
+                            // (it returns tx.send().is_ok() which needs a live receiver)
+                            _pong_rx = Some(pending.lock().await.register(action_id));
                             awaiting_pong = true;
                             if let Err(e) = writer.send(ping_msg).await {
                                 tracing::warn!(error = %e, "keep-alive ping failed, reconnecting");
@@ -261,28 +267,20 @@ async fn connection_task(
         let _ = state_tx.send(ConnectionState::Reconnecting);
         let delay = reconnect_policy.delay_for_attempt(attempt);
         tracing::info!(?delay, attempt, "reconnecting to AMI");
-        // poll shutdown during the reconnect sleep so we exit promptly
+        // poll shutdown during the reconnect sleep so we exit promptly;
+        // drain ALL queued commands so callers fail fast instead of
+        // blocking until the backoff timer expires (CONC-001)
         tokio::select! {
-            () = tokio::time::sleep(delay) => {}
+            () = tokio::time::sleep(delay) => {
+                // backoff complete — drain any commands that arrived
+                drain_backoff_commands(&mut command_rx, &state_tx);
+            }
             cmd = command_rx.recv() => {
-                match cmd {
-                    None | Some(ConnectionCommand::Shutdown) => {
-                        tracing::info!("shutdown received during reconnect backoff");
-                        let _ = state_tx.send(ConnectionState::Disconnected);
-                        return;
-                    }
-                    Some(ConnectionCommand::SendAction { response_tx, .. }) => {
-                        // fail fast: drop the sender so the caller gets
-                        // ResponseChannelClosed immediately instead of waiting
-                        // for the action timeout to expire
-                        tracing::debug!("dropping action received during reconnect backoff");
-                        drop(response_tx);
-                    }
-                    Some(ConnectionCommand::SendEventGeneratingAction { response_tx, .. }) => {
-                        tracing::debug!("dropping event-list action received during reconnect backoff");
-                        drop(response_tx);
-                    }
+                if reject_backoff_command(cmd, &state_tx) {
+                    return; // shutdown requested
                 }
+                // drain remaining queued commands
+                drain_backoff_commands(&mut command_rx, &state_tx);
             }
         }
         attempt += 1;
@@ -427,4 +425,44 @@ async fn dispatch_message(
     }
 
     tracing::debug!("received unclassifiable AMI message");
+}
+
+/// reject a single command received during reconnect backoff.
+/// returns true if the connection task should shut down.
+fn reject_backoff_command(
+    cmd: Option<ConnectionCommand>,
+    state_tx: &watch::Sender<ConnectionState>,
+) -> bool {
+    match cmd {
+        None | Some(ConnectionCommand::Shutdown) => {
+            tracing::info!("shutdown received during reconnect backoff");
+            let _ = state_tx.send(ConnectionState::Disconnected);
+            true
+        }
+        Some(ConnectionCommand::SendAction { response_tx, .. }) => {
+            // drop the sender so the caller's oneshot receiver resolves
+            // immediately with RecvError instead of waiting for timeout
+            tracing::debug!("rejecting action received during reconnect backoff");
+            drop(response_tx);
+            false
+        }
+        Some(ConnectionCommand::SendEventGeneratingAction { response_tx, .. }) => {
+            tracing::debug!("rejecting event-list action received during reconnect backoff");
+            drop(response_tx);
+            false
+        }
+    }
+}
+
+/// drain all queued commands during reconnect backoff so callers
+/// fail fast. does NOT block — only processes already-queued commands.
+fn drain_backoff_commands(
+    command_rx: &mut mpsc::Receiver<ConnectionCommand>,
+    state_tx: &watch::Sender<ConnectionState>,
+) {
+    while let Ok(cmd) = command_rx.try_recv() {
+        if reject_backoff_command(Some(cmd), state_tx) {
+            return;
+        }
+    }
 }
