@@ -25,6 +25,9 @@ use crate::ws_proto::WsRestRequest;
 static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn next_request_id() -> String {
+    // relaxed is sufficient: fetch_add is an atomic RMW — it cannot return
+    // the same value to two threads. no other memory operations need
+    // ordering relative to this counter
     let id = REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("wsreq-{id}")
 }
@@ -88,7 +91,7 @@ impl WsTransport {
         let cmd = RestCommand {
             request_id,
             method: method.to_owned(),
-            uri: path.trim_start_matches('/').to_owned(),
+            uri: path.strip_prefix('/').unwrap_or(path).to_owned(),
             content_type: body.as_ref().map(|_| "application/json".to_owned()),
             message_body: body,
             response_tx,

@@ -5,6 +5,16 @@ use asterisk_rs_ami::event::AmiEvent;
 use asterisk_rs_ami::response::{AmiResponse, PendingActions};
 use std::collections::HashMap;
 
+/// build an Unknown event with EventList: Complete header
+fn complete_event(name: &str) -> AmiEvent {
+    let mut headers = HashMap::new();
+    headers.insert("EventList".into(), "Complete".into());
+    AmiEvent::Unknown {
+        event_name: name.into(),
+        headers,
+    }
+}
+
 #[test]
 fn parse_success_response() {
     let raw = RawAmiMessage {
@@ -125,12 +135,8 @@ fn event_list_lifecycle() {
     };
     assert!(pending.deliver_event_list_event("100", event));
 
-    // deliver completion event
-    let complete = AmiEvent::Unknown {
-        event_name: "StatusComplete".into(),
-        headers: HashMap::new(),
-    };
-    assert!(pending.deliver_event_list_event("100", complete));
+    // deliver completion event with EventList header
+    assert!(pending.deliver_event_list_event("100", complete_event("StatusComplete")));
 
     // should have received the result
     let result = rx.try_recv().expect("should have result");
@@ -330,24 +336,19 @@ fn pending_count_includes_event_lists() {
 }
 
 #[test]
-fn event_list_without_response_uses_default() {
+fn event_list_without_response_reports_error() {
     let mut pending = PendingActions::new();
     let (tx, mut rx) = tokio::sync::oneshot::channel();
     pending.register_event_list("300".into(), tx);
 
     // deliver completion event without ever delivering a response
-    let complete = AmiEvent::Unknown {
-        event_name: "StatusComplete".into(),
-        headers: HashMap::new(),
-    };
-    assert!(pending.deliver_event_list_event("300", complete));
+    assert!(pending.deliver_event_list_event("300", complete_event("StatusComplete")));
 
     let result = rx.try_recv().expect("should have result");
-    // default response should have the action_id but empty response_type
+    // missing response is now flagged as a protocol violation
     assert_eq!(result.response.action_id, "300");
-    assert!(result.response.success);
-    assert_eq!(result.response.response_type, "");
-    assert!(result.response.message.is_none());
+    assert!(!result.response.success);
+    assert!(result.response.message.is_some());
     assert_eq!(result.events.len(), 1);
 }
 
@@ -377,10 +378,12 @@ fn event_list_intermediate_events_accumulate() {
         assert!(pending.deliver_event_list_event("400", event));
     }
 
-    // deliver completion event
+    // deliver completion event with EventList header
+    let mut complete_headers = HashMap::new();
+    complete_headers.insert("EventList".into(), "Complete".into());
     let complete = AmiEvent::Unknown {
         event_name: "QueueMemberComplete".into(),
-        headers: HashMap::new(),
+        headers: complete_headers,
     };
     assert!(pending.deliver_event_list_event("400", complete));
 
@@ -427,11 +430,100 @@ fn register_with_sender() {
 #[test]
 fn deliver_event_list_event_to_unknown_action_returns_false() {
     let mut pending = PendingActions::new();
+    let mut headers = HashMap::new();
+    headers.insert("EventList".into(), "Complete".into());
     let event = AmiEvent::Unknown {
         event_name: "StatusComplete".into(),
-        headers: HashMap::new(),
+        headers,
     };
     assert!(!pending.deliver_event_list_event("nonexistent", event));
+}
+
+#[test]
+fn user_event_named_complete_does_not_close_event_list() {
+    // a UserEvent whose name ends in "Complete" but lacks EventList header
+    // must not prematurely close the event list (PROTO-003)
+    let mut pending = PendingActions::new();
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    pending.register_event_list("500".into(), tx);
+
+    let response = AmiResponse {
+        action_id: "500".into(),
+        success: true,
+        response_type: "Success".into(),
+        message: None,
+        headers: HashMap::new(),
+        output: vec![],
+        channel_variables: HashMap::new(),
+    };
+    assert!(pending.deliver_event_list_response(response));
+
+    // deliver a user event whose name ends in "Complete" but has no EventList header
+    let fake_complete = AmiEvent::Unknown {
+        event_name: "ProcessComplete".into(),
+        headers: HashMap::new(),
+    };
+    assert!(pending.deliver_event_list_event("500", fake_complete));
+
+    // event list should still be pending
+    assert!(rx.try_recv().is_err());
+    assert!(pending.contains_event_list("500"));
+
+    // now deliver the real completion event
+    let mut complete_headers = HashMap::new();
+    complete_headers.insert("EventList".into(), "Complete".into());
+    let real_complete = AmiEvent::Unknown {
+        event_name: "StatusComplete".into(),
+        headers: complete_headers,
+    };
+    assert!(pending.deliver_event_list_event("500", real_complete));
+
+    let result = rx.try_recv().expect("should have result");
+    assert!(result.response.success);
+    // ProcessComplete + StatusComplete = 2 events
+    assert_eq!(result.events.len(), 2);
+}
+
+#[test]
+fn event_list_cap_drops_after_max_events() {
+    use asterisk_rs_ami::response::MAX_EVENT_LIST_EVENTS;
+
+    let mut pending = PendingActions::new();
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    pending.register_event_list("600".into(), tx);
+
+    let response = AmiResponse {
+        action_id: "600".into(),
+        success: true,
+        response_type: "Success".into(),
+        message: None,
+        headers: HashMap::new(),
+        output: vec![],
+        channel_variables: HashMap::new(),
+    };
+    assert!(pending.deliver_event_list_response(response));
+
+    // fill to exactly MAX_EVENT_LIST_EVENTS
+    for i in 0..MAX_EVENT_LIST_EVENTS {
+        let event = AmiEvent::Unknown {
+            event_name: format!("Event{i}"),
+            headers: HashMap::new(),
+        };
+        assert!(pending.deliver_event_list_event("600", event));
+    }
+
+    // the next event should trigger the cap and drop the entry
+    let overflow = AmiEvent::Unknown {
+        event_name: "EventOverflow".into(),
+        headers: HashMap::new(),
+    };
+    assert!(pending.deliver_event_list_event("600", overflow));
+
+    // pending entry should be removed
+    assert!(!pending.contains_event_list("600"));
+
+    // receiver should get an error (channel closed, no value sent)
+    assert!(rx.try_recv().is_err());
 }
 
 // ── OriginateResponse event must not be parsed as action response ───────

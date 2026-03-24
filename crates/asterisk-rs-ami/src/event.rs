@@ -2691,6 +2691,37 @@ impl AmiEvent {
         }
     }
 
+    /// whether this event is an event-list completion marker
+    ///
+    /// Asterisk terminates event-list responses with a `*Complete` event
+    /// that carries an `EventList: Complete` header. For typed variants we
+    /// match explicitly; for `Unknown` we check the header to avoid false
+    /// positives from user events whose names end in "Complete".
+    pub fn is_event_list_complete(&self) -> bool {
+        match self {
+            Self::StatusComplete { .. }
+            | Self::CoreShowChannelsComplete { .. }
+            | Self::CoreShowChannelMapComplete
+            | Self::AgentsComplete
+            | Self::BridgeInfoComplete { .. }
+            | Self::DeviceStateListComplete { .. }
+            | Self::ExtensionStateListComplete { .. }
+            | Self::PresenceStateListComplete { .. }
+            | Self::AorListComplete { .. }
+            | Self::AuthListComplete { .. }
+            | Self::ContactListComplete { .. }
+            | Self::EndpointDetailComplete { .. }
+            | Self::EndpointListComplete { .. }
+            | Self::MWIGetComplete { .. }
+            | Self::FAXSessionsComplete { .. } => true,
+            Self::Unknown { headers, .. } => headers
+                .get("EventList")
+                .map(|v| v.eq_ignore_ascii_case("complete"))
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+
     /// get the channel name, if this event pertains to a channel
     pub fn channel(&self) -> Option<&str> {
         match self {

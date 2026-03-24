@@ -75,7 +75,11 @@ impl BridgeHandle {
     /// start music on hold for the bridge
     pub async fn start_moh(&self, moh_class: Option<&str>) -> Result<()> {
         let path = match moh_class {
-            Some(c) => format!("/bridges/{}/moh?mohClass={}", url_encode(&self.id), url_encode(c)),
+            Some(c) => format!(
+                "/bridges/{}/moh?mohClass={}",
+                url_encode(&self.id),
+                url_encode(c)
+            ),
             None => format!("/bridges/{}/moh", url_encode(&self.id)),
         };
         self.client.post_empty(&path).await
@@ -92,7 +96,11 @@ impl BridgeHandle {
     pub async fn play_with_id(&self, playback_id: &str, media: &str) -> Result<Playback> {
         self.client
             .post(
-                &format!("/bridges/{}/play/{}", url_encode(&self.id), url_encode(playback_id)),
+                &format!(
+                    "/bridges/{}/play/{}",
+                    url_encode(&self.id),
+                    url_encode(playback_id)
+                ),
                 &serde_json::json!({"media": media}),
             )
             .await

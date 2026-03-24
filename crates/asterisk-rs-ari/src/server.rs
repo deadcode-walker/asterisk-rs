@@ -30,6 +30,9 @@ use crate::ws_proto::WsRestRequest;
 static SESSION_REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn next_request_id() -> String {
+    // relaxed is sufficient: fetch_add is an atomic RMW — it cannot return
+    // the same value to two threads. no other memory operations need
+    // ordering relative to this counter
     let id = SESSION_REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("srv-{id}")
 }
@@ -202,7 +205,7 @@ impl AriSession {
         let cmd = SessionCommand {
             request_id,
             method: method.to_owned(),
-            uri: path.trim_start_matches('/').to_owned(),
+            uri: path.strip_prefix('/').unwrap_or(path).to_owned(),
             content_type: body.as_ref().map(|_| "application/json".to_owned()),
             message_body: body,
             response_tx,
@@ -322,14 +325,14 @@ pub struct AriServerBuilder {
 }
 
 impl AriServerBuilder {
-    /// create a builder with default bind address `0.0.0.0:8765`
+    /// create a builder with default bind address `127.0.0.1:8765`
     pub fn new() -> Self {
         Self {
-            bind_addr: ([0, 0, 0, 0], 8765).into(),
+            bind_addr: ([127, 0, 0, 1], 8765).into(),
         }
     }
 
-    /// set the address to listen on (default `0.0.0.0:8765`)
+    /// set the address to listen on (default `127.0.0.1:8765`)
     pub fn bind(mut self, addr: SocketAddr) -> Self {
         self.bind_addr = addr;
         self

@@ -187,10 +187,15 @@ impl AriConfigBuilder {
         let base_url =
             Url::parse(&base_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
 
-        // ws url includes api_key for authentication
+        // ws url includes api_key for authentication — percent-encode
+        // query values so special chars (&, =, #, spaces) don't break the url
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("app", &self.app_name)
+            .append_pair("api_key", &format!("{}:{}", self.username, self.password))
+            .finish();
         let ws_url_str = format!(
-            "{ws_scheme}://{}:{}/ari/events?app={}&api_key={}:{}",
-            self.host, self.port, self.app_name, self.username, self.password,
+            "{ws_scheme}://{}:{}/ari/events?{query}",
+            self.host, self.port
         );
         let ws_url = Url::parse(&ws_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
 

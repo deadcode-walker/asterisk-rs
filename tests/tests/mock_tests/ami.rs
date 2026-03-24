@@ -1701,6 +1701,7 @@ async fn send_collecting_queue_status() {
             ("Event", "QueueStatusComplete"),
             ("ActionID", &aid),
             ("Items", "2"),
+            ("EventList", "Complete"),
         ])
         .await;
 
@@ -2560,3 +2561,7 @@ async fn call_tracker_via_mock_ami() {
     drop(client);
     assert_server_ok(handle.await);
 }
+
+// TODO: CONC-001 — test that actions during reconnect backoff fail fast
+// requires connection.rs changes to send Disconnected error on in-flight
+// commands during backoff (not yet implemented)

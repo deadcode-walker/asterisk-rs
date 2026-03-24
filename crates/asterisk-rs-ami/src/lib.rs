@@ -37,5 +37,5 @@ pub use client::{AmiClient, AmiClientBuilder};
 pub use codec::{AmiCodec, RawAmiMessage};
 pub use error::AmiError;
 pub use event::AmiEvent;
-pub use response::{AmiResponse, EventListResponse};
+pub use response::{AmiResponse, EventListResponse, MAX_EVENT_LIST_EVENTS};
 pub use tracker::{CallTracker, CompletedCall};
