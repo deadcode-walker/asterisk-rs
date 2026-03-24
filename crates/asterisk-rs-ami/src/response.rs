@@ -78,6 +78,9 @@ pub struct EventListResponse {
     pub events: Vec<crate::event::AmiEvent>,
 }
 
+/// maximum events allowed in a single event list before it is dropped
+pub const MAX_EVENT_LIST_EVENTS: usize = 10_000;
+
 /// tracks a pending event-generating action
 struct PendingEventList {
     response: Option<AmiResponse>,
@@ -175,42 +178,62 @@ impl PendingActions {
 
     /// deliver an event for an event-generating action
     ///
+    /// completion is detected via the `EventList: Complete` header that
+    /// Asterisk sends on `*Complete` events, rather than matching on the
+    /// event name suffix (which could false-positive on user events like
+    /// `ProcessComplete`).
+    ///
     /// returns true if this event was consumed by a pending event list
     pub fn deliver_event_list_event(
         &mut self,
         action_id: &str,
         event: crate::event::AmiEvent,
     ) -> bool {
-        let is_complete = event.event_name().ends_with("Complete");
+        let is_complete = event.is_event_list_complete();
 
-        if let Some(mut pending) = if is_complete {
-            self.pending_event_lists.remove(action_id)
-        } else {
-            None
-        } {
+        if is_complete {
+            let Some(mut pending) = self.pending_event_lists.remove(action_id) else {
+                return false;
+            };
             pending.events.push(event);
-            let response = pending.response.unwrap_or_else(|| AmiResponse {
-                action_id: action_id.to_string(),
-                success: true,
-                response_type: String::new(),
-                message: None,
-                headers: HashMap::new(),
-                output: vec![],
-                channel_variables: HashMap::new(),
-            });
+            let response = match pending.response {
+                Some(resp) => resp,
+                None => {
+                    // protocol violation: Complete arrived before the initial Response
+                    tracing::warn!(action_id, "event list Complete arrived before Response");
+                    AmiResponse {
+                        action_id: action_id.to_string(),
+                        success: false,
+                        response_type: String::new(),
+                        message: Some("event list completed before response received".into()),
+                        headers: HashMap::new(),
+                        output: vec![],
+                        channel_variables: HashMap::new(),
+                    }
+                }
+            };
             let _ = pending.tx.send(EventListResponse {
                 response,
                 events: pending.events,
             });
-            return true;
-        }
-
-        if let Some(pending) = self.pending_event_lists.get_mut(action_id) {
+            true
+        } else {
+            let Some(pending) = self.pending_event_lists.get_mut(action_id) else {
+                return false;
+            };
+            if pending.events.len() >= MAX_EVENT_LIST_EVENTS {
+                tracing::warn!(
+                    action_id,
+                    count = pending.events.len(),
+                    "event list exceeded {MAX_EVENT_LIST_EVENTS} events, dropping"
+                );
+                // drop the entry — receiver gets RecvError (channel closed)
+                self.pending_event_lists.remove(action_id);
+                return true;
+            }
             pending.events.push(event);
-            return true;
+            true
         }
-
-        false
     }
 }
 

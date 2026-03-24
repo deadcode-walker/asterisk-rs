@@ -2583,10 +2583,9 @@ fn form_urlencoded_round_trips_special_chars() {
     );
 
     // round-trip: parse the query string back and verify values
-    let pairs: HashMap<String, String> =
-        url::form_urlencoded::parse(encoded.as_bytes())
-            .map(|(k, v)| (k.into_owned(), v.into_owned()))
-            .collect();
+    let pairs: HashMap<String, String> = url::form_urlencoded::parse(encoded.as_bytes())
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
     assert_eq!(pairs.get("app").unwrap(), "my app");
     assert_eq!(pairs.get("api_key").unwrap(), "user&name:pass=word#1");
 }
