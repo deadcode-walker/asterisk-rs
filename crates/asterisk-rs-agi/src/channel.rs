@@ -21,6 +21,7 @@ enum ChannelState {
 }
 
 /// high-level interface for sending AGI commands over a connection
+#[derive(Debug)]
 pub struct AgiChannel {
     reader: BufReader<OwnedReadHalf>,
     writer: OwnedWriteHalf,

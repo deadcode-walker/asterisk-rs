@@ -82,6 +82,7 @@ impl AriConfig {
 }
 
 /// builder for constructing an [`AriConfig`] with validation
+#[derive(Debug)]
 #[must_use]
 pub struct AriConfigBuilder {
     host: String,

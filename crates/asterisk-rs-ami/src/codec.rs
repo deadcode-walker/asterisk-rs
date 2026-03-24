@@ -66,6 +66,7 @@ impl RawAmiMessage {
 }
 
 /// codec for AMI's line-based protocol
+#[derive(Debug)]
 pub struct AmiCodec {
     /// tracks whether we've consumed the initial banner line
     banner_consumed: bool,
@@ -187,8 +188,10 @@ impl Decoder for AmiCodec {
                     } else {
                         String::new()
                     };
-                    if key.starts_with("ChanVariable(") && key.ends_with(')') {
-                        let var_name = &key["ChanVariable(".len()..key.len() - 1];
+                    if let Some(var_name) = key
+                        .strip_prefix("ChanVariable(")
+                        .and_then(|s| s.strip_suffix(')'))
+                    {
                         channel_variables.insert(var_name.to_string(), value);
                     } else {
                         headers.push((key, value));
@@ -266,8 +269,9 @@ impl Encoder<RawAmiMessage> for AmiCodec {
             dst.extend_from_slice(b"\r\n");
         }
         for (name, value) in &item.channel_variables {
-            dst.extend_from_slice(format!("ChanVariable({})", name).as_bytes());
-            dst.extend_from_slice(b": ");
+            dst.extend_from_slice(b"ChanVariable(");
+            dst.extend_from_slice(name.as_bytes());
+            dst.extend_from_slice(b"): ");
             dst.extend_from_slice(value.as_bytes());
             dst.extend_from_slice(b"\r\n");
         }

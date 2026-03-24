@@ -18,7 +18,6 @@ asterisk-rs-core = { path = "../asterisk-rs-core", version = "0.7.0" }
 tokio = { workspace = true, features = ["net", "sync", "time", "io-util", "macros", "rt"] }
 tracing.workspace = true
 thiserror.workspace = true
-bytes.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true
