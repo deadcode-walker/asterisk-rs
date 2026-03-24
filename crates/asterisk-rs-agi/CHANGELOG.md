@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- *(agi)* harden command injection, response parsing, OOM, and channel state
+
+
+### Fixed
 - harden credential handling, codec safety, and API consistency
 
 
