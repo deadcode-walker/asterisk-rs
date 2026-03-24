@@ -64,7 +64,7 @@ asterisk-rs (umbrella, feature-gated re-exports)
 | `tests/` | External test crate: unit, mock integration, live integration tests |
 | `tests/src/mock/` | Mock servers: MockAmiServer, MockAriServer, MockAgiClient |
 | `docs/src/` | mdBook user guide (ami/, agi/, ari/ subdirectories) |
-| `.github/workflows/` | CI, security audit, docs deploy, release, coverage, semver checks |
+| `.github/workflows/` | CI (fmt, clippy, test, semver, coverage), security, integration, release, docs |
 
 ## Development Commands
 
@@ -285,19 +285,15 @@ AMI events carry channel variables as `ChanVariable(name): value` headers on the
 
 ## CI Matrix
 
-| Job | Runs On | Toolchain | What |
-|-----|---------|-----------|------|
-| check | ubuntu | stable | `cargo check --workspace --all-targets --all-features` |
-| fmt | ubuntu | nightly | `cargo fmt --all -- --check` |
-| clippy | ubuntu | stable | `cargo clippy` with `-D warnings` |
-| test | ubuntu/macos/windows | stable + 1.83 | `cargo test --workspace --all-features` (excludes test crate) |
-| test-minimal | ubuntu | stable | `cargo test --workspace --no-default-features` (excludes test crate) |
-| mock-tests | ubuntu | stable | `cargo test -p asterisk-rs-tests` (unit + mock) |
-| integration | ubuntu | stable | live tests against Asterisk Docker with `--test-threads=1` |
-| security | ubuntu | stable | Weekly + on Cargo.toml changes; cargo-deny + rustsec audit |
-| coverage | ubuntu | stable | cargo-llvm-cov, uploads to codecov |
-| semver | ubuntu | stable | cargo-semver-checks on PRs |
-| docs | ubuntu | stable | rustdoc + mdbook, deploys to GitHub Pages |
+Five workflows, each with a single responsibility:
+
+| Workflow | Jobs | Trigger |
+|----------|------|---------|
+| **ci** | fmt, clippy, test (3 OS × 2 toolchains), test-minimal, mock-tests, typos, semver, coverage | PR + push main |
+| **integration** | docker asterisk + live tests | PR + push main |
+| **security** | rustsec audit, cargo-deny | weekly + Cargo.toml changes |
+| **release** | release-plz (publish + release PR) | push main |
+| **docs** | rustdoc + mdbook → GitHub Pages | push main + release published |
 
 ## Testing
 
