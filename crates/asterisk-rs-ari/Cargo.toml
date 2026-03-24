@@ -1,6 +1,6 @@
 [package]
 name = "asterisk-rs-ari"
-version = "0.7.1"
+version = "0.7.2"
 description = "Async Rust client for the Asterisk REST Interface (ARI)"
 edition.workspace = true
 rust-version.workspace = true
