@@ -49,16 +49,16 @@ Use the umbrella crate to pull in whichever protocols you need:
 
 ```toml
 [dependencies]
-asterisk-rs = "0.6"
+asterisk-rs = "0.7"
 ```
 
 Or add individual protocol crates directly:
 
 ```toml
 [dependencies]
-asterisk-rs-ami = "0.6"   # AMI only
-asterisk-rs-agi = "0.6"   # AGI only
-asterisk-rs-ari = "0.6"   # ARI only
+asterisk-rs-ami = "0.7"   # AMI only
+asterisk-rs-agi = "0.7"   # AGI only
+asterisk-rs-ari = "0.7"   # ARI only
 ```
 
 ## Feature Selection
@@ -67,7 +67,7 @@ The umbrella crate enables all protocols by default. To select only what you nee
 
 ```toml
 [dependencies]
-asterisk-rs = { version = "0.6", default-features = false, features = ["ami"] }
+asterisk-rs = { version = "0.7", default-features = false, features = ["ami"] }
 # or: features = ["agi"]
 # or: features = ["ari"]
 # or: features = ["ami", "ari"]
