@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- improve jitter entropy, track dropped calls, preserve critical media events
+
+
+### Fixed
 - harden credential handling, codec safety, and API consistency
 
 

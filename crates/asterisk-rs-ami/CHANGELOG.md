@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- harden AMI reconnect backoff and fix keep-alive pong tracking
+- harden ARI config encoding, event-list logic, and resource URL paths
+- improve jitter entropy, track dropped calls, preserve critical media events
+- secure LoginAction secret and harden AMI codec
+
+
+### Fixed
 - harden credential handling, codec safety, and API consistency
 
 
