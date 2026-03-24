@@ -10,13 +10,13 @@ use asterisk_rs_core::config::{ConnectionState, ReconnectPolicy};
 use asterisk_rs_core::event::EventBus;
 
 use futures_util::{SinkExt, StreamExt};
-use zeroize::Zeroizing;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch, Mutex};
 use tokio_util::codec::{FramedRead, FramedWrite};
+use zeroize::Zeroizing;
 
 /// commands sent to the connection task
 pub(crate) enum ConnectionCommand {

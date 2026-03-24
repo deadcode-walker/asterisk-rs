@@ -164,9 +164,13 @@ impl MediaChannel {
     /// url should be the full websocket URL including the connection_id path,
     /// e.g. `ws://asterisk:8088/media/32966726-4388-456b-a333-fdf5dbecc60d`
     pub async fn connect(url: &str) -> Result<Self> {
-        let (ws_stream, _) = tokio_tungstenite::connect_async(url)
-            .await
-            .map_err(|e| AriError::WebSocket(e.to_string()))?;
+        let (ws_stream, _) = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            tokio_tungstenite::connect_async(url),
+        )
+        .await
+        .map_err(|_| AriError::WebSocket("media websocket connection timed out".to_owned()))?
+        .map_err(|e| AriError::WebSocket(e.to_string()))?;
 
         Ok(Self::spawn_outbound(ws_stream))
     }

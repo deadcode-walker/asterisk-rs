@@ -186,10 +186,7 @@ impl Decoder for AmiCodec {
                     if headers.len() + channel_variables.len() >= MAX_HEADERS {
                         return Err(AmiError::Protocol(
                             asterisk_rs_core::error::ProtocolError::MalformedMessage {
-                                details: format!(
-                                    "message exceeds {} header limit",
-                                    MAX_HEADERS
-                                ),
+                                details: format!("message exceeds {} header limit", MAX_HEADERS),
                             },
                         ));
                     }
