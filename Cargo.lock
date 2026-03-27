@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "asterisk-rs"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "asterisk-rs-agi",
  "asterisk-rs-ami",
@@ -46,7 +46,7 @@ dependencies = [
 
 [[package]]
 name = "asterisk-rs-ari"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "asterisk-rs-core",
  "futures-util",
