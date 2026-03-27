@@ -3244,7 +3244,7 @@ async fn outbound_ws_server_delivers_events_to_session() {
     use futures_util::SinkExt;
     ws_stream
         .send(tokio_tungstenite::tungstenite::Message::Text(
-            stasis_json.to_string(),
+            stasis_json.to_string().into(),
         ))
         .await
         .expect("should send event text frame");
@@ -3315,7 +3315,7 @@ async fn media_channel_sends_command() {
         // read the first text frame
         while let Some(Ok(msg)) = ws.next().await {
             if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
-                let _ = msg_tx.send(text).await;
+                let _ = msg_tx.send(text.to_string()).await;
                 break;
             }
         }
@@ -3375,7 +3375,7 @@ async fn media_channel_receives_event() {
         }"#;
 
         ws.send(tokio_tungstenite::tungstenite::Message::Text(
-            media_start_json.to_string(),
+            media_start_json.to_string().into(),
         ))
         .await
         .expect("server should send event");

@@ -211,7 +211,7 @@ async fn handle_websocket(stream: TcpStream, state: Arc<ServerState>) {
             event = event_rx.recv() => {
                 match event {
                     Ok(json) => {
-                        if write.send(Message::Text(json)).await.is_err() {
+                        if write.send(Message::Text(json.into())).await.is_err() {
                             break;
                         }
                     }
