@@ -9,14 +9,35 @@ on:
       - "**/Cargo.lock"
       - "deny.toml"
   pull_request:
-    paths:
-      - "**/Cargo.toml"
-      - "**/Cargo.lock"
-      - "deny.toml"
+    branches: [main]
+  merge_group:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Changes
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    outputs:
+      cargo: ${{ steps.filter.outputs.cargo }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            cargo:
+              - "**/Cargo.toml"
+              - "**/Cargo.lock"
+              - "deny.toml"
+
   audit:
     name: Security Audit
+    needs: changes
+    if: always() && (needs.changes.outputs.cargo == 'true' || github.event_name == 'schedule' || github.event_name == 'push')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,8 +46,25 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   deny:
-    name: Cargo Deny
+    name: Cargo Deny Check
+    needs: changes
+    if: always() && (needs.changes.outputs.cargo == 'true' || github.event_name == 'schedule' || github.event_name == 'push')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # gate job — required status check in branch protection
+  security-success:
+    name: Cargo Deny
+    if: always()
+    needs: [deny]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify security checks passed
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "One or more security jobs failed"
+            exit 1
+          fi
+          echo "Security checks passed (or skipped — no cargo file changes)"
