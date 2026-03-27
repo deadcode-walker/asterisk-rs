@@ -416,7 +416,7 @@ async fn session_loop(
                             }
                         };
                         pending.insert(cmd.request_id, cmd.response_tx);
-                        if let Err(e) = write.send(Message::Text(json)).await {
+                        if let Err(e) = write.send(Message::Text(json.into())).await {
                             tracing::warn!(error = %e, "failed to send REST request");
                             return;
                         }

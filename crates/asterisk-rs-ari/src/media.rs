@@ -386,7 +386,7 @@ async fn media_loop<S>(
                         }
                     }
                     Some(Ok(Message::Binary(data))) => {
-                        match audio_tx.try_send(data) {
+                        match audio_tx.try_send(data.to_vec()) {
                             Ok(()) => {}
                             Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                                 tracing::debug!("audio channel full, dropping frame");
@@ -413,13 +413,13 @@ async fn media_loop<S>(
             cmd = command_rx.recv() => {
                 match cmd {
                     Some(InternalCmd::Audio(data)) => {
-                        if let Err(e) = write.send(Message::Binary(data)).await {
+                        if let Err(e) = write.send(Message::Binary(data.into())).await {
                             tracing::warn!(error = %e, "failed to send audio frame");
                             return;
                         }
                     }
                     Some(InternalCmd::Command(json)) => {
-                        if let Err(e) = write.send(Message::Text(json)).await {
+                        if let Err(e) = write.send(Message::Text(json.into())).await {
                             tracing::warn!(error = %e, "failed to send media command");
                             return;
                         }
