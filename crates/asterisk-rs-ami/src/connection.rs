@@ -378,7 +378,8 @@ fn compute_md5_key(challenge: &str, secret: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(challenge.as_bytes());
     hasher.update(secret.as_bytes());
-    format!("{:x}", hasher.finalize())
+    let digest = hasher.finalize();
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 async fn dispatch_message(
