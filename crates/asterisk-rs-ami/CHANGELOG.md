@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- adapt md5 digest formatting to md-5 0.11 API
+
+
+### Fixed
 - harden credential handling and add AMI header count limit ([#28](https://github.com/deadcode-walker/asterisk-rs/pull/28))
 
 
