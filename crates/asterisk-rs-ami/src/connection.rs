@@ -378,7 +378,13 @@ fn compute_md5_key(challenge: &str, secret: &str) -> String {
     let mut hasher = Md5::new();
     hasher.update(challenge.as_bytes());
     hasher.update(secret.as_bytes());
-    format!("{:x}", hasher.finalize())
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        use std::fmt::Write;
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
 }
 
 async fn dispatch_message(
