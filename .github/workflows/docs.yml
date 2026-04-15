@@ -44,7 +44,7 @@ jobs:
               cp -r docs/book/* _site/
               cp -r target/doc _site/api
 
-         - uses: actions/upload-pages-artifact@v4
+         - uses: actions/upload-pages-artifact@v5
            with:
               path: _site
 
