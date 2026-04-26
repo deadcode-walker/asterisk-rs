@@ -63,10 +63,8 @@ impl Call {
                         unique_id,
                         channel_state_desc,
                         ..
-                    } if unique_id == uid => {
-                        if channel_state_desc == "Up" {
-                            return Ok(());
-                        }
+                    } if unique_id == uid && channel_state_desc == "Up" => {
+                        return Ok(());
                     }
                     AmiEvent::Hangup {
                         unique_id,
