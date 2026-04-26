@@ -13,13 +13,6 @@ Only the latest release receives security updates.
 
 **Do not open a public issue for security vulnerabilities.**
 
-Email **security@example.com** with:
-
-- Description of the vulnerability
-- Steps to reproduce
-- Impact assessment
-- Any suggested fix
-
 ## Response Timeline
 
 - **Acknowledgment**: within 48 hours
