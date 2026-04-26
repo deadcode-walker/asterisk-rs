@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- adapt md5 digest formatting to md-5 0.11 API
+
+
+### Fixed
 - adapt to tungstenite 0.29 API changes
 
 
