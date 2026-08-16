@@ -2272,20 +2272,6 @@ async fn reconnect_login_failure_retries_then_gives_up() {
 
     ready.notified().await;
 
-    // abort server after enough login rejections so subsequent TCP connect
-    // failures trigger the reconnect policy retry check
-    let counter_watcher = attempt_count.clone();
-    let abort_handle = handle.abort_handle();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            if counter_watcher.load(Ordering::SeqCst) >= 2 {
-                abort_handle.abort();
-                break;
-            }
-        }
-    });
-
     let result = tokio::time::timeout(
         Duration::from_secs(5),
         AmiClient::builder()
@@ -2299,18 +2285,13 @@ async fn reconnect_login_failure_retries_then_gives_up() {
     )
     .await;
 
-    // after server stops accepting, TCP failures drive the reconnect policy
-    // which eventually exhausts max_retries and returns Disconnected
     assert!(
         matches!(result, Ok(Err(_))),
         "build should fail after exhausting retries: {result:?}"
     );
 
     let attempts = attempt_count.load(Ordering::SeqCst);
-    assert!(
-        attempts >= 2,
-        "server should have seen at least 2 login attempts, got {attempts}"
-    );
+    assert_eq!(attempts, 3, "initial login plus two retries expected");
 
     handle.abort();
 }

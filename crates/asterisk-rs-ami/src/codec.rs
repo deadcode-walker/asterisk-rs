@@ -113,6 +113,7 @@ impl Decoder for AmiCodec {
                 src.advance(pos + 2); // skip line + \r\n
                 self.banner_consumed = true;
             } else {
+                reject_oversized_incomplete(src)?;
                 return Ok(None); // need more data
             }
         }
@@ -128,7 +129,10 @@ impl Decoder for AmiCodec {
         loop {
             let first_blank = match find_double_crlf(src) {
                 Some(pos) => pos,
-                None => return Ok(None),
+                None => {
+                    reject_oversized_incomplete(src)?;
+                    return Ok(None);
+                }
             };
 
             // peek: does this frame contain a Follows header?
@@ -142,16 +146,21 @@ impl Decoder for AmiCodec {
                         let after_marker = marker_pos + END_MARKER.len();
                         // expect \r\n after the marker (Asterisk always sends it)
                         if src.len() < after_marker + 2 {
+                            reject_oversized_incomplete(src)?;
                             return Ok(None);
                         }
                         // then look for \r\n\r\n immediately after the marker line
                         if &src[after_marker..after_marker + 2] != b"\r\n" {
+                            reject_oversized_incomplete(src)?;
                             return Ok(None);
                         }
                         // frame ends after marker + \r\n
                         after_marker + 2
                     }
-                    None => return Ok(None),
+                    None => {
+                        reject_oversized_incomplete(src)?;
+                        return Ok(None);
+                    }
                 }
             } else {
                 // regular message: frame ends at first \r\n\r\n + 4
@@ -275,22 +284,40 @@ impl Encoder<RawAmiMessage> for AmiCodec {
             }
         }
 
+        let mut frame = BytesMut::new();
         for (key, value) in &item.headers {
-            dst.extend_from_slice(key.as_bytes());
-            dst.extend_from_slice(b": ");
-            dst.extend_from_slice(value.as_bytes());
-            dst.extend_from_slice(b"\r\n");
+            frame.extend_from_slice(key.as_bytes());
+            frame.extend_from_slice(b": ");
+            frame.extend_from_slice(value.as_bytes());
+            frame.extend_from_slice(b"\r\n");
         }
         for (name, value) in &item.channel_variables {
-            dst.extend_from_slice(b"ChanVariable(");
-            dst.extend_from_slice(name.as_bytes());
-            dst.extend_from_slice(b"): ");
-            dst.extend_from_slice(value.as_bytes());
-            dst.extend_from_slice(b"\r\n");
+            frame.extend_from_slice(b"ChanVariable(");
+            frame.extend_from_slice(name.as_bytes());
+            frame.extend_from_slice(b"): ");
+            frame.extend_from_slice(value.as_bytes());
+            frame.extend_from_slice(b"\r\n");
         }
-        dst.extend_from_slice(b"\r\n"); // message terminator
+        frame.extend_from_slice(b"\r\n"); // message terminator
+        if frame.len() > MAX_MESSAGE_SIZE {
+            return Err(message_too_large());
+        }
+        dst.extend_from_slice(&frame);
         Ok(())
     }
+}
+
+fn reject_oversized_incomplete(src: &BytesMut) -> Result<(), AmiError> {
+    if src.len() > MAX_MESSAGE_SIZE {
+        return Err(message_too_large());
+    }
+    Ok(())
+}
+
+fn message_too_large() -> AmiError {
+    AmiError::Protocol(asterisk_rs_core::error::ProtocolError::MalformedMessage {
+        details: format!("message exceeds {} byte limit", MAX_MESSAGE_SIZE),
+    })
 }
 
 /// find the position of the first \r\n in the buffer

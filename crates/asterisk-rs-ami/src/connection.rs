@@ -122,130 +122,132 @@ async fn connection_task(
             Ok(Ok(stream)) => {
                 tracing::info!(address = %address, "TCP connected to AMI");
 
-                let (read_half, write_half) = stream.into_split();
-                let mut reader = FramedRead::new(read_half, AmiCodec::new());
-                let mut writer = FramedWrite::new(write_half, AmiCodec::new());
+                'connected: {
+                    let (read_half, write_half) = stream.into_split();
+                    let mut reader = FramedRead::new(read_half, AmiCodec::new());
+                    let mut writer = FramedWrite::new(write_half, AmiCodec::new());
 
-                // authenticate after connecting
-                // 30s covers the full login exchange (challenge + auth RTTs)
-                let login_result = tokio::time::timeout(
-                    Duration::from_secs(30),
-                    perform_login(&credentials, &mut reader, &mut writer, require_challenge),
-                )
-                .await;
-                match login_result {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => {
-                        tracing::error!(error = %e, "AMI login failed after connect");
-                        continue;
-                    }
-                    Err(_) => {
-                        tracing::error!("AMI login timed out after 30s");
-                        continue;
-                    }
-                }
-                tracing::info!("AMI login successful");
-                attempt = 0; // reset only after successful auth
-                let _ = state_tx.send(ConnectionState::Connected);
-
-                // set up keep-alive ping timer
-                let mut ping_timer = ping_interval.map(tokio::time::interval);
-                if let Some(ref mut timer) = ping_timer {
-                    timer.tick().await; // consume the immediate first tick
-                }
-                // shared flag set by dispatch_message when a pong arrives;
-                // avoids the try_recv race where select! picks the timer
-                // arm before the reader arm has dispatched a buffered pong
-                let pong_received = Arc::new(AtomicBool::new(false));
-                let mut awaiting_pong = false;
-                // keep the pong receiver alive across select iterations so
-                // deliver() returns true (it uses .is_ok() which fails if
-                // the receiver was dropped)
-                let mut _pong_rx: Option<tokio::sync::oneshot::Receiver<AmiResponse>> = None;
-
-                // process messages until disconnect
-                loop {
-                    // biased: always drain incoming frames before checking
-                    // the ping timer, preventing false "missed pong" when the
-                    // response is buffered but not yet dispatched
-                    tokio::select! {
-                        biased;
-
-                        // incoming message from AMI (highest priority)
-                        frame = reader.next() => {
-                            match frame {
-                                Some(Ok(raw)) => {
-                                    dispatch_message(raw, &pending, &event_bus, &pong_received).await;
-                                }
-                                Some(Err(e)) => {
-                                    tracing::error!(error = %e, "AMI codec error");
-                                    break;
-                                }
-                                None => {
-                                    tracing::warn!("AMI connection closed");
-                                    break;
-                                }
-                            }
+                    // authenticate after connecting
+                    // 30s covers the full login exchange (challenge + auth RTTs)
+                    let login_result = tokio::time::timeout(
+                        Duration::from_secs(30),
+                        perform_login(&credentials, &mut reader, &mut writer, require_challenge),
+                    )
+                    .await;
+                    match login_result {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => {
+                            tracing::error!(error = %e, "AMI login failed after connect");
+                            break 'connected;
                         }
-                        // outbound command from client
-                        cmd = command_rx.recv() => {
-                            match cmd {
-                                Some(ConnectionCommand::SendAction { message, action_id, response_tx }) => {
-                                    pending.lock().await.register_with_sender(action_id, response_tx);
-                                    if let Err(e) = writer.send(message).await {
-                                        tracing::error!(error = %e, "failed to send AMI action");
+                        Err(_) => {
+                            tracing::error!("AMI login timed out after 30s");
+                            break 'connected;
+                        }
+                    }
+                    tracing::info!("AMI login successful");
+                    attempt = 0; // reset only after successful auth
+                    let _ = state_tx.send(ConnectionState::Connected);
+
+                    // set up keep-alive ping timer
+                    let mut ping_timer = ping_interval.map(tokio::time::interval);
+                    if let Some(ref mut timer) = ping_timer {
+                        timer.tick().await; // consume the immediate first tick
+                    }
+                    // shared flag set by dispatch_message when a pong arrives;
+                    // avoids the try_recv race where select! picks the timer
+                    // arm before the reader arm has dispatched a buffered pong
+                    let pong_received = Arc::new(AtomicBool::new(false));
+                    let mut awaiting_pong = false;
+                    // keep the pong receiver alive across select iterations so
+                    // deliver() returns true (it uses .is_ok() which fails if
+                    // the receiver was dropped)
+                    let mut _pong_rx: Option<tokio::sync::oneshot::Receiver<AmiResponse>> = None;
+
+                    // process messages until disconnect
+                    loop {
+                        // biased: always drain incoming frames before checking
+                        // the ping timer, preventing false "missed pong" when the
+                        // response is buffered but not yet dispatched
+                        tokio::select! {
+                            biased;
+
+                            // incoming message from AMI (highest priority)
+                            frame = reader.next() => {
+                                match frame {
+                                    Some(Ok(raw)) => {
+                                        dispatch_message(raw, &pending, &event_bus, &pong_received).await;
+                                    }
+                                    Some(Err(e)) => {
+                                        tracing::error!(error = %e, "AMI codec error");
+                                        break;
+                                    }
+                                    None => {
+                                        tracing::warn!("AMI connection closed");
                                         break;
                                     }
                                 }
-                                Some(ConnectionCommand::SendEventGeneratingAction { message, action_id, response_tx }) => {
-                                    pending.lock().await.register_event_list(action_id, response_tx);
-                                    if let Err(e) = writer.send(message).await {
-                                        tracing::error!(error = %e, "failed to send AMI action");
-                                        break;
+                            }
+                            // outbound command from client
+                            cmd = command_rx.recv() => {
+                                match cmd {
+                                    Some(ConnectionCommand::SendAction { message, action_id, response_tx }) => {
+                                        pending.lock().await.register_with_sender(action_id, response_tx);
+                                        if let Err(e) = writer.send(message).await {
+                                            tracing::error!(error = %e, "failed to send AMI action");
+                                            break;
+                                        }
+                                    }
+                                    Some(ConnectionCommand::SendEventGeneratingAction { message, action_id, response_tx }) => {
+                                        pending.lock().await.register_event_list(action_id, response_tx);
+                                        if let Err(e) = writer.send(message).await {
+                                            tracing::error!(error = %e, "failed to send AMI action");
+                                            break;
+                                        }
+                                    }
+                                    Some(ConnectionCommand::Shutdown) => {
+                                        tracing::info!("AMI connection shutdown requested");
+                                        let _ = state_tx.send(ConnectionState::Disconnected);
+                                        return;
+                                    }
+                                    None => {
+                                        // all command senders dropped
+                                        let _ = state_tx.send(ConnectionState::Disconnected);
+                                        return;
                                     }
                                 }
-                                Some(ConnectionCommand::Shutdown) => {
-                                    tracing::info!("AMI connection shutdown requested");
-                                    let _ = state_tx.send(ConnectionState::Disconnected);
-                                    return;
+                            }
+                            // keep-alive ping (lowest priority due to biased select)
+                            _ = async {
+                                match ping_timer.as_mut() {
+                                    Some(timer) => timer.tick().await,
+                                    None => std::future::pending().await,
                                 }
-                                None => {
-                                    // all command senders dropped
-                                    let _ = state_tx.send(ConnectionState::Disconnected);
-                                    return;
+                            } => {
+                                if awaiting_pong && !pong_received.load(Ordering::Acquire) {
+                                    tracing::warn!("keep-alive pong not received, treating connection as dead");
+                                    break;
                                 }
+                                // send a new ping
+                                pong_received.store(false, Ordering::Release);
+                                let (action_id, ping_msg) = PingAction.to_message();
+                                // register so the response routes through dispatch_message;
+                                // store receiver in outer scope so deliver() succeeds
+                                // (it returns tx.send().is_ok() which needs a live receiver)
+                                _pong_rx = Some(pending.lock().await.register(action_id));
+                                awaiting_pong = true;
+                                if let Err(e) = writer.send(ping_msg).await {
+                                    tracing::warn!(error = %e, "keep-alive ping failed, reconnecting");
+                                    break;
+                                }
+                                tracing::trace!("keep-alive ping sent");
                             }
-                        }
-                        // keep-alive ping (lowest priority due to biased select)
-                        _ = async {
-                            match ping_timer.as_mut() {
-                                Some(timer) => timer.tick().await,
-                                None => std::future::pending().await,
-                            }
-                        } => {
-                            if awaiting_pong && !pong_received.load(Ordering::Acquire) {
-                                tracing::warn!("keep-alive pong not received, treating connection as dead");
-                                break;
-                            }
-                            // send a new ping
-                            pong_received.store(false, Ordering::Release);
-                            let (action_id, ping_msg) = PingAction.to_message();
-                            // register so the response routes through dispatch_message;
-                            // store receiver in outer scope so deliver() succeeds
-                            // (it returns tx.send().is_ok() which needs a live receiver)
-                            _pong_rx = Some(pending.lock().await.register(action_id));
-                            awaiting_pong = true;
-                            if let Err(e) = writer.send(ping_msg).await {
-                                tracing::warn!(error = %e, "keep-alive ping failed, reconnecting");
-                                break;
-                            }
-                            tracing::trace!("keep-alive ping sent");
                         }
                     }
-                }
 
-                // connection lost — cancel pending actions
-                pending.lock().await.cancel_all();
+                    // connection lost — cancel pending actions
+                    pending.lock().await.cancel_all();
+                }
             }
             Ok(Err(e)) => {
                 tracing::error!(address = %address, error = %e, "failed to connect to AMI");

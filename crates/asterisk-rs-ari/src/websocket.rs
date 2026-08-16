@@ -177,8 +177,11 @@ fn handle_message(
                 event_bus.publish(event);
             }
             Err(e) => {
-                tracing::warn!(error = %e, "failed to deserialize ARI event");
-                tracing::trace!(payload = %text, "raw ARI event payload");
+                tracing::warn!(
+                    error = %e,
+                    payload_bytes = text.len(),
+                    "failed to deserialize ARI event"
+                );
             }
         },
         Message::Close(_) => {

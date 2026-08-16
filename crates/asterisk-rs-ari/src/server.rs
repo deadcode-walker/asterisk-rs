@@ -400,6 +400,14 @@ async fn session_loop(
             cmd = command_rx.recv() => {
                 match cmd {
                     Some(cmd) => {
+                        // timed-out requests must not execute after the session catches up
+                        if cmd.response_tx.is_closed() {
+                            tracing::debug!(
+                                request_id = %cmd.request_id,
+                                "discarding expired session request"
+                            );
+                            continue;
+                        }
                         let req = WsRestRequest {
                             type_field: "RESTRequest",
                             request_id: cmd.request_id.clone(),
@@ -462,8 +470,11 @@ fn route_message(
             }
         }
         Err(e) => {
-            tracing::warn!(error = %e, "failed to deserialize ARI message in session");
-            tracing::trace!(payload = %text, "raw ARI session message payload");
+            tracing::warn!(
+                error = %e,
+                payload_bytes = text.len(),
+                "failed to deserialize ARI message in session"
+            );
         }
     }
 }

@@ -247,6 +247,15 @@ async fn handle_connection(
             cmd = command_rx.recv() => {
                 match cmd {
                     Some(cmd) => {
+                        // a request may time out while queued during reconnect; never
+                        // execute a stale mutating operation after its caller is gone
+                        if cmd.response_tx.is_closed() {
+                            tracing::debug!(
+                                request_id = %cmd.request_id,
+                                "discarding expired REST request"
+                            );
+                            continue;
+                        }
                         let req = WsRestRequest {
                             type_field: "RESTRequest",
                             request_id: cmd.request_id.clone(),
@@ -314,8 +323,11 @@ fn route_text_message(
             }
         }
         Err(e) => {
-            tracing::warn!(error = %e, "failed to deserialize ARI message");
-            tracing::trace!(payload = %text, "raw ARI message payload");
+            tracing::warn!(
+                error = %e,
+                payload_bytes = text.len(),
+                "failed to deserialize ARI message"
+            );
         }
     }
 }

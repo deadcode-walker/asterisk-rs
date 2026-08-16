@@ -1772,6 +1772,7 @@ fn serialize_originate_params_full() {
     assert!(json.contains("\"context\":\"default\""));
     assert!(json.contains("\"priority\":1"));
     assert!(json.contains("\"app\":\"myapp\""));
+    assert!(json.contains("\"callerId\":\"\\\"Test\\\" <1000>\""));
     assert!(json.contains("\"timeout\":30"));
 }
 
@@ -1788,7 +1789,7 @@ fn serialize_originate_params_minimal() {
     assert!(!json.contains("context"));
     assert!(!json.contains("priority"));
     assert!(!json.contains("app_args"));
-    assert!(!json.contains("caller_id"));
+    assert!(!json.contains("callerId"));
     assert!(!json.contains("timeout"));
 }
 
@@ -2420,7 +2421,11 @@ fn originate_params_all_new_and_old_fields() {
     assert_eq!(json["priority"], 1);
     assert_eq!(json["app"], "myapp");
     assert_eq!(json["app_args"], "arg1,arg2");
-    assert_eq!(json["caller_id"], "\"Test\" <100>");
+    assert_eq!(json["callerId"], "\"Test\" <100>");
+    assert!(
+        json.get("caller_id").is_none(),
+        "snake_case key must not appear"
+    );
     assert_eq!(json["timeout"], 30);
     // new fields
     assert_eq!(json["channelId"], "chan-001");

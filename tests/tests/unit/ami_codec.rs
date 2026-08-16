@@ -111,6 +111,53 @@ fn reject_oversized_message() {
 }
 
 #[test]
+fn reject_oversized_unterminated_banner() {
+    let mut codec = AmiCodec::new();
+    let mut buf = BytesMut::from(vec![b'X'; 64 * 1024 + 1].as_slice());
+    assert!(codec.decode(&mut buf).is_err());
+}
+
+#[test]
+fn reject_oversized_unterminated_message() {
+    let mut codec = AmiCodec::new();
+    let mut buf = BytesMut::from(
+        format!(
+            "Asterisk Call Manager/6.0.0\r\nData: {}",
+            "X".repeat(64 * 1024)
+        )
+        .as_str(),
+    );
+    assert!(codec.decode(&mut buf).is_err());
+}
+
+#[test]
+fn reject_oversized_unterminated_follows_response() {
+    let mut codec = AmiCodec::new();
+    let mut buf = BytesMut::from(
+        format!(
+            "Asterisk Call Manager/6.0.0\r\nResponse: Follows\r\n\r\n{}",
+            "X".repeat(64 * 1024)
+        )
+        .as_str(),
+    );
+    assert!(codec.decode(&mut buf).is_err());
+}
+
+#[test]
+fn reject_oversized_encoded_message_without_mutating_destination() {
+    let mut codec = AmiCodec::new();
+    let msg = RawAmiMessage {
+        headers: vec![("Action".into(), "X".repeat(64 * 1024))],
+        output: vec![],
+        channel_variables: HashMap::new(),
+    };
+    let mut buf = BytesMut::from(&b"existing"[..]);
+
+    assert!(codec.encode(msg, &mut buf).is_err());
+    assert_eq!(&buf[..], b"existing");
+}
+
+#[test]
 fn decode_multiple_messages() {
     let mut codec = AmiCodec::new();
     let mut buf = BytesMut::from(

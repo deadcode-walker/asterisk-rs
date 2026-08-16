@@ -21,7 +21,7 @@ pub struct OriginateParams {
     pub app: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app_args: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "callerId", skip_serializing_if = "Option::is_none")]
     pub caller_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<i32>,
