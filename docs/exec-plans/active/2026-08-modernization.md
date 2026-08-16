@@ -31,8 +31,9 @@ is silently dropped because it was low severity or duplicated another report.
 - [x] 2026-08-16: ran fresh exact-diff Rust, correctness, security, and performance reviews; resolved
   every in-scope finding and reran current, MSRV, semver, workflow, supply-chain, documentation,
   mock, unit, and live-Asterisk proof.
-- [ ] Commit this bounded checkpoint; push, monitor, and close external records only on later explicit
-  instruction and only when the pushed evidence supports closure.
+- [x] 2026-08-16: committed the bounded foundation checkpoint locally as `b0aae21`; push, monitor,
+  and close external records only on later explicit instruction and only when pushed evidence
+  supports closure.
 
 ## Historical consolidated verdict
 
