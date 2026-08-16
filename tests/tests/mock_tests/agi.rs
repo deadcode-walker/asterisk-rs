@@ -6,7 +6,7 @@ use asterisk_rs_agi::handler::AgiHandler;
 use asterisk_rs_agi::request::AgiRequest;
 use asterisk_rs_agi::server::AgiServer;
 use asterisk_rs_tests::helpers::init_tracing;
-use asterisk_rs_tests::mock::agi_client::{free_port, standard_env, MockAgiClient};
+use asterisk_rs_tests::mock::agi_client::{MockAgiClient, standard_env};
 use tokio::sync::mpsc;
 
 // ---------------------------------------------------------------------------
@@ -34,6 +34,7 @@ struct CapturedSession {
     unique_id: Option<String>,
     caller_id: Option<String>,
     context: Option<String>,
+    peer_addr: Option<std::net::SocketAddr>,
 }
 
 struct CapturingHandler {
@@ -53,6 +54,7 @@ impl AgiHandler for CapturingHandler {
                 unique_id: request.unique_id().map(String::from),
                 caller_id: request.caller_id().map(String::from),
                 context: request.context().map(String::from),
+                peer_addr: request.peer_addr(),
             })
             .await;
         // send a command so the mock client has something to respond to
@@ -123,24 +125,15 @@ async fn spawn_server<H: AgiHandler>(
     asterisk_rs_agi::ShutdownHandle,
     std::net::SocketAddr,
 ) {
-    let port = free_port().await;
-    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}")
-        .parse()
-        .expect("valid socket addr");
-
-    let mut builder = AgiServer::builder()
-        .bind(format!("127.0.0.1:{port}"))
-        .handler(handler);
+    let mut builder = AgiServer::builder().bind("127.0.0.1:0").handler(handler);
 
     if let Some(n) = max_connections {
         builder = builder.max_connections(n);
     }
 
     let (server, shutdown) = builder.build().await.expect("failed to build AGI server");
+    let addr = server.local_addr().expect("bound address");
     let handle = tokio::spawn(server.run());
-
-    // small yield so the listener is ready
-    tokio::time::sleep(Duration::from_millis(20)).await;
 
     (handle, shutdown, addr)
 }
@@ -199,6 +192,11 @@ async fn handler_receives_request() {
     assert_eq!(session.unique_id.as_deref(), Some("1234567890.1"));
     assert_eq!(session.caller_id.as_deref(), Some("100"));
     assert_eq!(session.context.as_deref(), Some("default"));
+    assert!(
+        session
+            .peer_addr
+            .is_some_and(|addr| addr.ip().is_loopback())
+    );
 
     // respond to the ANSWER command so handler can complete
     let cmd = client.read_command().await.expect("should read ANSWER");
@@ -1810,24 +1808,70 @@ async fn server_builder_without_handler_fails() {
 }
 
 #[tokio::test]
+async fn server_builder_rejects_zero_connection_limit() {
+    let result = AgiServer::builder()
+        .bind("127.0.0.1:0")
+        .handler(AnswerAndHangup)
+        .max_connections(0)
+        .build()
+        .await;
+    assert!(matches!(result, Err(AgiError::InvalidConfig { .. })));
+}
+
+#[tokio::test]
+async fn server_builder_requires_explicit_external_bind() {
+    let result = AgiServer::builder()
+        .bind("0.0.0.0:0")
+        .handler(AnswerAndHangup)
+        .build()
+        .await;
+    assert!(matches!(result, Err(AgiError::InvalidConfig { .. })));
+}
+
+#[tokio::test]
+async fn server_builder_allows_explicit_external_bind() {
+    let (server, _shutdown) = AgiServer::builder()
+        .bind("0.0.0.0:0")
+        .allow_external_bind(true)
+        .handler(AnswerAndHangup)
+        .build()
+        .await
+        .expect("explicit external bind");
+    assert!(
+        !server
+            .local_addr()
+            .expect("bound address")
+            .ip()
+            .is_loopback()
+    );
+}
+
+#[tokio::test]
+async fn server_builder_rejects_zero_shutdown_timeout() {
+    let result = AgiServer::builder()
+        .bind("127.0.0.1:0")
+        .handler(AnswerAndHangup)
+        .shutdown_timeout(Duration::ZERO)
+        .build()
+        .await;
+    assert!(matches!(result, Err(AgiError::InvalidConfig { .. })));
+}
+
+#[tokio::test]
 async fn server_binds_to_specified_address() {
     init_tracing();
 
-    let port = free_port().await;
-    let bind_addr = format!("127.0.0.1:{port}");
-
     let (server, shutdown) = AgiServer::builder()
-        .bind(&bind_addr)
+        .bind("127.0.0.1:0")
         .handler(AnswerAndHangup)
         .build()
         .await
         .expect("should build server");
+    let addr = server.local_addr().expect("bound address");
     let handle = tokio::spawn(server.run());
-    tokio::time::sleep(Duration::from_millis(20)).await;
 
     // verify we can connect to the specified address
     let env = standard_env();
-    let addr: std::net::SocketAddr = bind_addr.parse().expect("valid socket addr");
     let mut client = MockAgiClient::connect(addr, &env).await;
 
     let cmd = client.read_command().await.expect("ANSWER");
@@ -2006,20 +2050,15 @@ async fn shutdown_during_handler_execution() {
     // shutdown while handler is still blocked on the gate
     shutdown.shutdown();
 
-    // server accept loop should exit promptly
+    // active handlers may complete inside the bounded graceful drain
+    gate_tx.send(true).expect("release gate");
+    let cmd = client.read_command().await.expect("ANSWER during drain");
+    assert_eq!(cmd, "ANSWER");
+    client.send_success(0).await;
+
     let result = tokio::time::timeout(Duration::from_secs(5), handle)
         .await
         .expect("server should stop accepting within timeout")
         .expect("task should not panic");
     result.expect("server should exit cleanly even with in-flight handler");
-
-    // release the gate so the handler task can finish (it was tokio::spawned)
-    gate_tx.send(true).expect("release gate");
-
-    // respond to ANSWER so handler completes fully
-    let cmd = client.read_command().await;
-    if let Some(cmd) = cmd {
-        assert_eq!(cmd, "ANSWER");
-        client.send_success(0).await;
-    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "asterisk-rs"
-version = "0.7.4"
+version = "0.8.0"
 description = "Async Rust client for Asterisk AMI, AGI, and ARI"
 edition.workspace = true
 rust-version.workspace = true
@@ -15,12 +15,12 @@ readme = "../../README.md"
 workspace = true
 
 [dependencies]
-asterisk-rs-core = { path = "../asterisk-rs-core", version = "0.7.1" }
-asterisk-rs-ami = { path = "../asterisk-rs-ami", version = "0.7.4", optional = true }
-asterisk-rs-agi = { path = "../asterisk-rs-agi", version = "0.7.1", optional = true }
-asterisk-rs-ari = { path = "../asterisk-rs-ari", version = "0.7.3", optional = true }
+asterisk-rs-core = { path = "../asterisk-rs-core", version = "0.8.0" }
+asterisk-rs-ami = { path = "../asterisk-rs-ami", version = "0.8.0", optional = true }
+asterisk-rs-agi = { path = "../asterisk-rs-agi", version = "0.8.0", optional = true }
+asterisk-rs-ari = { path = "../asterisk-rs-ari", version = "0.8.0", optional = true }
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
 
 [features]
 default = ["ami", "agi", "ari"]
@@ -35,4 +35,4 @@ required-features = ["ami"]
 [dev-dependencies]
 tracing.workspace = true
 tracing-subscriber.workspace = true
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

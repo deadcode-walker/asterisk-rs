@@ -4,16 +4,32 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 10
     groups:
-      rust-dependencies:
+      rust-compatible:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
+      rust-majors:
+        patterns:
+          - "*"
+        update-types:
+          - major
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
     groups:
       github-actions:
         patterns:
           - "*"
+
+  - package-ecosystem: docker
+    directory: /tests/asterisk
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3

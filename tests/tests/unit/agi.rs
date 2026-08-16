@@ -1,12 +1,13 @@
 #![allow(clippy::unwrap_used)]
 
+use asterisk_rs_agi::AgiChannel;
 use asterisk_rs_agi::command;
 use asterisk_rs_agi::error::AgiError;
 use asterisk_rs_agi::request::AgiRequest;
 use asterisk_rs_agi::response::AgiResponse;
-use asterisk_rs_agi::AgiChannel;
 use asterisk_rs_core::error::ProtocolError;
 use std::io::Cursor;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
@@ -68,26 +69,31 @@ async fn request_parse_preserves_non_agi_keys() {
 }
 
 #[tokio::test]
-async fn request_parse_empty_input() {
-    let req = parse_request("").await;
-    assert_eq!(req.network(), None);
-    assert_eq!(req.channel(), None);
+async fn request_rejects_empty_input_without_terminator() {
+    let mut reader = BufReader::new(Cursor::new(Vec::<u8>::new()));
+    let error = AgiRequest::parse_from_reader(&mut reader)
+        .await
+        .expect_err("eof is not a blank-line terminator");
+    assert!(matches!(error, AgiError::InvalidRequest { .. }));
 }
 
 #[tokio::test]
-async fn request_parse_eof_without_blank_line() {
-    // no trailing blank line — parser reads until eof
-    let req = parse_request("agi_language: en\nagi_type: SIP").await;
-    assert_eq!(req.language(), Some("en"));
-    assert_eq!(req.channel_type(), Some("SIP"));
+async fn request_rejects_eof_without_blank_line() {
+    let mut reader = BufReader::new(Cursor::new(b"agi_language: en\n".to_vec()));
+    let error = AgiRequest::parse_from_reader(&mut reader)
+        .await
+        .expect_err("prelude requires a blank-line terminator");
+    assert!(error.to_string().contains("blank-line terminator"));
 }
 
 #[tokio::test]
-async fn request_parse_ignores_lines_without_colon() {
+async fn request_rejects_lines_without_colon() {
     let input = "agi_language: en\ngarbage line\nagi_type: SIP\n\n";
-    let req = parse_request(input).await;
-    assert_eq!(req.language(), Some("en"));
-    assert_eq!(req.channel_type(), Some("SIP"));
+    let mut reader = BufReader::new(Cursor::new(input.as_bytes().to_vec()));
+    let error = AgiRequest::parse_from_reader(&mut reader)
+        .await
+        .expect_err("malformed lines must not be ignored");
+    assert!(error.to_string().contains("missing ':'"));
 }
 
 #[tokio::test]
@@ -98,9 +104,55 @@ async fn request_parse_value_with_colons() {
 }
 
 #[tokio::test]
-async fn request_parse_whitespace_trimming() {
-    let req = parse_request("  agi_language  :  en  \n\n").await;
-    assert_eq!(req.language(), Some("en"));
+async fn request_parse_preserves_meaningful_value_whitespace() {
+    let req = parse_request("  agi_language  :  en  \r\n\r\n").await;
+    assert_eq!(req.language(), Some(" en  "));
+}
+
+#[tokio::test]
+async fn request_rejects_whitespace_only_terminator() {
+    let mut reader = BufReader::new(Cursor::new(b"agi_language: en\n  \n".to_vec()));
+    let error = AgiRequest::parse_from_reader(&mut reader)
+        .await
+        .expect_err("only an empty line terminates the prelude");
+    assert!(error.to_string().contains("missing ':'"));
+}
+
+#[tokio::test]
+async fn request_rejects_empty_variable_name() {
+    let mut reader = BufReader::new(Cursor::new(b": value\n\n".to_vec()));
+    let error = AgiRequest::parse_from_reader(&mut reader)
+        .await
+        .expect_err("empty variable names are malformed");
+    assert!(error.to_string().contains("name is empty"));
+}
+
+#[tokio::test]
+async fn request_rejects_oversized_line() {
+    let input = format!("agi_key: {}\n\n", "x".repeat(8_192));
+    let mut reader = BufReader::new(Cursor::new(input.into_bytes()));
+    let error = AgiRequest::parse_from_reader(&mut reader)
+        .await
+        .expect_err("oversized lines must fail");
+    assert!(error.to_string().contains("8192 bytes"));
+}
+
+#[tokio::test]
+async fn request_rejects_unterminated_variable_line() {
+    let mut reader = BufReader::new(Cursor::new(b"agi_language: en".to_vec()));
+    let error = AgiRequest::parse_from_reader(&mut reader)
+        .await
+        .expect_err("variable lines require a newline");
+    assert!(error.to_string().contains("without a newline"));
+}
+
+#[tokio::test]
+async fn request_rejects_embedded_carriage_return() {
+    let mut reader = BufReader::new(Cursor::new(b"agi_language: en\rhidden\n\n".to_vec()));
+    let error = AgiRequest::parse_from_reader(&mut reader)
+        .await
+        .expect_err("embedded carriage return is malformed");
+    assert!(error.to_string().contains("control character"));
 }
 
 #[tokio::test]
@@ -130,6 +182,31 @@ async fn request_all_accessors_return_none_on_empty() {
     assert_eq!(req.context(), None);
     assert_eq!(req.extension(), None);
     assert_eq!(req.priority(), None);
+    assert_eq!(req.peer_addr(), None);
+}
+
+#[tokio::test]
+async fn request_rejects_too_many_variables() {
+    let mut input = String::new();
+    for index in 0..129 {
+        input.push_str(&format!("agi_key_{index}: value\n"));
+    }
+    input.push('\n');
+    let mut reader = BufReader::new(Cursor::new(input.into_bytes()));
+    let error = AgiRequest::parse_from_reader(&mut reader)
+        .await
+        .expect_err("oversized prelude must fail");
+    assert!(error.to_string().contains("128 variables"));
+}
+
+#[tokio::test]
+async fn request_rejects_oversized_prelude() {
+    let input = "agi_key: x\n".repeat(6_000);
+    let mut reader = BufReader::new(Cursor::new(input.into_bytes()));
+    let error = AgiRequest::parse_from_reader(&mut reader)
+        .await
+        .expect_err("oversized prelude must fail");
+    assert!(error.to_string().contains("65536 bytes"));
 }
 
 // ---------------------------------------------------------------------------
@@ -430,6 +507,146 @@ async fn channel_answer() {
     let cmd = server.await.expect("server");
     assert_eq!(cmd, "ANSWER\n");
     assert_eq!(resp.code, 200);
+}
+
+#[tokio::test]
+async fn channel_raw_command_rejects_injected_lines() {
+    let (mut channel, _reader, _writer) = mock_channel().await;
+    for command in [
+        "ANSWER",
+        "ANSWER\r\n",
+        "ANSWER\nHANGUP\n",
+        "ANSWER\rHANGUP\n",
+    ] {
+        let error = channel
+            .send_command(command)
+            .await
+            .expect_err("invalid raw command must fail before transmission");
+        assert!(matches!(error, AgiError::InvalidArgument { .. }));
+    }
+}
+
+#[tokio::test]
+async fn channel_response_line_is_bounded() {
+    let (mut channel, mut server_reader, mut server_writer) = mock_channel().await;
+    let server = tokio::spawn(async move {
+        let mut command = String::new();
+        server_reader
+            .read_line(&mut command)
+            .await
+            .expect("read command");
+        server_writer
+            .write_all(format!("200 result=0 ({})\n", "x".repeat(9_000)).as_bytes())
+            .await
+            .expect("write response");
+    });
+
+    let error = channel
+        .answer()
+        .await
+        .expect_err("oversized response must fail");
+    assert!(matches!(error, AgiError::ResponseTooLarge { limit: 8192 }));
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn channel_command_timeout_poisons_stream() {
+    let (mut channel, mut server_reader, _server_writer) = mock_channel().await;
+    channel
+        .set_command_timeout(Some(Duration::from_millis(20)))
+        .expect("valid timeout");
+    let server = tokio::spawn(async move {
+        let mut command = String::new();
+        server_reader
+            .read_line(&mut command)
+            .await
+            .expect("read command");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    });
+
+    let error = channel.answer().await.expect_err("command must time out");
+    assert!(matches!(error, AgiError::CommandTimeout { .. }));
+    assert!(matches!(
+        channel.answer().await,
+        Err(AgiError::ChannelPoisoned)
+    ));
+    server.abort();
+}
+
+#[tokio::test]
+async fn channel_has_no_command_timeout_by_default() {
+    let (mut channel, mut server_reader, mut server_writer) = mock_channel().await;
+    assert_eq!(channel.command_timeout(), None);
+    let server = tokio::spawn(async move {
+        let mut command = String::new();
+        server_reader
+            .read_line(&mut command)
+            .await
+            .expect("read command");
+        assert_eq!(command, "WAIT FOR DIGIT -1\n");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        server_writer
+            .write_all(b"200 result=0\n")
+            .await
+            .expect("write response");
+    });
+
+    tokio::time::timeout(Duration::from_secs(1), channel.wait_for_digit(-1))
+        .await
+        .expect("test guard")
+        .expect("default must allow an indefinite AGI command");
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn channel_command_timeout_can_be_disabled_again() {
+    let (mut channel, server_reader, server_writer) = mock_channel().await;
+    channel
+        .set_command_timeout(Some(Duration::from_millis(10)))
+        .expect("valid timeout");
+    channel.set_command_timeout(None).expect("disable timeout");
+    assert_eq!(channel.command_timeout(), None);
+
+    let server = tokio::spawn(run_ok(server_reader, server_writer));
+    channel.answer().await.expect("disabled timeout");
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn channel_rejects_zero_command_timeout() {
+    let (mut channel, _server_reader, _server_writer) = mock_channel().await;
+    let error = channel
+        .set_command_timeout(Some(Duration::ZERO))
+        .expect_err("zero timeout is ambiguous");
+    assert!(matches!(error, AgiError::InvalidArgument { .. }));
+    assert_eq!(channel.command_timeout(), None);
+}
+
+#[tokio::test]
+async fn channel_rejects_unterminated_response_line() {
+    let (mut channel, mut server_reader, mut server_writer) = mock_channel().await;
+    let server = tokio::spawn(async move {
+        let mut command = String::new();
+        server_reader
+            .read_line(&mut command)
+            .await
+            .expect("read command");
+        server_writer
+            .write_all(b"200 result=0")
+            .await
+            .expect("write response");
+        server_writer
+            .shutdown()
+            .await
+            .expect("close response stream");
+    });
+
+    let error = channel
+        .answer()
+        .await
+        .expect_err("unterminated response must fail");
+    assert!(matches!(error, AgiError::InvalidResponse { .. }));
+    server.await.expect("server task");
 }
 
 #[tokio::test]

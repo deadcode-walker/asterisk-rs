@@ -17,10 +17,10 @@
 //!
 //! Usage: cargo run --example ari_pending
 
+use asterisk_rs_ari::AriClient;
 use asterisk_rs_ari::config::AriConfigBuilder;
 use asterisk_rs_ari::event::AriEvent;
 use asterisk_rs_ari::resources::channel::OriginateParams;
-use asterisk_rs_ari::AriClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

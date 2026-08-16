@@ -27,7 +27,15 @@ Reconnect behavior is development-proved with mocks; Asterisk-backed behavior is
 ## Evidence
 
 - `just test` exercises pure and mock failure paths.
-- `just live` exercises the real PBX boundary serially.
+- Live tests are marked ignored, so generic workspace and all-features test commands compile them
+  without contacting a PBX.
+- `just live` opts into every ignored live test and exercises the real PBX boundary serially. When
+  the repository's `tests/docker-compose.yml` Asterisk service is running, the recipe selects its
+  loopback AMI/ARI ports and mutation opt-in. For any other isolated test PBX, callers must set
+  `ASTERISK_TEST_ALLOW_MUTATION=1`, `ASTERISK_AMI_HOST`, `ASTERISK_AMI_PORT`, `ASTERISK_ARI_HOST`,
+  and `ASTERISK_ARI_PORT` explicitly.
+- `just msrv` compiles every target and feature, including live-test code, on Rust 1.86.0, then runs
+  the unit and mock suites without requiring Asterisk.
 - `just ci` checks all features, minimal features, rustdoc, generated docs, policy, and harness
   structure.
 

@@ -154,7 +154,7 @@ queue member selection strategy
 
 ## `ExtensionState`
 
-extension hint state values  the base states map to Asterisk's `AST_EXTENSION_*` constants. bitmask combinations (e.g. `InUse | Ringing` = 9) are represented by `Other`.
+extension hint state values
 
 | Variant | Description |
 |---------|-------------|

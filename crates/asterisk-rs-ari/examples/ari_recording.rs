@@ -5,10 +5,10 @@
 //!
 //! Usage: cargo run --example ari_recording
 
+use asterisk_rs_ari::AriClient;
 use asterisk_rs_ari::config::AriConfigBuilder;
 use asterisk_rs_ari::event::{AriEvent, AriMessage};
 use asterisk_rs_ari::resources::channel::ChannelHandle;
-use asterisk_rs_ari::AriClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

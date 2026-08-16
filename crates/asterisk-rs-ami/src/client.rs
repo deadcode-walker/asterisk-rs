@@ -4,18 +4,21 @@ use crate::action::{self, AmiAction, LogoffAction, PingAction};
 use crate::connection::{ConnectionCommand, ConnectionManager};
 use crate::error::{AmiError, Result};
 use crate::event::AmiEvent;
-use crate::response::AmiResponse;
+use crate::response::{AmiResponse, RequestLifecycle};
 use asterisk_rs_core::auth::Credentials;
 use asterisk_rs_core::config::{ConnectionState, ReconnectPolicy};
 use asterisk_rs_core::event::{EventBus, EventSubscription};
 
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::time::Instant;
 
 /// default AMI port
 const DEFAULT_PORT: u16 = 5038;
 /// default action timeout
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+/// default initial connection and authentication timeout
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// async client for the Asterisk Manager Interface
 #[derive(Clone)]
@@ -36,23 +39,26 @@ impl AmiClient {
     pub async fn send_action<A: AmiAction>(&self, action: &A) -> Result<AmiResponse> {
         let (action_id, message) = action.to_message();
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let lifecycle = Arc::new(RequestLifecycle::default());
+        let deadline = self.action_deadline()?;
 
         self.connection
-            .send(ConnectionCommand::SendAction {
-                message,
-                action_id,
-                response_tx,
-            })
+            .send(
+                ConnectionCommand::SendAction {
+                    message,
+                    action_id: action_id.clone(),
+                    deadline,
+                    timeout: self.timeout,
+                    lifecycle: lifecycle.clone(),
+                    response_tx,
+                },
+                deadline,
+                self.timeout,
+            )
             .await?;
 
-        tokio::time::timeout(self.timeout, response_rx)
+        self.await_action_result(action_id, deadline, lifecycle, response_rx)
             .await
-            .map_err(|_| {
-                AmiError::Timeout(asterisk_rs_core::error::TimeoutError::Action {
-                    elapsed: self.timeout,
-                })
-            })?
-            .map_err(|_| AmiError::ResponseChannelClosed)
     }
 
     /// send a ping (keep-alive)
@@ -101,23 +107,26 @@ impl AmiClient {
     ) -> Result<crate::response::EventListResponse> {
         let (action_id, message) = action.to_message();
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let lifecycle = Arc::new(RequestLifecycle::default());
+        let deadline = self.action_deadline()?;
 
         self.connection
-            .send(ConnectionCommand::SendEventGeneratingAction {
-                message,
-                action_id,
-                response_tx,
-            })
+            .send(
+                ConnectionCommand::SendEventGeneratingAction {
+                    message,
+                    action_id: action_id.clone(),
+                    deadline,
+                    timeout: self.timeout,
+                    lifecycle: lifecycle.clone(),
+                    response_tx,
+                },
+                deadline,
+                self.timeout,
+            )
             .await?;
 
-        tokio::time::timeout(self.timeout, response_rx)
+        self.await_action_result(action_id, deadline, lifecycle, response_rx)
             .await
-            .map_err(|_| {
-                AmiError::Timeout(asterisk_rs_core::error::TimeoutError::Action {
-                    elapsed: self.timeout,
-                })
-            })?
-            .map_err(|_| AmiError::ResponseChannelClosed)
     }
 
     /// subscribe to events matching a filter predicate
@@ -147,6 +156,45 @@ impl AmiClient {
         self.connection.shutdown().await;
         Ok(())
     }
+
+    fn action_deadline(&self) -> Result<Instant> {
+        Instant::now()
+            .checked_add(self.timeout)
+            .ok_or_else(|| AmiError::InvalidConfig {
+                details: "action timeout is too large".to_owned(),
+            })
+    }
+
+    async fn await_action_result<T>(
+        &self,
+        action_id: String,
+        deadline: Instant,
+        lifecycle: Arc<RequestLifecycle>,
+        mut response_rx: tokio::sync::oneshot::Receiver<Result<T>>,
+    ) -> Result<T> {
+        match tokio::time::timeout_at(deadline, &mut response_rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(AmiError::ResponseChannelClosed),
+            Err(_) => {
+                if let Ok(result) = response_rx.try_recv() {
+                    return result;
+                }
+                if lifecycle.cancel_queued() {
+                    Err(self.action_timeout())
+                } else if lifecycle.may_have_executed() {
+                    Err(AmiError::OutcomeUnknown { action_id })
+                } else {
+                    Err(self.action_timeout())
+                }
+            }
+        }
+    }
+
+    fn action_timeout(&self) -> AmiError {
+        AmiError::Timeout(asterisk_rs_core::error::TimeoutError::Action {
+            elapsed: self.timeout,
+        })
+    }
 }
 
 impl std::fmt::Debug for AmiClient {
@@ -167,6 +215,7 @@ pub struct AmiClientBuilder {
     credentials: Option<Credentials>,
     reconnect_policy: ReconnectPolicy,
     timeout: Duration,
+    connect_timeout: Duration,
     event_capacity: usize,
     ping_interval: Option<Duration>,
     require_challenge: bool,
@@ -180,6 +229,7 @@ impl Default for AmiClientBuilder {
             credentials: None,
             reconnect_policy: ReconnectPolicy::default(),
             timeout: DEFAULT_TIMEOUT,
+            connect_timeout: DEFAULT_CONNECT_TIMEOUT,
             event_capacity: 1024,
             ping_interval: None,
             require_challenge: true,
@@ -215,6 +265,12 @@ impl AmiClientBuilder {
     /// set the action response timeout (default 30s)
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// set the deadline for the initial TCP connection and authentication
+    pub fn connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = timeout;
         self
     }
 
@@ -258,16 +314,34 @@ impl AmiClientBuilder {
                 details: "event_capacity must be greater than zero".to_owned(),
             });
         }
+        if self.timeout.is_zero() {
+            return Err(AmiError::InvalidConfig {
+                details: "timeout must be greater than zero".to_owned(),
+            });
+        }
+        if self.connect_timeout.is_zero() {
+            return Err(AmiError::InvalidConfig {
+                details: "connect_timeout must be greater than zero".to_owned(),
+            });
+        }
         if self.ping_interval == Some(Duration::ZERO) {
             return Err(AmiError::InvalidConfig {
                 details: "ping_interval must be greater than zero".to_owned(),
+            });
+        }
+        if self
+            .ping_interval
+            .is_some_and(|interval| Instant::now().checked_add(interval).is_none())
+        {
+            return Err(AmiError::InvalidConfig {
+                details: "ping_interval is too large".to_owned(),
             });
         }
 
         let event_bus = EventBus::new(self.event_capacity);
         let address = format!("{}:{}", self.host, self.port);
 
-        let connection = ConnectionManager::spawn(
+        let (connection, startup_rx) = ConnectionManager::spawn(
             address,
             credentials.clone(),
             event_bus.clone(),
@@ -276,10 +350,18 @@ impl AmiClientBuilder {
             self.require_challenge,
         );
 
-        // wait for connection + login to complete
-        connection
-            .wait_for_state(ConnectionState::Connected)
-            .await?;
+        // bound the complete initial connect/retry/authentication sequence
+        match tokio::time::timeout(self.connect_timeout, startup_rx).await {
+            Ok(Ok(result)) => result?,
+            Ok(Err(_)) => return Err(AmiError::Disconnected),
+            Err(_) => {
+                return Err(AmiError::Timeout(
+                    asterisk_rs_core::error::TimeoutError::Connection {
+                        elapsed: self.connect_timeout,
+                    },
+                ));
+            }
+        }
 
         Ok(AmiClient {
             connection: Arc::new(connection),

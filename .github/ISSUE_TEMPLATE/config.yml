@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Private Security Report
+    url: https://github.com/deadcode-walker/asterisk-rs/security/advisories/new
+    about: Report a vulnerability privately
   - name: Questions & Discussions
     url: https://github.com/deadcode-walker/asterisk-rs/discussions
     about: Ask questions and discuss ideas

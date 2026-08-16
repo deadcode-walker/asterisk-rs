@@ -1,6 +1,6 @@
 //! sound query operations (read-only).
 
-use crate::client::{url_encode, AriClient};
+use crate::client::{AriClient, url_encode};
 use crate::error::Result;
 
 /// format information for a sound

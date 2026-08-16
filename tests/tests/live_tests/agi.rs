@@ -62,6 +62,7 @@ impl AgiHandler for IntegrationHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn real_agi_session() {
     init_tracing();
 
@@ -71,6 +72,7 @@ async fn real_agi_session() {
     // bind AGI server on port 4573 (what extensions.conf expects)
     let (server, shutdown) = AgiServer::builder()
         .bind("0.0.0.0:4573")
+        .allow_external_bind(true)
         .handler(handler)
         .build()
         .await
@@ -183,6 +185,7 @@ async fn spawn_agi<H: AgiHandler + Send + Sync + 'static>(
 ) {
     let (server, shutdown) = AgiServer::builder()
         .bind("0.0.0.0:4573")
+        .allow_external_bind(true)
         .handler(handler)
         .build()
         .await
@@ -217,6 +220,7 @@ impl AgiHandler for GetVariableHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_get_variable() {
     init_tracing();
 
@@ -275,6 +279,7 @@ impl AgiHandler for SetGetVariableHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_set_and_get_variable() {
     init_tracing();
 
@@ -346,6 +351,7 @@ impl AgiHandler for DatabaseOpsHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_database_operations() {
     init_tracing();
 
@@ -403,6 +409,7 @@ impl AgiHandler for ChannelStatusHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_channel_status() {
     init_tracing();
 
@@ -452,6 +459,7 @@ impl AgiHandler for ExecAppHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_exec_application() {
     init_tracing();
 
@@ -499,6 +507,7 @@ impl AgiHandler for VerboseHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_verbose() {
     init_tracing();
 
@@ -546,6 +555,7 @@ impl AgiHandler for NoopHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_noop() {
     init_tracing();
 
@@ -594,6 +604,7 @@ impl AgiHandler for SetCallerIdHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_set_callerid() {
     init_tracing();
 
@@ -664,6 +675,7 @@ impl AgiHandler for RequestMetadataHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_request_metadata() {
     init_tracing();
 
@@ -751,6 +763,7 @@ impl AgiHandler for MultiCommandHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_multiple_commands_sequence() {
     init_tracing();
 
@@ -802,6 +815,7 @@ impl AgiHandler for ConcurrentSessionHandler {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn agi_concurrent_sessions() {
     init_tracing();
 

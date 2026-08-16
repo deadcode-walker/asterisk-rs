@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use asterisk_rs_ari::config::AriConfigBuilder;
+use asterisk_rs_ari::config::{AriConfigBuilder, TransportMode};
 use asterisk_rs_ari::{AriClient, AriError};
 use asterisk_rs_core::config::ReconnectPolicy;
 
@@ -9,12 +9,17 @@ use asterisk_rs_tests::mock::ari_server::MockAriServerBuilder;
 
 /// build an ARI client pointed at the mock server
 async fn connect_to_mock(port: u16) -> AriClient {
+    connect_to_mock_with_response_limit(port, 4 * 1024 * 1024).await
+}
+
+async fn connect_to_mock_with_response_limit(port: u16, limit: usize) -> AriClient {
     let config = AriConfigBuilder::new("test-app")
         .host("127.0.0.1")
         .port(port)
         .username("testuser")
         .password("testpass")
         .reconnect(ReconnectPolicy::none())
+        .max_response_body_bytes(limit)
         .build()
         .expect("failed to build ari config");
 
@@ -23,14 +28,48 @@ async fn connect_to_mock(port: u16) -> AriClient {
         .expect("failed to connect ari client")
 }
 
+/// build a unified REST-over-WebSocket client pointed at the mock server
+async fn connect_unified_to_mock(port: u16) -> AriClient {
+    connect_unified_to_mock_with_timeout(port, Duration::from_secs(30)).await
+}
+
+async fn connect_unified_to_mock_with_timeout(port: u16, request_timeout: Duration) -> AriClient {
+    connect_unified_to_mock_with_limits(port, request_timeout, 4 * 1024 * 1024, 4 * 1024 * 1024)
+        .await
+}
+
+async fn connect_unified_to_mock_with_limits(
+    port: u16,
+    request_timeout: Duration,
+    max_response_body_bytes: usize,
+    max_websocket_message_bytes: usize,
+) -> AriClient {
+    let config = AriConfigBuilder::new("test-app")
+        .host("127.0.0.1")
+        .port(port)
+        .username("testuser")
+        .password("testpass")
+        .transport(TransportMode::WebSocket)
+        .reconnect(ReconnectPolicy::none())
+        .request_timeout(request_timeout)
+        .max_response_body_bytes(max_response_body_bytes)
+        .max_websocket_message_bytes(max_websocket_message_bytes)
+        .build()
+        .expect("failed to build unified ari config");
+
+    AriClient::connect(config)
+        .await
+        .expect("failed to create unified ari client")
+}
+
 #[tokio::test]
 async fn connect_and_disconnect() {
     init_tracing();
 
     let server = MockAriServerBuilder::new().start().await;
     let client = connect_to_mock(server.port()).await;
-    client.disconnect();
-    server.shutdown();
+    client.disconnect_and_wait().await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -58,8 +97,8 @@ async fn get_request() {
         "expected status field in response"
     );
 
-    client.disconnect();
-    server.shutdown();
+    client.disconnect_and_wait().await;
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -80,8 +119,21 @@ async fn post_request() {
 
     assert_eq!(channel["id"], "chan-1", "expected channel id in response");
 
+    server.wait_for_requests(1).await;
+    let requests = server.requests();
+    let request = &requests[0];
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/ari/channels");
+    assert_eq!(
+        request.authorization.as_deref(),
+        Some("Basic dGVzdHVzZXI6dGVzdHBhc3M=")
+    );
+    assert_eq!(request.content_type.as_deref(), Some("application/json"));
+    assert_eq!(request.content_length, request.body.len());
+    assert_eq!(request.body, br#"{"endpoint":"SIP/100"}"#);
+
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -100,7 +152,7 @@ async fn delete_request() {
         .expect("DELETE channels/chan-1 failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -135,7 +187,645 @@ async fn api_error_handling() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn http_transport_error_preserves_stable_source() {
+    use std::error::Error as _;
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("temporary listener should bind");
+    let port = listener
+        .local_addr()
+        .expect("temporary listener should have an address")
+        .port();
+    drop(listener);
+
+    let config = AriConfigBuilder::new("test-app")
+        .host("127.0.0.1")
+        .port(port)
+        .username("testuser")
+        .password("testpass")
+        .reconnect(ReconnectPolicy::none())
+        .request_timeout(Duration::from_secs(1))
+        .build()
+        .expect("config should build");
+    let client = AriClient::connect(config)
+        .await
+        .expect("client transport should construct");
+
+    let result = client.get::<serde_json::Value>("unreachable").await;
+    match result {
+        Err(AriError::Http(error)) => {
+            assert!(
+                error.source().is_some(),
+                "concrete HTTP source must be retained"
+            );
+            assert_eq!(error.status_code(), None);
+            assert!(!error.to_string().is_empty());
+        }
+        other => panic!("expected stable HTTP transport error, got {other:?}"),
+    }
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn http_mutation_connect_failure_is_definitely_not_sent() {
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("temporary listener should bind");
+    let port = listener
+        .local_addr()
+        .expect("temporary listener should have an address")
+        .port();
+    drop(listener);
+    let client = connect_to_mock(port).await;
+
+    let result = client.post_empty("channels/not-sent").await;
+    assert!(
+        matches!(
+            &result,
+            Err(AriError::RequestNotSent { method, uri })
+                if method == "POST" && uri == "channels/not-sent"
+        ),
+        "connect failure must be explicitly safe to retry: {result:?}"
+    );
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn http_mutation_disconnect_after_request_is_indeterminate() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route_disconnect("POST", "/ari/channels/maybe-executed")
+        .start()
+        .await;
+    let client = connect_to_mock(server.port()).await;
+
+    let result = client.post_empty("channels/maybe-executed").await;
+    assert!(
+        matches!(
+            &result,
+            Err(AriError::OutcomeUnknown {
+                request_id,
+                method,
+                uri,
+            }) if request_id.starts_with("http-")
+                && method == "POST"
+                && uri == "channels/maybe-executed"
+        ),
+        "a mutation accepted by the server without a response is indeterminate: {result:?}"
+    );
+    server.wait_for_requests(1).await;
+
+    client.disconnect();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn fixed_length_http_response_respects_application_limit() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("GET", "/ari/large", 200, "12345678901234567")
+        .start()
+        .await;
+    let client = connect_to_mock_with_response_limit(server.port(), 16).await;
+
+    let result = client.get::<serde_json::Value>("large").await;
+    assert!(
+        matches!(
+            &result,
+            Err(AriError::ResponseTooLarge {
+                limit: 16,
+                received: 17
+            })
+        ),
+        "fixed-length response must be rejected before buffering: {result:?}"
+    );
+
+    client.disconnect();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn chunked_http_response_respects_application_limit() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route_chunked("GET", "/ari/large", 200, "12345678901234567")
+        .start()
+        .await;
+    let client = connect_to_mock_with_response_limit(server.port(), 16).await;
+
+    let result = client.get::<serde_json::Value>("large").await;
+    assert!(
+        matches!(
+            result,
+            Err(AriError::ResponseTooLarge {
+                limit: 16,
+                received: 17
+            })
+        ),
+        "chunked response must be rejected while streaming: {result:?}"
+    );
+
+    client.disconnect();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn chunked_http_response_under_limit_succeeds() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route_chunked("GET", "/ari/small", 200, r#"{"ok":true}"#)
+        .start()
+        .await;
+    let client = connect_to_mock_with_response_limit(server.port(), 16).await;
+
+    let value: serde_json::Value = client
+        .get("small")
+        .await
+        .expect("under-limit chunked response should succeed");
+    assert_eq!(value["ok"], true);
+
+    client.disconnect();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn http_redirect_is_not_accepted_as_api_success() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("POST", "/ari/channels/redirected", 302, "")
+        .start()
+        .await;
+    let client = connect_to_mock(server.port()).await;
+
+    let result = client.post_empty("channels/redirected").await;
+    assert!(
+        matches!(result, Err(AriError::Api { status: 302, .. })),
+        "HTTP transport must accept only explicit 2xx responses: {result:?}"
+    );
+
+    client.disconnect();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn unified_transport_accepts_only_explicit_2xx_responses() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("POST", "/ari/channels/ok", 204, "")
+        .route("POST", "/ari/channels/redirected", 302, "")
+        .route("GET", "/ari/channels/empty", 204, "")
+        .start()
+        .await;
+    let client = connect_unified_to_mock(server.port()).await;
+    server.wait_for_ws_client().await;
+
+    client
+        .post_empty("channels/ok")
+        .await
+        .expect("unified transport should accept a 204 response");
+    let result = client.post_empty("channels/redirected").await;
+    match result {
+        Err(AriError::Api { status, message }) => {
+            assert_eq!(status, 302);
+            assert_eq!(message, "Found");
+        }
+        other => panic!("unified transport must reject a non-2xx response: {other:?}"),
+    }
+    let result = client.get::<serde_json::Value>("channels/empty").await;
+    assert!(
+        matches!(
+            result,
+            Err(AriError::Api {
+                status: 204,
+                ref message,
+            }) if message == "expected response body"
+        ),
+        "a success reason phrase must not become a response body: {result:?}"
+    );
+
+    client.disconnect();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn unified_response_body_respects_application_limit() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("GET", "/ari/large", 200, "12345678901234567")
+        .start()
+        .await;
+    let client =
+        connect_unified_to_mock_with_limits(server.port(), Duration::from_secs(1), 16, 1024).await;
+    server.wait_for_ws_client().await;
+
+    let result = client.get::<serde_json::Value>("large").await;
+    assert!(
+        matches!(
+            result,
+            Err(AriError::ResponseTooLarge {
+                limit: 16,
+                received: 17,
+            })
+        ),
+        "unified response body must respect the application cap: {result:?}"
+    );
+
+    client.disconnect();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn unified_websocket_message_respects_wire_limit() {
+    init_tracing();
+
+    let body = "x".repeat(512);
+    let server = MockAriServerBuilder::new()
+        .route("GET", "/ari/oversized-frame", 200, &body)
+        .start()
+        .await;
+    let client =
+        connect_unified_to_mock_with_limits(server.port(), Duration::from_secs(1), 1024, 256).await;
+    server.wait_for_ws_client().await;
+
+    let result = client.get::<serde_json::Value>("oversized-frame").await;
+    assert!(
+        matches!(result, Err(AriError::WebSocket(_))),
+        "oversized unified WebSocket message must close the request safely: {result:?}"
+    );
+
+    client.disconnect();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn unified_command_progresses_during_continuous_event_flood() {
+    use futures_util::{SinkExt, StreamExt};
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let port = listener.local_addr().expect("listener address").port();
+    let peer = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept should succeed");
+        let websocket = tokio_tungstenite::accept_async(stream)
+            .await
+            .expect("websocket handshake should succeed");
+        let (mut write, mut read) = websocket.split();
+        let mut event_index = 0_u64;
+        loop {
+            write
+                .send(tokio_tungstenite::tungstenite::Message::Text(
+                    stasis_start_json(&format!("flood-{event_index}")).into(),
+                ))
+                .await
+                .expect("event flood write should succeed");
+            event_index += 1;
+            tokio::select! {
+                message = read.next() => {
+                    let request = message
+                        .expect("client should remain connected")
+                        .expect("request frame should be valid");
+                    let request: serde_json::Value = serde_json::from_str(
+                        request.to_text().expect("request should be text"),
+                    )
+                    .expect("request should be JSON");
+                    let response = serde_json::json!({
+                        "type": "RESTResponse",
+                        "status_code": 204,
+                        "reason_phrase": "No Content",
+                        "uri": request["uri"],
+                        "request_id": request["request_id"],
+                        "transaction_id": "fairness-test",
+                    });
+                    write
+                        .send(tokio_tungstenite::tungstenite::Message::Text(
+                            response.to_string().into(),
+                        ))
+                        .await
+                        .expect("response should send");
+                    return event_index;
+                }
+                _ = tokio::task::yield_now() => {}
+            }
+        }
+    });
+    let client = connect_unified_to_mock_with_timeout(port, Duration::from_secs(1)).await;
+
+    tokio::time::timeout(Duration::from_secs(1), client.post_empty("channels/fair"))
+        .await
+        .expect("continuous readable events must not starve command admission")
+        .expect("command should complete during event flood");
+    let events_sent = peer.await.expect("peer task should not panic");
+    assert!(events_sent > 0, "test must exercise a live event flood");
+    client.disconnect_and_wait().await;
+}
+
+#[tokio::test]
+async fn unified_oversized_mutation_is_definitely_not_sent() {
+    init_tracing();
+
+    let server = MockAriServerBuilder::new()
+        .route("POST", "/ari/small", 204, "")
+        .start()
+        .await;
+    let client =
+        connect_unified_to_mock_with_limits(server.port(), Duration::from_secs(1), 1024, 256).await;
+    server.wait_for_ws_client().await;
+
+    let result = client
+        .post::<serde_json::Value>("oversized", &serde_json::json!({"value": "x".repeat(512)}))
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(AriError::RequestNotSent { ref method, ref uri })
+                if method == "POST" && uri == "oversized"
+        ),
+        "a locally oversized mutation must be definitely unsent: {result:?}"
+    );
+    client
+        .post_empty("small")
+        .await
+        .expect("preflight rejection must not tear down the websocket");
+
+    client.disconnect();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn unified_pending_requests_are_count_bounded() {
+    use futures_util::StreamExt;
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let port = listener.local_addr().expect("listener address").port();
+    let server_task = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept should succeed");
+        let mut websocket = tokio_tungstenite::accept_async(stream)
+            .await
+            .expect("websocket handshake should succeed");
+        let mut received = 0_usize;
+        while let Ok(Some(message)) =
+            tokio::time::timeout(Duration::from_secs(1), websocket.next()).await
+        {
+            match message {
+                Ok(tokio_tungstenite::tungstenite::Message::Text(_)) => received += 1,
+                Ok(tokio_tungstenite::tungstenite::Message::Close(_)) | Err(_) => break,
+                _ => {}
+            }
+        }
+        received
+    });
+    let client = connect_unified_to_mock_with_timeout(port, Duration::from_millis(250)).await;
+
+    let mut requests = tokio::task::JoinSet::new();
+    for index in 0..65 {
+        let client = client.clone();
+        requests.spawn(async move { client.post_empty(&format!("bounded/{index}")).await });
+    }
+
+    let mut definitely_unsent = 0_usize;
+    let mut outcome_unknown = 0_usize;
+    while let Some(result) = requests.join_next().await {
+        match result.expect("request task should not panic") {
+            Err(AriError::RequestNotSent { .. }) => definitely_unsent += 1,
+            Err(AriError::OutcomeUnknown { .. }) => outcome_unknown += 1,
+            other => panic!("unexpected bounded pending result: {other:?}"),
+        }
+    }
+    assert!(
+        definitely_unsent >= 1,
+        "at least one request must remain queued when 64 correlations are pending"
+    );
+    assert!(
+        outcome_unknown >= 1,
+        "written requests must remain indeterminate"
+    );
+
+    client.disconnect();
+    let received = server_task.await.expect("server task should not panic");
+    assert!(
+        received <= 64,
+        "the actor must not admit more than 64 pending correlations, received {received}"
+    );
+}
+
+#[tokio::test]
+async fn unified_transport_discards_cancelled_request_queued_during_handshake() {
+    use futures_util::StreamExt;
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let port = listener
+        .local_addr()
+        .expect("listener should have an address")
+        .port();
+    let client = connect_unified_to_mock_with_timeout(port, Duration::from_millis(50)).await;
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(1),
+        client.post_empty("channels/must-not-run"),
+    )
+    .await
+    .expect("the configured request deadline must be bounded");
+    assert!(
+        matches!(
+            &result,
+            Err(AriError::RequestNotSent { method, uri })
+                if method == "POST" && uri == "channels/must-not-run"
+        ),
+        "a queued timeout must report that the mutation was definitely not sent: {result:?}"
+    );
+
+    let (stream, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+        .await
+        .expect("client should connect")
+        .expect("TCP accept should succeed");
+    let mut websocket = tokio_tungstenite::accept_async(stream)
+        .await
+        .expect("websocket handshake should succeed");
+
+    let message = tokio::time::timeout(Duration::from_millis(250), websocket.next()).await;
+    assert!(
+        message.is_err(),
+        "a request cancelled while queued must not execute after connection"
+    );
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn unified_shutdown_before_first_wire_poll_is_definitely_unsent() {
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let port = listener.local_addr().expect("listener address").port();
+    let client = connect_unified_to_mock_with_timeout(port, Duration::from_secs(5)).await;
+    let request_client = client.clone();
+    let request_task = tokio::spawn(async move {
+        request_client
+            .post_empty("channels/shutdown-before-poll")
+            .await
+    });
+
+    // The TCP listener is present but the peer never accepts or completes the
+    // WebSocket handshake, so the actor cannot poll the request's sink write.
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    client.disconnect_and_wait().await;
+
+    let result = tokio::time::timeout(Duration::from_secs(1), request_task)
+        .await
+        .expect("owned actor shutdown should be bounded")
+        .expect("request task should not panic");
+    assert!(
+        matches!(
+            result,
+            Err(AriError::RequestNotSent { ref method, ref uri })
+                if method == "POST" && uri == "channels/shutdown-before-poll"
+        ),
+        "shutdown before the first sink poll must remain definitely unsent: {result:?}"
+    );
+
+    drop(listener);
+}
+
+#[tokio::test]
+async fn unified_mutation_timeout_after_write_reports_unknown_outcome() {
+    use futures_util::StreamExt;
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let port = listener
+        .local_addr()
+        .expect("listener should have an address")
+        .port();
+    let client = connect_unified_to_mock_with_timeout(port, Duration::from_millis(100)).await;
+    let (stream, _) = tokio::time::timeout(Duration::from_secs(1), listener.accept())
+        .await
+        .expect("client should connect")
+        .expect("TCP accept should succeed");
+    let mut websocket = tokio_tungstenite::accept_async(stream)
+        .await
+        .expect("websocket handshake should succeed");
+
+    let request_client = client.clone();
+    let request_task =
+        tokio::spawn(async move { request_client.post_empty("channels/outcome-unknown").await });
+    let frame = tokio::time::timeout(Duration::from_secs(1), websocket.next())
+        .await
+        .expect("mutation should be written before its deadline")
+        .expect("websocket should remain open")
+        .expect("REST request frame should be valid");
+    let request: serde_json::Value = serde_json::from_str(
+        frame
+            .to_text()
+            .expect("REST request should use a text frame"),
+    )
+    .expect("REST request should be JSON");
+    assert_eq!(request["method"], "POST");
+    assert_eq!(request["uri"], "channels/outcome-unknown");
+
+    let result = tokio::time::timeout(Duration::from_secs(1), request_task)
+        .await
+        .expect("request deadline must complete")
+        .expect("request task should not panic");
+    assert!(
+        matches!(
+            &result,
+            Err(AriError::OutcomeUnknown {
+                request_id,
+                method,
+                uri,
+            }) if request_id.starts_with("wsreq-")
+                && method == "POST"
+                && uri == "channels/outcome-unknown"
+        ),
+        "a written mutation without a response must be indeterminate: {result:?}"
+    );
+
+    client.disconnect();
+}
+
+#[tokio::test]
+async fn unified_shutdown_does_not_drop_inflight_mutation_outcome() {
+    use futures_util::StreamExt;
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let port = listener
+        .local_addr()
+        .expect("listener should have an address")
+        .port();
+    let client = connect_unified_to_mock_with_timeout(port, Duration::from_secs(5)).await;
+    let (stream, _) = tokio::time::timeout(Duration::from_secs(1), listener.accept())
+        .await
+        .expect("client should connect")
+        .expect("TCP accept should succeed");
+    let mut websocket = tokio_tungstenite::accept_async(stream)
+        .await
+        .expect("websocket handshake should succeed");
+
+    let request_client = client.clone();
+    let request_task =
+        tokio::spawn(async move { request_client.post_empty("channels/shutdown-outcome").await });
+    tokio::time::timeout(Duration::from_secs(1), websocket.next())
+        .await
+        .expect("mutation should be written")
+        .expect("websocket should remain open")
+        .expect("REST request frame should be valid");
+
+    client.disconnect_and_wait().await;
+    let result = tokio::time::timeout(Duration::from_secs(1), request_task)
+        .await
+        .expect("actor shutdown should wake the request")
+        .expect("request task should not panic");
+    assert!(
+        matches!(
+            &result,
+            Err(AriError::OutcomeUnknown {
+                request_id,
+                method,
+                uri,
+            }) if request_id.starts_with("wsreq-")
+                && method == "POST"
+                && uri == "channels/shutdown-outcome"
+        ),
+        "shutdown must preserve the indeterminate mutation outcome: {result:?}"
+    );
 }
 
 #[tokio::test]
@@ -181,7 +871,7 @@ async fn websocket_events() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -202,7 +892,7 @@ async fn unregistered_route_returns_404() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -225,7 +915,7 @@ async fn put_request() {
     assert_eq!(bridge["bridge_type"], "mixing");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -293,7 +983,7 @@ async fn filtered_subscription() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -313,7 +1003,7 @@ async fn channel_handle_answer_and_hangup() {
     handle.hangup(None).await.expect("hangup failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -339,7 +1029,7 @@ async fn channel_handle_hold_mute_dtmf() {
     handle.send_dtmf("1234").await.expect("send_dtmf failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -377,7 +1067,7 @@ async fn channel_handle_variables() {
         .expect("set variable failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -425,7 +1115,7 @@ async fn bridge_handle_lifecycle() {
     handle.destroy().await.expect("destroy bridge failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -444,7 +1134,7 @@ async fn post_empty_returns_ok() {
         .expect("post_empty should succeed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -463,7 +1153,7 @@ async fn put_empty_returns_ok() {
         .expect("put_empty should succeed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -512,7 +1202,7 @@ async fn disconnect_stops_ws_listener() {
         Err(_) => {}      // timeout is acceptable if ws task is still draining
     }
 
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -536,7 +1226,7 @@ async fn channel_handle_play_returns_playback() {
     assert_eq!(pb.media_uri, "sound:hello", "expected media uri");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -607,7 +1297,7 @@ async fn multiple_websocket_events_in_sequence() {
     ));
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -634,7 +1324,7 @@ async fn channel_list() {
     assert_eq!(channels[0].state, "Up");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -657,7 +1347,7 @@ async fn channel_get() {
     assert_eq!(channel.state, "Ring");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -683,7 +1373,7 @@ async fn channel_originate() {
     assert_eq!(channel.id, "ch-3");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -713,7 +1403,7 @@ async fn channel_handle_continue_in_dialplan() {
         .expect("continue_in_dialplan failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -742,7 +1432,7 @@ async fn channel_handle_snoop() {
     assert_eq!(snooped.id, "snoop-1");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -752,7 +1442,7 @@ async fn channel_handle_redirect() {
     let server = MockAriServerBuilder::new()
         .route(
             "POST",
-            "/ari/channels/ch-1/redirect?context=other&extension=300&priority=1",
+            "/ari/channels/ch-1/redirect?endpoint=PJSIP%2F300",
             204,
             "",
         )
@@ -762,13 +1452,10 @@ async fn channel_handle_redirect() {
     let client = connect_to_mock(server.port()).await;
     let handle = asterisk_rs_ari::resources::channel::ChannelHandle::new("ch-1", client.clone());
 
-    handle
-        .redirect("other", "300", 1)
-        .await
-        .expect("redirect failed");
+    handle.redirect("PJSIP/300").await.expect("redirect failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -790,7 +1477,7 @@ async fn channel_handle_record() {
     assert_eq!(rec.state, "recording");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -810,7 +1497,7 @@ async fn channel_handle_ring_and_ring_stop() {
     handle.ring_stop().await.expect("ring_stop failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -830,7 +1517,7 @@ async fn channel_handle_silence_start_stop() {
     handle.stop_silence().await.expect("stop_silence failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -856,7 +1543,7 @@ async fn channel_handle_dial() {
         .expect("dial failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -874,7 +1561,7 @@ async fn channel_handle_send_dtmf_via_handle() {
     handle.send_dtmf("9876").await.expect("send_dtmf failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -899,7 +1586,7 @@ async fn channel_handle_play_with_id() {
     assert_eq!(pb.media_uri, "sound:tt-monkeys");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -923,7 +1610,7 @@ async fn channel_handle_rtp_statistics() {
     assert_eq!(stats["rxcount"], 200);
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -952,7 +1639,7 @@ async fn channel_handle_external_media() {
     assert_eq!(chan.id, "ext-1");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -980,7 +1667,7 @@ async fn bridge_list() {
     assert_eq!(bridges[0].bridge_type, "mixing");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1004,7 +1691,7 @@ async fn bridge_get() {
     assert_eq!(bridge.channels, vec!["ch-1"]);
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1027,7 +1714,7 @@ async fn bridge_create_via_function() {
     assert_eq!(bridge.bridge_type, "mixing");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1056,7 +1743,7 @@ async fn bridge_handle_record() {
     assert_eq!(rec.state, "recording");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1079,7 +1766,7 @@ async fn bridge_handle_moh_start_stop() {
     handle.stop_moh().await.expect("stop_moh failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1104,7 +1791,7 @@ async fn bridge_handle_play_with_id() {
     assert_eq!(pb.id, "pb-br-1");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1125,7 +1812,7 @@ async fn bridge_handle_set_video_source() {
         .expect("set_video_source failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1146,7 +1833,7 @@ async fn bridge_handle_clear_video_source() {
         .expect("clear_video_source failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1173,7 +1860,7 @@ async fn endpoint_list() {
     assert_eq!(endpoints[0].resource, "100");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1197,7 +1884,7 @@ async fn endpoint_list_by_tech() {
     assert_eq!(endpoints[0].channel_ids, vec!["ch-5"]);
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1220,7 +1907,7 @@ async fn endpoint_get() {
     assert_eq!(ep.state, Some("offline".to_owned()));
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1248,7 +1935,7 @@ async fn endpoint_send_message() {
     .expect("endpoint send_message failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1277,7 +1964,7 @@ async fn endpoint_send_message_to_endpoint() {
     .expect("endpoint send_message_to_endpoint failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1305,7 +1992,7 @@ async fn endpoint_refer() {
     .expect("endpoint refer failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1331,7 +2018,7 @@ async fn playback_handle_get() {
     assert_eq!(pb.state, "playing");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1349,7 +2036,7 @@ async fn playback_handle_stop() {
     handle.stop().await.expect("playback stop failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1375,7 +2062,7 @@ async fn playback_handle_control() {
         .expect("playback control failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1402,7 +2089,7 @@ async fn recording_list_stored() {
     assert_eq!(stored[1].format, "gsm");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1425,7 +2112,7 @@ async fn recording_handle_get_live() {
     assert_eq!(rec.state, "recording");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1444,7 +2131,7 @@ async fn recording_handle_stop() {
     handle.stop().await.expect("recording stop failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1465,7 +2152,7 @@ async fn recording_handle_pause_unpause() {
     handle.unpause().await.expect("recording unpause failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1486,7 +2173,7 @@ async fn recording_handle_mute_unmute() {
     handle.unmute().await.expect("recording unmute failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1514,7 +2201,7 @@ async fn sound_list() {
     assert_eq!(sounds[0].formats[0].language, "en");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1537,7 +2224,7 @@ async fn sound_get() {
     assert_eq!(sound.formats[1].language, "es");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1565,7 +2252,7 @@ async fn mailbox_list() {
     assert_eq!(mailboxes[0].new_messages, 5);
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1587,7 +2274,7 @@ async fn mailbox_get() {
     assert_eq!(mb.new_messages, 1);
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1596,7 +2283,7 @@ async fn mailbox_update() {
 
     let server = MockAriServerBuilder::new()
         .route(
-            "POST",
+            "PUT",
             "/ari/mailboxes/1000%40default?oldMessages=3&newMessages=7",
             204,
             "",
@@ -1609,8 +2296,19 @@ async fn mailbox_update() {
         .await
         .expect("mailbox update failed");
 
+    server.wait_for_requests(1).await;
+    let requests = server.requests();
+    let request = &requests[0];
+    assert_eq!(request.method, "PUT");
+    assert_eq!(
+        request.path,
+        "/ari/mailboxes/1000%40default?oldMessages=3&newMessages=7"
+    );
+    assert_eq!(request.content_length, 0);
+    assert!(request.body.is_empty());
+
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1628,7 +2326,7 @@ async fn mailbox_delete() {
         .expect("mailbox delete failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1655,7 +2353,7 @@ async fn device_state_list() {
     assert_eq!(states[0].state, "NOT_INUSE");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1677,7 +2375,7 @@ async fn device_state_get() {
     assert_eq!(ds.state, "INUSE");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1686,7 +2384,7 @@ async fn device_state_update() {
 
     let server = MockAriServerBuilder::new()
         .route(
-            "POST",
+            "PUT",
             "/ari/deviceStates/Stasis%3Aphone1?deviceState=INUSE",
             204,
             "",
@@ -1699,8 +2397,19 @@ async fn device_state_update() {
         .await
         .expect("device_state update failed");
 
+    server.wait_for_requests(1).await;
+    let requests = server.requests();
+    let request = &requests[0];
+    assert_eq!(request.method, "PUT");
+    assert_eq!(
+        request.path,
+        "/ari/deviceStates/Stasis%3Aphone1?deviceState=INUSE"
+    );
+    assert_eq!(request.content_length, 0);
+    assert!(request.body.is_empty());
+
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1718,7 +2427,7 @@ async fn device_state_delete() {
         .expect("device_state delete failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1744,7 +2453,7 @@ async fn application_list() {
     assert_eq!(apps[0].name, "test-app");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1766,7 +2475,7 @@ async fn application_get() {
     assert_eq!(app.channel_ids, vec!["ch-1"]);
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1793,7 +2502,7 @@ async fn application_subscribe() {
     assert_eq!(app.name, "test-app");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1820,7 +2529,7 @@ async fn application_unsubscribe() {
     assert_eq!(app.name, "test-app");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1843,7 +2552,7 @@ async fn application_set_event_filter() {
     assert_eq!(app.name, "test-app");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1869,7 +2578,7 @@ async fn asterisk_info() {
     assert!(info.system.is_some());
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1891,7 +2600,7 @@ async fn asterisk_info_with_filter() {
     assert!(info.system.is_none());
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1914,7 +2623,7 @@ async fn asterisk_ping() {
     assert_eq!(pong.ping, "pong");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1937,7 +2646,7 @@ async fn asterisk_list_modules() {
     assert_eq!(modules[0].status, "Running");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1960,7 +2669,7 @@ async fn asterisk_get_module() {
     assert_eq!(module.support_level, Some("core".to_owned()));
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1978,7 +2687,7 @@ async fn asterisk_load_module() {
         .expect("asterisk load_module failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -1996,7 +2705,7 @@ async fn asterisk_unload_module() {
         .expect("asterisk unload_module failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2014,7 +2723,7 @@ async fn asterisk_reload_module() {
         .expect("asterisk reload_module failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2037,7 +2746,7 @@ async fn asterisk_list_log_channels() {
     assert_eq!(logs[0].log_type, "Console");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2058,7 +2767,7 @@ async fn asterisk_get_global_var() {
     assert_eq!(var.value, "bar");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2081,7 +2790,7 @@ async fn asterisk_set_global_var() {
         .expect("asterisk set_variable failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 // ---------------------------------------------------------------------------
@@ -2112,7 +2821,7 @@ async fn delete_with_response_returns_body() {
     assert_eq!(app.name, "test-app");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2145,7 +2854,7 @@ async fn server_error_500() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2178,7 +2887,7 @@ async fn unauthorized_401() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2200,7 +2909,7 @@ async fn channel_create_without_dial() {
     assert_eq!(channel.state, "Down");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2221,7 +2930,7 @@ async fn channel_handle_continue_no_params() {
         .expect("continue_in_dialplan with no params failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2242,7 +2951,7 @@ async fn channel_handle_dial_no_params() {
         .expect("dial with no params failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2263,7 +2972,7 @@ async fn channel_handle_hangup_with_reason() {
         .expect("hangup with reason failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2284,7 +2993,7 @@ async fn bridge_handle_moh_start_no_class() {
         .expect("start_moh with no class failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2307,7 +3016,7 @@ async fn asterisk_add_log_channel() {
         .expect("asterisk add_log_channel failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2325,7 +3034,7 @@ async fn asterisk_remove_log_channel() {
         .expect("asterisk remove_log_channel failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2343,7 +3052,7 @@ async fn asterisk_rotate_log_channel() {
         .expect("asterisk rotate_log_channel failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2372,7 +3081,7 @@ async fn asterisk_get_config() {
     assert_eq!(tuples[0].value, "friend");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2408,7 +3117,7 @@ async fn asterisk_update_config() {
     assert_eq!(result.len(), 1);
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2431,7 +3140,7 @@ async fn asterisk_delete_config() {
         .expect("asterisk delete_config failed");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 /// helper to build ARI client with custom reconnect policy
@@ -2461,58 +3170,52 @@ fn stasis_start_json(chan_id: &str) -> String {
 async fn ws_reconnects_after_server_restart() {
     init_tracing();
 
-    // phase 1: connect and receive an event
     let server = MockAriServerBuilder::new().start().await;
     let port = server.port();
     let client = connect_with_reconnect(
         port,
-        ReconnectPolicy::fixed(Duration::from_millis(100)).with_max_retries(30),
+        ReconnectPolicy::fixed(Duration::from_millis(50)).with_max_retries(100),
     )
     .await;
     let mut sub = client.subscribe();
 
     server.wait_for_ws_client().await;
-
     server.send_event(&stasis_start_json("chan-1"));
-
     let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
         .await
         .expect("timed out waiting for event 1")
         .expect("subscription closed before event 1");
-    assert_eq!(event.application, "test-app");
+    match event.event {
+        asterisk_rs_ari::AriEvent::StasisStart { channel, .. } => {
+            assert_eq!(channel.id, "chan-1");
+        }
+        other => panic!("expected first StasisStart, got {other:?}"),
+    }
 
-    // phase 2: kill the server — ws should disconnect and start retrying
-    server.shutdown();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    server.shutdown().await;
 
-    // phase 3: start a new server on the same port via a raw TcpListener
-    // the mock builder always binds port 0, so we rebind manually to hold the port
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
+    let server2 = MockAriServerBuilder::new()
+        .bind(std::net::SocketAddr::from(([127, 0, 0, 1], port)))
+        .start()
+        .await;
+    tokio::time::timeout(Duration::from_secs(5), server2.wait_for_ws_client())
         .await
-        .expect("failed to rebind to same port");
-    // immediately drop to release it and start a real mock on random port
-    // instead, accept the reality: we cannot guarantee same-port rebind in tests.
-    drop(listener);
+        .expect("client should reconnect to the restarted server on the same address");
+    server2.send_event(&stasis_start_json("chan-2"));
 
-    // start a new mock on the same port using a raw listener
-    // since we confirmed we can bind it, quickly spin up a fresh mock
-    // the ARI client is still trying to reconnect to 127.0.0.1:{port}
-    let server2 = MockAriServerBuilder::new().start().await;
-    // because the new server gets a different port, reconnect won't reach it.
-    // this test instead validates that the subscriber stays alive during
-    // disconnect and that disconnection doesn't panic or deadlock.
-    // the client will exhaust its retries and the subscription will close.
-
-    // verify the subscription eventually yields None (bus closed after exhausting retries)
-    let result = tokio::time::timeout(Duration::from_secs(10), sub.recv()).await;
-    match result {
-        Ok(None) => {}    // retries exhausted, subscription closed — expected
-        Ok(Some(_)) => {} // reconnected somehow — also acceptable
-        Err(_) => {}      // still retrying within timeout — acceptable, client is resilient
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+        .await
+        .expect("timed out waiting for event after exact reconnect")
+        .expect("subscription closed before reconnect event");
+    match event.event {
+        asterisk_rs_ari::AriEvent::StasisStart { channel, .. } => {
+            assert_eq!(channel.id, "chan-2");
+        }
+        other => panic!("expected reconnected StasisStart, got {other:?}"),
     }
 
     client.disconnect();
-    server2.shutdown();
+    server2.shutdown().await;
 }
 
 #[tokio::test]
@@ -2541,7 +3244,7 @@ async fn ws_max_retries_stops_reconnecting() {
     assert_eq!(event.application, "test-app");
 
     // shut down server — client will try to reconnect, exhaust 2 retries, then stop
-    server.shutdown();
+    server.shutdown().await;
 
     // after retries are exhausted, the WS listener task exits but the EventBus
     // sender in the client keeps the channel open, so recv() won't return None.
@@ -2593,7 +3296,7 @@ async fn ws_events_delivered_to_multiple_subscribers() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2628,7 +3331,7 @@ async fn ws_malformed_json_event_ignored() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2662,7 +3365,7 @@ async fn ws_binary_message_ignored() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2698,7 +3401,7 @@ async fn ws_events_after_client_disconnect_not_received() {
         Err(_) => {}      // timeout — acceptable if ws task is still draining
     }
 
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2747,7 +3450,7 @@ async fn ws_rapid_events_all_delivered() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2781,7 +3484,7 @@ async fn ws_close_frame_handled_gracefully() {
     }
 
     // shut down the server (which closes the WS)
-    server.shutdown();
+    server.shutdown().await;
 
     // the client should survive the close without panicking
     // after shutdown, no more events should arrive (timeout expected)
@@ -2813,7 +3516,7 @@ async fn rest_404_returns_api_error() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2841,7 +3544,7 @@ async fn rest_500_returns_api_error() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2862,7 +3565,7 @@ async fn rest_empty_json_array() {
     assert!(result.is_empty(), "expected empty vec, got: {result:?}");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2884,7 +3587,7 @@ async fn rest_malformed_json_body() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2924,7 +3627,7 @@ async fn ws_malformed_json_not_delivered() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2957,7 +3660,7 @@ async fn multiple_subscribers_all_receive() {
     }
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -2972,7 +3675,7 @@ async fn disconnect_then_subscribe_returns_none() {
 
     // disconnect shuts down the ws listener
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 
     // subscribe after disconnect
     let mut sub = client.subscribe();
@@ -3035,7 +3738,7 @@ async fn external_media_with_full_params() {
     assert_eq!(channel.state, "Up", "channel state mismatch");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -3078,7 +3781,7 @@ async fn originate_with_channel_id() {
     assert_eq!(channel.state, "Ring", "channel state mismatch");
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -3098,7 +3801,7 @@ async fn pending_channel_creates_unique_id() {
     );
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -3118,7 +3821,7 @@ async fn pending_bridge_creates_unique_id() {
     );
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -3138,7 +3841,7 @@ async fn pending_playback_creates_unique_id() {
     );
 
     client.disconnect();
-    server.shutdown();
+    server.shutdown().await;
 }
 
 #[tokio::test]
@@ -3179,6 +3882,550 @@ async fn outbound_ws_server_accepts_connection() {
         .await
         .expect("should receive session signal within timeout")
         .expect("session channel should not be closed");
+
+    handle.shutdown();
+    assert_server_ok(server_task.await);
+}
+
+#[tokio::test]
+async fn outbound_ws_server_bounds_handshakes_and_connection_admission() {
+    init_tracing();
+
+    let (server, handle) = asterisk_rs_ari::server::AriServerBuilder::new()
+        .bind("127.0.0.1:0".parse().expect("valid addr"))
+        .max_connections(1)
+        .handshake_timeout(Duration::from_millis(150))
+        .build()
+        .await
+        .expect("server should build");
+    let local_addr = server.local_addr().expect("server should have local addr");
+    let (session_tx, mut session_rx) = tokio::sync::mpsc::channel(1);
+    let server_task = tokio::spawn(async move {
+        server
+            .run(move |_session| {
+                let tx = session_tx.clone();
+                async move {
+                    let _ = tx.send(()).await;
+                }
+            })
+            .await
+            .expect("server run should succeed");
+    });
+
+    let stalled = tokio::net::TcpStream::connect(local_addr)
+        .await
+        .expect("stalled TCP connection should connect");
+    tokio::time::sleep(Duration::from_millis(25)).await;
+
+    let url = format!("ws://{local_addr}");
+    let mut second = tokio::spawn(async move { tokio_tungstenite::connect_async(url).await });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), &mut second)
+            .await
+            .is_err(),
+        "second handshake must wait while the sole connection slot is occupied"
+    );
+
+    let (second_ws, _) = tokio::time::timeout(Duration::from_secs(2), &mut second)
+        .await
+        .expect("second handshake should proceed after the stalled handshake times out")
+        .expect("second connection task should not panic")
+        .expect("second websocket handshake should succeed");
+    tokio::time::timeout(Duration::from_secs(1), session_rx.recv())
+        .await
+        .expect("handler should receive the admitted session")
+        .expect("session notification channel should stay open");
+
+    drop(stalled);
+    drop(second_ws);
+    handle.shutdown();
+    assert_server_ok(server_task.await);
+}
+
+#[tokio::test]
+async fn outbound_ws_server_bounds_inbound_message_memory() {
+    use futures_util::{SinkExt, StreamExt};
+
+    init_tracing();
+
+    let (server, handle) = asterisk_rs_ari::server::AriServerBuilder::new()
+        .bind("127.0.0.1:0".parse().expect("valid addr"))
+        .max_websocket_message_bytes(256)
+        .build()
+        .await
+        .expect("server should build");
+    let local_addr = server.local_addr().expect("server should have local addr");
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
+    let started_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(started_tx)));
+    let cancelled_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(cancelled_tx)));
+    let server_task = tokio::spawn(async move {
+        server
+            .run(move |session| {
+                let started = started_tx.lock().expect("started mutex poisoned").take();
+                let cancelled = cancelled_tx
+                    .lock()
+                    .expect("cancelled mutex poisoned")
+                    .take();
+                async move {
+                    if let Some(tx) = started {
+                        let _ = tx.send(());
+                    }
+                    session.cancelled().await;
+                    if let Some(tx) = cancelled {
+                        let _ = tx.send(());
+                    }
+                }
+            })
+            .await
+            .expect("server run should succeed");
+    });
+
+    let url = format!("ws://{local_addr}");
+    let (mut websocket, _) = tokio_tungstenite::connect_async(url)
+        .await
+        .expect("websocket should connect");
+    tokio::time::timeout(Duration::from_secs(1), started_rx)
+        .await
+        .expect("handler should start")
+        .expect("handler start sender should remain alive");
+
+    websocket
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            "x".repeat(512).into(),
+        ))
+        .await
+        .expect("oversized message should reach the server transport");
+    let _ = tokio::time::timeout(Duration::from_secs(1), websocket.next()).await;
+    tokio::time::timeout(Duration::from_secs(1), cancelled_rx)
+        .await
+        .expect("oversized message must end the bounded session")
+        .expect("handler cancellation sender should remain alive");
+
+    handle.shutdown();
+    assert_server_ok(server_task.await);
+}
+
+#[tokio::test]
+async fn outbound_ws_server_cooperatively_drains_session_and_handler() {
+    init_tracing();
+
+    let (server, handle) = asterisk_rs_ari::server::AriServerBuilder::new()
+        .bind("127.0.0.1:0".parse().expect("valid addr"))
+        .shutdown_timeout(Duration::from_secs(1))
+        .build()
+        .await
+        .expect("server should build");
+    let local_addr = server.local_addr().expect("server should have local addr");
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
+    let started_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(started_tx)));
+    let cancelled_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(cancelled_tx)));
+    let server_task = tokio::spawn(async move {
+        server
+            .run(move |session| {
+                let started = started_tx.lock().expect("started mutex poisoned").take();
+                let cancelled = cancelled_tx
+                    .lock()
+                    .expect("cancelled mutex poisoned")
+                    .take();
+                async move {
+                    if let Some(tx) = started {
+                        let _ = tx.send(());
+                    }
+                    session.cancelled().await;
+                    if let Some(tx) = cancelled {
+                        let _ = tx.send(());
+                    }
+                }
+            })
+            .await
+            .expect("server run should succeed");
+    });
+
+    let url = format!("ws://{local_addr}");
+    let (websocket, _) = tokio_tungstenite::connect_async(url)
+        .await
+        .expect("websocket should connect");
+    tokio::time::timeout(Duration::from_secs(1), started_rx)
+        .await
+        .expect("handler should start")
+        .expect("handler start sender should remain alive");
+
+    handle.shutdown();
+    tokio::time::timeout(Duration::from_secs(1), cancelled_rx)
+        .await
+        .expect("handler should observe shared session cancellation")
+        .expect("handler cancellation sender should remain alive");
+    tokio::time::timeout(Duration::from_secs(2), server_task)
+        .await
+        .expect("cooperative server shutdown should be bounded")
+        .expect("server task should not panic");
+    drop(websocket);
+}
+
+#[tokio::test]
+async fn outbound_ws_server_bounds_uncooperative_handler_shutdown() {
+    struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            if let Some(tx) = self.0.take() {
+                let _ = tx.send(());
+            }
+        }
+    }
+
+    init_tracing();
+
+    let (server, handle) = asterisk_rs_ari::server::AriServerBuilder::new()
+        .bind("127.0.0.1:0".parse().expect("valid addr"))
+        .shutdown_timeout(Duration::from_secs(1))
+        .build()
+        .await
+        .expect("server should build");
+    let local_addr = server.local_addr().expect("server should have local addr");
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+    let started_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(started_tx)));
+    let dropped_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(dropped_tx)));
+    let server_task = tokio::spawn(async move {
+        server
+            .run(move |_session| {
+                let started = started_tx.lock().expect("started mutex poisoned").take();
+                let dropped = dropped_tx.lock().expect("dropped mutex poisoned").take();
+                async move {
+                    let _guard = DropSignal(dropped);
+                    if let Some(tx) = started {
+                        let _ = tx.send(());
+                    }
+                    std::future::pending::<()>().await;
+                }
+            })
+            .await
+            .expect("server run should succeed");
+    });
+
+    let url = format!("ws://{local_addr}");
+    let (websocket, _) = tokio_tungstenite::connect_async(url)
+        .await
+        .expect("websocket should connect");
+    tokio::time::timeout(Duration::from_secs(1), started_rx)
+        .await
+        .expect("handler should start")
+        .expect("handler start sender should remain alive");
+
+    handle.shutdown();
+    tokio::time::timeout(Duration::from_secs(2), server_task)
+        .await
+        .expect("server shutdown should be bounded")
+        .expect("server task should not panic");
+    tokio::time::timeout(Duration::from_millis(100), dropped_rx)
+        .await
+        .expect("handler future must be dropped before server run returns")
+        .expect("handler drop sender should remain alive");
+    drop(websocket);
+}
+
+#[tokio::test]
+async fn outbound_session_rejects_non_2xx_rest_response() {
+    use futures_util::{SinkExt, StreamExt};
+
+    init_tracing();
+
+    let (server, handle) = asterisk_rs_ari::server::AriServerBuilder::new()
+        .bind("127.0.0.1:0".parse().expect("valid addr"))
+        .build()
+        .await
+        .expect("server should build");
+    let local_addr = server.local_addr().expect("server should have local addr");
+    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+    let result_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(result_tx)));
+    let server_task = tokio::spawn(async move {
+        server
+            .run(move |session| {
+                let tx = result_tx.lock().expect("result mutex poisoned").take();
+                async move {
+                    let result = session.post_empty("channels/redirected").await;
+                    if let Some(tx) = tx {
+                        let _ = tx.send(result);
+                    }
+                }
+            })
+            .await
+            .expect("server run should succeed");
+    });
+
+    let url = format!("ws://{local_addr}");
+    let (mut websocket, _) = tokio_tungstenite::connect_async(url)
+        .await
+        .expect("websocket should connect");
+    let request = tokio::time::timeout(Duration::from_secs(1), websocket.next())
+        .await
+        .expect("session should send a REST request")
+        .expect("websocket should remain connected")
+        .expect("REST request frame should be valid");
+    let request: serde_json::Value = serde_json::from_str(
+        request
+            .to_text()
+            .expect("REST request should be a text frame"),
+    )
+    .expect("REST request should be JSON");
+    let response = serde_json::json!({
+        "type": "RESTResponse",
+        "status_code": 302,
+        "reason_phrase": "Found",
+        "uri": request["uri"],
+        "request_id": request["request_id"],
+        "transaction_id": "test-transaction",
+    });
+    websocket
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            response.to_string().into(),
+        ))
+        .await
+        .expect("REST response should send");
+
+    let result = tokio::time::timeout(Duration::from_secs(1), result_rx)
+        .await
+        .expect("session request should complete")
+        .expect("session result sender should remain alive");
+    match result {
+        Err(AriError::Api { status, message }) => {
+            assert_eq!(status, 302);
+            assert_eq!(message, "Found");
+        }
+        other => panic!("outbound session must reject a non-2xx response: {other:?}"),
+    }
+
+    handle.shutdown();
+    assert_server_ok(server_task.await);
+}
+
+#[tokio::test]
+async fn outbound_session_command_progresses_during_continuous_event_flood() {
+    use futures_util::{SinkExt, StreamExt};
+
+    init_tracing();
+
+    let (server, handle) = asterisk_rs_ari::server::AriServerBuilder::new()
+        .bind("127.0.0.1:0".parse().expect("valid addr"))
+        .request_timeout(Duration::from_secs(1))
+        .build()
+        .await
+        .expect("server should build");
+    let local_addr = server.local_addr().expect("server local address");
+    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+    let result_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(result_tx)));
+    let server_task = tokio::spawn(async move {
+        server
+            .run(move |session| {
+                let result_tx = result_tx.lock().expect("result mutex poisoned").take();
+                async move {
+                    let result = session.post_empty("channels/fair").await;
+                    if let Some(result_tx) = result_tx {
+                        let _ = result_tx.send(result);
+                    }
+                }
+            })
+            .await
+            .expect("server run should succeed");
+    });
+
+    let (websocket, _) = tokio_tungstenite::connect_async(format!("ws://{local_addr}"))
+        .await
+        .expect("websocket should connect");
+    let (mut write, mut read) = websocket.split();
+    let peer = tokio::spawn(async move {
+        let mut event_index = 0_u64;
+        loop {
+            write
+                .send(tokio_tungstenite::tungstenite::Message::Text(
+                    stasis_start_json(&format!("session-flood-{event_index}")).into(),
+                ))
+                .await
+                .expect("event flood write should succeed");
+            event_index += 1;
+            tokio::select! {
+                message = read.next() => {
+                    let request = message
+                        .expect("server should remain connected")
+                        .expect("request frame should be valid");
+                    let request: serde_json::Value = serde_json::from_str(
+                        request.to_text().expect("request should be text"),
+                    )
+                    .expect("request should be JSON");
+                    write
+                        .send(tokio_tungstenite::tungstenite::Message::Text(
+                            serde_json::json!({
+                                "type": "RESTResponse",
+                                "status_code": 204,
+                                "reason_phrase": "No Content",
+                                "uri": request["uri"],
+                                "request_id": request["request_id"],
+                                "transaction_id": "session-fairness-test",
+                            })
+                            .to_string()
+                            .into(),
+                        ))
+                        .await
+                        .expect("response should send");
+                    return event_index;
+                }
+                _ = tokio::task::yield_now() => {}
+            }
+        }
+    });
+
+    tokio::time::timeout(Duration::from_secs(1), result_rx)
+        .await
+        .expect("continuous readable events must not starve session commands")
+        .expect("session result sender should remain alive")
+        .expect("session command should complete during event flood");
+    let events_sent = peer.await.expect("peer task should not panic");
+    assert!(events_sent > 0, "test must exercise a live event flood");
+
+    handle.shutdown();
+    assert_server_ok(server_task.await);
+}
+
+#[tokio::test]
+async fn outbound_session_mutation_timeout_after_write_reports_unknown_outcome() {
+    use futures_util::StreamExt;
+
+    init_tracing();
+
+    let (server, handle) = asterisk_rs_ari::server::AriServerBuilder::new()
+        .bind("127.0.0.1:0".parse().expect("valid addr"))
+        .request_timeout(Duration::from_millis(100))
+        .build()
+        .await
+        .expect("server should build");
+    let local_addr = server.local_addr().expect("server local address");
+    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+    let result_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(result_tx)));
+    let server_task = tokio::spawn(async move {
+        server
+            .run(move |session| {
+                let result_tx = result_tx.lock().expect("result mutex poisoned").take();
+                async move {
+                    let result = session.post_empty("channels/timeout").await;
+                    if let Some(result_tx) = result_tx {
+                        let _ = result_tx.send(result);
+                    }
+                }
+            })
+            .await
+            .expect("server run should succeed");
+    });
+
+    let (mut websocket, _) = tokio_tungstenite::connect_async(format!("ws://{local_addr}"))
+        .await
+        .expect("websocket should connect");
+    tokio::time::timeout(Duration::from_secs(1), websocket.next())
+        .await
+        .expect("mutation should reach its first wire poll")
+        .expect("websocket should remain connected")
+        .expect("request frame should be valid");
+
+    let result = tokio::time::timeout(Duration::from_secs(1), result_rx)
+        .await
+        .expect("session request deadline should be bounded")
+        .expect("session result sender should remain alive");
+    assert!(
+        matches!(
+            result,
+            Err(AriError::OutcomeUnknown {
+                ref request_id,
+                ref method,
+                ref uri,
+            }) if request_id.starts_with("srv-")
+                && method == "POST"
+                && uri == "channels/timeout"
+        ),
+        "a post-write session timeout must be indeterminate: {result:?}"
+    );
+
+    handle.shutdown();
+    assert_server_ok(server_task.await);
+}
+
+#[tokio::test]
+async fn outbound_session_response_body_respects_application_limit() {
+    use futures_util::{SinkExt, StreamExt};
+
+    init_tracing();
+
+    let (server, handle) = asterisk_rs_ari::server::AriServerBuilder::new()
+        .bind("127.0.0.1:0".parse().expect("valid addr"))
+        .max_response_body_bytes(4)
+        .build()
+        .await
+        .expect("server should build");
+    let local_addr = server.local_addr().expect("server should have local addr");
+    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+    let result_tx = std::sync::Arc::new(std::sync::Mutex::new(Some(result_tx)));
+    let server_task = tokio::spawn(async move {
+        server
+            .run(move |session| {
+                let tx = result_tx.lock().expect("result mutex poisoned").take();
+                async move {
+                    let result = session.get::<serde_json::Value>("channels/large").await;
+                    if let Some(tx) = tx {
+                        let _ = tx.send(result);
+                    }
+                }
+            })
+            .await
+            .expect("server run should succeed");
+    });
+
+    let url = format!("ws://{local_addr}");
+    let (mut websocket, _) = tokio_tungstenite::connect_async(url)
+        .await
+        .expect("websocket should connect");
+    let request = tokio::time::timeout(Duration::from_secs(1), websocket.next())
+        .await
+        .expect("session should send a REST request")
+        .expect("websocket should remain connected")
+        .expect("REST request frame should be valid");
+    let request: serde_json::Value = serde_json::from_str(
+        request
+            .to_text()
+            .expect("REST request should be a text frame"),
+    )
+    .expect("REST request should be JSON");
+    websocket
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            serde_json::json!({
+                "type": "RESTResponse",
+                "status_code": 200,
+                "reason_phrase": "OK",
+                "uri": request["uri"],
+                "request_id": request["request_id"],
+                "transaction_id": "test-transaction",
+                "message_body": "12345",
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("REST response should send");
+
+    let result = tokio::time::timeout(Duration::from_secs(1), result_rx)
+        .await
+        .expect("session request should complete")
+        .expect("session result sender should remain alive");
+    assert!(
+        matches!(
+            &result,
+            Err(AriError::ResponseTooLarge {
+                limit: 4,
+                received: 5,
+            })
+        ),
+        "outbound session response must respect the body cap: {result:?}"
+    );
 
     handle.shutdown();
     assert_server_ok(server_task.await);
@@ -3281,8 +4528,15 @@ async fn media_channel_connect_and_disconnect() {
         let mut ws = tokio_tungstenite::accept_async(stream)
             .await
             .expect("ws accept should succeed");
-        // hold the connection until client disconnects
-        while ws.next().await.is_some() {}
+        while let Some(message) = ws.next().await {
+            if matches!(
+                message.expect("media websocket frame should be valid"),
+                tokio_tungstenite::tungstenite::Message::Close(_)
+            ) {
+                return true;
+            }
+        }
+        false
     });
 
     let url = format!("ws://{addr}");
@@ -3290,8 +4544,85 @@ async fn media_channel_connect_and_disconnect() {
         .await
         .expect("media channel connect should succeed");
 
+    tokio::time::timeout(Duration::from_secs(2), media.disconnect_and_wait())
+        .await
+        .expect("cooperative media disconnect should be bounded");
+    let received_close = tokio::time::timeout(Duration::from_secs(2), server_task)
+        .await
+        .expect("server should observe media disconnect")
+        .expect("server task should not panic");
+    assert!(
+        received_close,
+        "media disconnect must cooperatively send a websocket close frame"
+    );
+}
+
+#[tokio::test]
+async fn media_sync_disconnect_aborts_an_event_blocked_actor() {
+    use futures_util::{SinkExt, StreamExt};
+
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let addr = listener.local_addr().expect("should have local addr");
+    let (events_sent_tx, events_sent_rx) = tokio::sync::oneshot::channel();
+
+    let server_task = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept should succeed");
+        let mut ws = tokio_tungstenite::accept_async(stream)
+            .await
+            .expect("ws accept should succeed");
+        let event = serde_json::json!({
+            "event": "MEDIA_START",
+            "connection_id": "blocked-media",
+            "channel": "WebSocket/blocked",
+            "channel_id": "blocked-media",
+            "format": "ulaw",
+            "optimal_frame_size": 160,
+            "ptime": 20
+        })
+        .to_string();
+
+        for _ in 0..65 {
+            ws.send(tokio_tungstenite::tungstenite::Message::Text(
+                event.clone().into(),
+            ))
+            .await
+            .expect("critical media event should be sent");
+        }
+        events_sent_tx
+            .send(())
+            .expect("test should still await the event burst");
+
+        match tokio::time::timeout(Duration::from_secs(2), ws.next()).await {
+            Ok(None | Some(Err(_))) => true,
+            Ok(Some(Ok(_))) | Err(_) => false,
+        }
+    });
+
+    let url = format!("ws://{addr}");
+    let media = asterisk_rs_ari::media::MediaChannel::connect(&url)
+        .await
+        .expect("media channel connect should succeed");
+    events_sent_rx
+        .await
+        .expect("server should send enough events to fill the bounded receiver");
+    for _ in 0..8 {
+        tokio::task::yield_now().await;
+    }
+
     media.disconnect();
-    assert_server_ok(server_task.await);
+
+    let peer_terminated = tokio::time::timeout(Duration::from_secs(3), server_task)
+        .await
+        .expect("synchronous disconnect should terminate the peer connection")
+        .expect("server task should not panic");
+    assert!(
+        peer_terminated,
+        "synchronous disconnect must abort an actor blocked on event delivery"
+    );
 }
 
 #[tokio::test]

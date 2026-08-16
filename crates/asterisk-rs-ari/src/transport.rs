@@ -1,19 +1,193 @@
 //! REST transport abstraction for HTTP and WebSocket modes.
 
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
-use crate::error::{AriError, Result};
+use crate::config::AriConfig;
+use crate::error::{AriError, HttpError, Result};
 use crate::event::AriMessage;
 use crate::websocket::WsEventListener;
 use crate::ws_transport::WsTransport;
 use asterisk_rs_core::auth::Credentials;
-use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_core::event::EventBus;
+
+const REQUEST_QUEUED: u8 = 0;
+const REQUEST_WRITING: u8 = 1;
+const REQUEST_WRITTEN: u8 = 2;
+const REQUEST_CANCELLED: u8 = 3;
+static HTTP_REQUEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+pub(crate) const REST_COMMAND_CAPACITY: usize = 64;
+
+/// shared state that makes caller timeout and actor write admission atomic
+#[derive(Debug, Default)]
+pub(crate) struct RequestLifecycle {
+    state: AtomicU8,
+}
+
+impl RequestLifecycle {
+    /// mark the exact first poll of the sink write future
+    fn begin_wire_poll(&self) -> bool {
+        self.state
+            .compare_exchange(
+                REQUEST_QUEUED,
+                REQUEST_WRITING,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+
+    pub(crate) fn mark_written(&self) {
+        self.state.store(REQUEST_WRITTEN, Ordering::Release);
+    }
+
+    /// cancel while the request is still definitely absent from the wire
+    pub(crate) fn cancel_unsent(&self) -> bool {
+        loop {
+            let state = self.state.load(Ordering::Acquire);
+            if state != REQUEST_QUEUED {
+                return false;
+            }
+            if self
+                .state
+                .compare_exchange(
+                    state,
+                    REQUEST_CANCELLED,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                )
+                .is_ok()
+            {
+                return true;
+            }
+        }
+    }
+
+    pub(crate) fn may_have_executed(&self) -> bool {
+        matches!(
+            self.state.load(Ordering::Acquire),
+            REQUEST_WRITING | REQUEST_WRITTEN
+        )
+    }
+}
+
+/// Poll a sink write only after atomically crossing the may-have-written boundary.
+///
+/// `None` means the caller cancelled the request before the first sink poll, so
+/// no bytes from this request can have reached the wire.
+pub(crate) async fn poll_wire_write<F>(lifecycle: &RequestLifecycle, future: F) -> Option<F::Output>
+where
+    F: std::future::Future,
+{
+    let mut future = std::pin::pin!(future);
+    let mut first_poll = true;
+    std::future::poll_fn(|cx| {
+        if first_poll {
+            first_poll = false;
+            if !lifecycle.begin_wire_poll() {
+                return std::task::Poll::Ready(None);
+            }
+        }
+        future.as_mut().poll(cx).map(Some)
+    })
+    .await
+}
+
+pub(crate) fn is_mutating(method: &str) -> bool {
+    matches!(method, "POST" | "PUT" | "DELETE" | "PATCH")
+}
+
+pub(crate) fn deadline_error(
+    method: &str,
+    uri: &str,
+    request_id: &str,
+    lifecycle: &RequestLifecycle,
+) -> AriError {
+    if lifecycle.cancel_unsent() {
+        return AriError::RequestNotSent {
+            method: method.to_owned(),
+            uri: uri.to_owned(),
+        };
+    }
+    if is_mutating(method) && lifecycle.may_have_executed() {
+        return AriError::OutcomeUnknown {
+            request_id: request_id.to_owned(),
+            method: method.to_owned(),
+            uri: uri.to_owned(),
+        };
+    }
+
+    AriError::WebSocket(format!("{method} {uri} timed out"))
+}
+
+pub(crate) fn write_error(
+    method: &str,
+    uri: &str,
+    request_id: &str,
+    lifecycle: &RequestLifecycle,
+    details: impl FnOnce() -> String,
+) -> AriError {
+    if lifecycle.cancel_unsent() {
+        return AriError::RequestNotSent {
+            method: method.to_owned(),
+            uri: uri.to_owned(),
+        };
+    }
+    if is_mutating(method) {
+        AriError::OutcomeUnknown {
+            request_id: request_id.to_owned(),
+            method: method.to_owned(),
+            uri: uri.to_owned(),
+        }
+    } else {
+        AriError::WebSocket(details())
+    }
+}
+
+pub(crate) fn outbound_message_limit_error(
+    method: &str,
+    uri: &str,
+    message_bytes: usize,
+    limit: usize,
+) -> Option<AriError> {
+    if message_bytes <= limit {
+        return None;
+    }
+
+    if is_mutating(method) {
+        Some(AriError::RequestNotSent {
+            method: method.to_owned(),
+            uri: uri.to_owned(),
+        })
+    } else {
+        Some(AriError::WebSocket(format!(
+            "serialized {method} {uri} request is {message_bytes} bytes, exceeding the websocket message limit of {limit} bytes"
+        )))
+    }
+}
 
 /// response from a transport REST operation
 pub(crate) struct TransportResponse {
     pub status: u16,
     pub body: Option<String>,
+}
+
+impl TransportResponse {
+    pub(crate) fn require_success(self) -> Result<Self> {
+        self.require_success_with_fallback(None)
+    }
+
+    pub(crate) fn require_success_with_fallback(self, fallback: Option<String>) -> Result<Self> {
+        if (200..300).contains(&self.status) {
+            return Ok(self);
+        }
+
+        let Self { status, body } = self;
+        let message = body
+            .or(fallback)
+            .unwrap_or_else(|| format!("HTTP {status}"));
+        Err(AriError::Api { status, message })
+    }
 }
 
 /// internal transport implementation — dispatches REST calls to either
@@ -24,7 +198,7 @@ pub(crate) enum TransportInner {
 }
 
 impl TransportInner {
-    pub async fn request(
+    pub(crate) async fn request(
         &self,
         method: &str,
         path: &str,
@@ -36,10 +210,17 @@ impl TransportInner {
         }
     }
 
-    pub fn shutdown(&self) {
+    pub(crate) fn shutdown(&self) {
         match self {
-            Self::Http(t) => t.ws_listener.shutdown(),
-            Self::WebSocket(t) => t.shutdown(),
+            Self::Http(t) => t.ws_listener.abort(),
+            Self::WebSocket(t) => t.abort(),
+        }
+    }
+
+    pub(crate) async fn shutdown_and_wait(&self) {
+        match self {
+            Self::Http(t) => t.ws_listener.shutdown_and_wait().await,
+            Self::WebSocket(t) => t.shutdown_and_wait().await,
         }
     }
 }
@@ -51,38 +232,44 @@ pub(crate) struct HttpTransport {
     base_url: String,
     credentials: Credentials,
     ws_listener: WsEventListener,
+    max_response_body_bytes: usize,
 }
 
 impl HttpTransport {
-    pub fn new(
-        base_url: &str,
-        credentials: Credentials,
-        ws_url: String,
-        event_bus: EventBus<AriMessage>,
-        reconnect: ReconnectPolicy,
-    ) -> Result<Self> {
+    pub(crate) fn new(config: &AriConfig, event_bus: EventBus<AriMessage>) -> Result<Self> {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
+            .timeout(config.request_timeout())
+            .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(AriError::Http)?;
+            .map_err(|error| AriError::Http(HttpError::new(error)))?;
 
-        let ws_listener = WsEventListener::spawn(ws_url, event_bus, reconnect);
+        let ws_listener = WsEventListener::spawn(
+            config.ws_url().to_string(),
+            event_bus,
+            config.reconnect_policy().clone(),
+            config.max_websocket_message_bytes(),
+        )?;
 
         Ok(Self {
             client,
-            base_url: base_url.trim_end_matches('/').to_owned(),
-            credentials,
+            base_url: config.base_url().as_str().trim_end_matches('/').to_owned(),
+            credentials: config.credentials().clone(),
             ws_listener,
+            max_response_body_bytes: config.max_response_body_bytes(),
         })
     }
 
-    pub async fn request(
+    pub(crate) async fn request(
         &self,
         method: &str,
         path: &str,
         body: Option<String>,
     ) -> Result<TransportResponse> {
+        let request_id = format!(
+            "http-{}",
+            HTTP_REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
         let url = format!("{}/{}", self.base_url, path.trim_start_matches('/'));
         let http_method = parse_method(method)?;
 
@@ -97,20 +284,68 @@ impl HttpTransport {
                 .body(json_body);
         }
 
-        let response = req.send().await.map_err(AriError::Http)?;
+        let response = match req.send().await {
+            Ok(response) => response,
+            Err(error) if is_mutating(method) && error.is_connect() => {
+                return Err(AriError::RequestNotSent {
+                    method: method.to_owned(),
+                    uri: path.to_owned(),
+                });
+            }
+            Err(_error) if is_mutating(method) => {
+                return Err(AriError::OutcomeUnknown {
+                    request_id,
+                    method: method.to_owned(),
+                    uri: path.to_owned(),
+                });
+            }
+            Err(error) => return Err(AriError::Http(HttpError::new(error))),
+        };
         let status = response.status().as_u16();
+        let body = read_response_body(response, self.max_response_body_bytes).await?;
+        TransportResponse { status, body }.require_success()
+    }
+}
 
-        if response.status().is_client_error() || response.status().is_server_error() {
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "failed to read error body".to_owned());
-            return Err(AriError::Api { status, message });
+async fn read_response_body(
+    mut response: reqwest::Response,
+    limit: usize,
+) -> Result<Option<String>> {
+    if let Some(content_length) = response.content_length() {
+        let limit_u64 = u64::try_from(limit).unwrap_or(u64::MAX);
+        if content_length > limit_u64 {
+            return Err(AriError::ResponseTooLarge {
+                limit,
+                received: content_length,
+            });
         }
+    }
 
-        let text = response.text().await.map_err(AriError::Http)?;
-        let body = if text.is_empty() { None } else { Some(text) };
-        Ok(TransportResponse { status, body })
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .unwrap_or(0)
+        .min(limit);
+    let mut body = Vec::with_capacity(capacity);
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| AriError::Http(HttpError::new(error)))?
+    {
+        let received = body.len().saturating_add(chunk.len());
+        if received > limit {
+            return Err(AriError::ResponseTooLarge {
+                limit,
+                received: u64::try_from(received).unwrap_or(u64::MAX),
+            });
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    if body.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(String::from_utf8_lossy(&body).into_owned()))
     }
 }
 

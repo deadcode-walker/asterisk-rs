@@ -1,8 +1,11 @@
 #![allow(clippy::unwrap_used)]
 
+use asterisk_rs_ari::AriClient;
 use asterisk_rs_ari::client::url_encode;
-use asterisk_rs_ari::config::AriConfigBuilder;
-use asterisk_rs_ari::config::TransportMode;
+use asterisk_rs_ari::config::{
+    AriConfigBuilder, DEFAULT_MAX_RESPONSE_BODY_BYTES, DEFAULT_MAX_WEBSOCKET_MESSAGE_BYTES,
+    DEFAULT_REQUEST_TIMEOUT, TransportMode,
+};
 use asterisk_rs_ari::error::AriError;
 use asterisk_rs_ari::event::{
     AriEvent, AriMessage, Bridge, CallerId, Channel, ContactInfo, DeviceState, DialplanCep,
@@ -37,6 +40,97 @@ fn build_default_config() {
         .expect("default config should build");
 
     assert_eq!(config.base_url().as_str(), "http://127.0.0.1:8088/ari");
+    assert_eq!(config.request_timeout(), DEFAULT_REQUEST_TIMEOUT);
+    assert_eq!(
+        config.max_response_body_bytes(),
+        DEFAULT_MAX_RESPONSE_BODY_BYTES
+    );
+    assert_eq!(
+        config.max_websocket_message_bytes(),
+        DEFAULT_MAX_WEBSOCKET_MESSAGE_BYTES
+    );
+}
+
+#[test]
+fn build_custom_request_limits() {
+    let config = AriConfigBuilder::new("myapp")
+        .username("admin")
+        .password("secret")
+        .request_timeout(Duration::from_millis(750))
+        .max_response_body_bytes(8192)
+        .max_websocket_message_bytes(16384)
+        .build()
+        .expect("custom limits should build");
+
+    assert_eq!(config.request_timeout(), Duration::from_millis(750));
+    assert_eq!(config.max_response_body_bytes(), 8192);
+    assert_eq!(config.max_websocket_message_bytes(), 16384);
+}
+
+#[test]
+fn zero_request_timeout_is_rejected() {
+    let error = AriConfigBuilder::new("myapp")
+        .username("admin")
+        .password("secret")
+        .request_timeout(Duration::ZERO)
+        .build()
+        .expect_err("zero request timeout must be rejected");
+
+    assert!(matches!(error, AriError::InvalidConfig(_)));
+}
+
+#[test]
+fn unrepresentable_request_timeout_is_rejected() {
+    let error = AriConfigBuilder::new("myapp")
+        .username("admin")
+        .password("secret")
+        .request_timeout(Duration::MAX)
+        .build()
+        .expect_err("unrepresentable request timeout must be rejected");
+
+    assert!(matches!(error, AriError::InvalidConfig(_)));
+}
+
+#[test]
+fn zero_response_body_limit_is_rejected() {
+    let error = AriConfigBuilder::new("myapp")
+        .username("admin")
+        .password("secret")
+        .max_response_body_bytes(0)
+        .build()
+        .expect_err("zero response body limit must be rejected");
+
+    assert!(matches!(error, AriError::InvalidConfig(_)));
+}
+
+#[test]
+fn zero_websocket_message_limit_is_rejected() {
+    let error = AriConfigBuilder::new("myapp")
+        .username("admin")
+        .password("secret")
+        .max_websocket_message_bytes(0)
+        .build()
+        .expect_err("zero WebSocket message limit must be rejected");
+
+    assert!(matches!(error, AriError::InvalidConfig(_)));
+}
+
+#[tokio::test]
+async fn client_transport_modes_construct_explicit_tls_configuration() {
+    for mode in [TransportMode::Http, TransportMode::WebSocket] {
+        let config = AriConfigBuilder::new("myapp")
+            .username("admin")
+            .password("secret")
+            .secure(true)
+            .transport(mode)
+            .reconnect(ReconnectPolicy::none())
+            .build()
+            .expect("config should build");
+        let client = AriClient::connect(config)
+            .await
+            .expect("explicit AWS-LC platform-verifier configuration should construct");
+        client.disconnect();
+    }
 }
 
 #[test]
@@ -185,6 +279,9 @@ fn builder_fluent_chain() {
         .app_name("chain2")
         .secure(false)
         .reconnect(ReconnectPolicy::default())
+        .request_timeout(Duration::from_secs(2))
+        .max_response_body_bytes(1024)
+        .max_websocket_message_bytes(2048)
         .build();
 
     assert!(result.is_ok(), "fluent chain should produce valid config");
@@ -1772,6 +1869,7 @@ fn serialize_originate_params_full() {
     assert!(json.contains("\"context\":\"default\""));
     assert!(json.contains("\"priority\":1"));
     assert!(json.contains("\"app\":\"myapp\""));
+    assert!(json.contains("\"appArgs\":\"arg1,arg2\""));
     assert!(json.contains("\"callerId\":\"\\\"Test\\\" <1000>\""));
     assert!(json.contains("\"timeout\":30"));
 }
@@ -1788,7 +1886,7 @@ fn serialize_originate_params_minimal() {
     assert!(!json.contains("extension"));
     assert!(!json.contains("context"));
     assert!(!json.contains("priority"));
-    assert!(!json.contains("app_args"));
+    assert!(!json.contains("appArgs"));
     assert!(!json.contains("callerId"));
     assert!(!json.contains("timeout"));
 }
@@ -2306,6 +2404,70 @@ async fn shutdown_handle_stops_server() {
     assert!(result.is_ok());
 }
 
+#[tokio::test]
+async fn dropping_shutdown_handle_stops_server() {
+    let (server, handle) = AriServerBuilder::new()
+        .bind(([127, 0, 0, 1], 0).into())
+        .build()
+        .await
+        .expect("should bind");
+
+    drop(handle);
+
+    let result = tokio::time::timeout(Duration::from_secs(2), server.run(|_session| async {}))
+        .await
+        .expect("dropping the final shutdown handle should stop the server");
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn server_rejects_zero_connection_limit() {
+    let error = AriServerBuilder::new()
+        .bind(([127, 0, 0, 1], 0).into())
+        .max_connections(0)
+        .build()
+        .await
+        .expect_err("zero max_connections must be rejected");
+
+    assert!(matches!(error, AriError::InvalidConfig(_)));
+}
+
+#[tokio::test]
+async fn server_rejects_zero_request_timeout() {
+    let error = AriServerBuilder::new()
+        .bind(([127, 0, 0, 1], 0).into())
+        .request_timeout(Duration::ZERO)
+        .build()
+        .await
+        .expect_err("zero request timeout must be rejected");
+
+    assert!(matches!(error, AriError::InvalidConfig(_)));
+}
+
+#[tokio::test]
+async fn server_rejects_unrepresentable_request_timeout() {
+    let error = AriServerBuilder::new()
+        .bind(([127, 0, 0, 1], 0).into())
+        .request_timeout(Duration::MAX)
+        .build()
+        .await
+        .expect_err("unrepresentable request timeout must be rejected");
+
+    assert!(matches!(error, AriError::InvalidConfig(_)));
+}
+
+#[tokio::test]
+async fn server_rejects_zero_websocket_message_limit() {
+    let error = AriServerBuilder::new()
+        .bind(([127, 0, 0, 1], 0).into())
+        .max_websocket_message_bytes(0)
+        .build()
+        .await
+        .expect_err("zero WebSocket message limit must be rejected");
+
+    assert!(matches!(error, AriError::InvalidConfig(_)));
+}
+
 // ── unit tests ────────────────────────────────
 
 #[test]
@@ -2420,7 +2582,8 @@ fn originate_params_all_new_and_old_fields() {
     assert_eq!(json["context"], "default");
     assert_eq!(json["priority"], 1);
     assert_eq!(json["app"], "myapp");
-    assert_eq!(json["app_args"], "arg1,arg2");
+    assert_eq!(json["appArgs"], "arg1,arg2");
+    assert!(json.get("app_args").is_none());
     assert_eq!(json["callerId"], "\"Test\" <100>");
     assert!(
         json.get("caller_id").is_none(),

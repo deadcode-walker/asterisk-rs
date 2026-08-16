@@ -19,11 +19,23 @@ pub enum AgiError {
     #[error("invalid AGI argument: {details}")]
     InvalidArgument { details: String },
 
+    #[error("invalid AGI request: {details}")]
+    InvalidRequest { details: String },
+
     #[error("command already in flight; channel is not cancel-safe")]
     CommandInFlight,
 
-    #[error("channel is poisoned due to a previous I/O error")]
+    #[error("channel is poisoned due to a previous incomplete command")]
     ChannelPoisoned,
+
+    #[error("AGI command timed out after {elapsed:?}")]
+    CommandTimeout { elapsed: std::time::Duration },
+
+    #[error("AGI request prelude timed out after {elapsed:?}")]
+    RequestTimeout { elapsed: std::time::Duration },
+
+    #[error("AGI response exceeds the {limit}-byte limit")]
+    ResponseTooLarge { limit: usize },
 
     #[error("protocol error: {0}")]
     Protocol(#[from] ProtocolError),

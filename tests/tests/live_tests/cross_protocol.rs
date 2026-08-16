@@ -6,9 +6,9 @@ use asterisk_rs_agi::channel::AgiChannel;
 use asterisk_rs_agi::handler::AgiHandler;
 use asterisk_rs_agi::request::AgiRequest;
 use asterisk_rs_agi::server::AgiServer;
+use asterisk_rs_ami::AmiEvent;
 use asterisk_rs_ami::action::{GetVarAction, OriginateAction};
 use asterisk_rs_ami::client::AmiClient;
-use asterisk_rs_ami::AmiEvent;
 use asterisk_rs_ari::config::AriConfigBuilder;
 use asterisk_rs_ari::{AriClient, AriEvent};
 use asterisk_rs_core::config::ReconnectPolicy;
@@ -72,6 +72,7 @@ async fn wait_stasis_start(
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn ami_originate_ari_stasis_lifecycle() {
     init_tracing();
 
@@ -151,6 +152,7 @@ async fn ami_originate_ari_stasis_lifecycle() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn ami_originate_agi_handler_completes() {
     init_tracing();
 
@@ -189,6 +191,7 @@ async fn ami_originate_agi_handler_completes() {
     let handler = CrossHandler { tx };
     let (server, shutdown) = AgiServer::builder()
         .bind("0.0.0.0:4573")
+        .allow_external_bind(true)
         .handler(handler)
         .build()
         .await
@@ -260,6 +263,7 @@ async fn ami_originate_agi_handler_completes() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn ami_events_during_ari_channel_operations() {
     init_tracing();
 
@@ -325,6 +329,7 @@ async fn ami_events_during_ari_channel_operations() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn ari_bridge_with_two_channels() {
     init_tracing();
 
@@ -445,6 +450,7 @@ async fn ari_bridge_with_two_channels() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn ami_monitors_ari_activity() {
     init_tracing();
 

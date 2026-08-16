@@ -1,56 +1,110 @@
 use std::collections::HashMap;
+use std::net::SocketAddr;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+
+const MAX_PRELUDE_LINE_BYTES: usize = 8 * 1024;
+const MAX_PRELUDE_BYTES: usize = 64 * 1024;
+const MAX_PRELUDE_VARIABLES: usize = 128;
 
 /// parsed AGI request environment sent by asterisk on connection
 #[derive(Debug, Clone)]
 pub struct AgiRequest {
     /// all agi_* variables as key-value pairs (key without "agi_" prefix)
     variables: HashMap<String, String>,
+    peer_addr: Option<SocketAddr>,
 }
 
 impl AgiRequest {
     /// parse agi environment variables from the initial connection
     ///
-    /// reads lines until a blank line is encountered, stripping the `agi_` prefix
-    /// from each key
+    /// reads newline-terminated variables through the required empty `LF` or
+    /// `CRLF` line. Each line must contain a name and `:` separator. The parser
+    /// strips the `agi_` key prefix and one separator space while preserving all
+    /// other value whitespace. Unterminated, malformed, or oversized preludes
+    /// are rejected.
     pub async fn parse_from_reader<R: tokio::io::AsyncBufRead + Unpin>(
         reader: &mut R,
     ) -> crate::error::Result<Self> {
         let mut variables = HashMap::new();
         let mut line = String::new();
+        let mut total_bytes = 0usize;
 
         loop {
             line.clear();
             // limit bytes read per line to prevent OOM from a malicious client
             // sending an unbounded line without a newline
-            let bytes_read = (&mut *reader).take(8193).read_line(&mut line).await?;
+            let bytes_read = (&mut *reader)
+                .take((MAX_PRELUDE_LINE_BYTES + 1) as u64)
+                .read_line(&mut line)
+                .await?;
 
-            // eof or blank line terminates the environment block
-            if bytes_read == 0 || line.trim().is_empty() {
+            total_bytes = total_bytes.saturating_add(bytes_read);
+            if total_bytes > MAX_PRELUDE_BYTES {
+                return Err(invalid_request("AGI prelude exceeds 65536 bytes"));
+            }
+
+            if bytes_read == 0 {
+                return Err(invalid_request(
+                    "AGI prelude ended before its blank-line terminator",
+                ));
+            }
+
+            if line.len() > MAX_PRELUDE_LINE_BYTES {
+                return Err(invalid_request("AGI prelude line exceeds 8192 bytes"));
+            }
+            if !line.ends_with('\n') {
+                return Err(invalid_request("AGI prelude line ended without a newline"));
+            }
+
+            let content = line.strip_suffix('\n').expect("line ending checked above");
+            let content = content.strip_suffix('\r').unwrap_or(content);
+            if content.is_empty() {
                 break;
             }
-
-            // reject lines that hit the byte limit without a newline
-            if line.len() >= 8193 && !line.ends_with('\n') {
-                return Err(crate::error::AgiError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "agi prelude line exceeds 8192 bytes",
-                )));
+            if content.contains('\r') || content.contains('\0') {
+                return Err(invalid_request(
+                    "AGI prelude line contains a forbidden control character",
+                ));
             }
 
-            let trimmed = line.trim();
-            if let Some((key, value)) = trimmed.split_once(':') {
-                let key = key.trim();
-                let value = value.trim();
-
-                // strip the agi_ prefix from keys
-                let key = key.strip_prefix("agi_").unwrap_or(key);
-                variables.insert(key.to_owned(), value.to_owned());
+            let (key, value) = content
+                .split_once(':')
+                .ok_or_else(|| invalid_request("AGI prelude line is missing ':'"))?;
+            let key = key.trim();
+            if key.is_empty() {
+                return Err(invalid_request("AGI prelude variable name is empty"));
             }
+
+            // strip one protocol separator space but preserve value whitespace
+            let value = value.strip_prefix(' ').unwrap_or(value);
+
+            // strip the agi_ prefix from keys
+            let key = key.strip_prefix("agi_").unwrap_or(key);
+            if key.is_empty() {
+                return Err(invalid_request("AGI prelude variable name is empty"));
+            }
+            if !variables.contains_key(key) && variables.len() >= MAX_PRELUDE_VARIABLES {
+                return Err(invalid_request("AGI prelude exceeds 128 variables"));
+            }
+            variables.insert(key.to_owned(), value.to_owned());
         }
 
-        Ok(Self { variables })
+        Ok(Self {
+            variables,
+            peer_addr: None,
+        })
+    }
+
+    pub(crate) fn set_peer_addr(&mut self, peer_addr: SocketAddr) {
+        self.peer_addr = Some(peer_addr);
+    }
+
+    /// return the TCP peer observed by [`crate::server::AgiServer`]
+    ///
+    /// requests parsed directly from a reader do not have peer metadata
+    pub fn peer_addr(&self) -> Option<SocketAddr> {
+        self.peer_addr
     }
 
     /// get the value of `agi_network`
@@ -116,5 +170,11 @@ impl AgiRequest {
     /// generic accessor for any variable by key (without `agi_` prefix)
     pub fn get(&self, key: &str) -> Option<&str> {
         self.variables.get(key).map(String::as_str)
+    }
+}
+
+fn invalid_request(details: &'static str) -> crate::error::AgiError {
+    crate::error::AgiError::InvalidRequest {
+        details: details.to_owned(),
     }
 }

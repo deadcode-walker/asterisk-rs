@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::client::{url_encode, AriClient};
+use crate::client::{AriClient, url_encode};
 use crate::error::Result;
 use crate::event::{Channel, LiveRecording, Playback};
 
@@ -19,7 +19,7 @@ pub struct OriginateParams {
     pub priority: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "appArgs", skip_serializing_if = "Option::is_none")]
     pub app_args: Option<String>,
     #[serde(rename = "callerId", skip_serializing_if = "Option::is_none")]
     pub caller_id: Option<String>,
@@ -306,15 +306,13 @@ impl ChannelHandle {
             .await
     }
 
-    /// redirect the channel to a different dialplan location
-    pub async fn redirect(&self, context: &str, extension: &str, priority: i64) -> Result<()> {
+    /// redirect the channel to a new endpoint
+    pub async fn redirect(&self, endpoint: &str) -> Result<()> {
         self.client
             .post_empty(&format!(
-                "/channels/{}/redirect?context={}&extension={}&priority={}",
+                "/channels/{}/redirect?endpoint={}",
                 url_encode(&self.id),
-                url_encode(context),
-                url_encode(extension),
-                priority
+                url_encode(endpoint),
             ))
             .await
     }
@@ -402,7 +400,9 @@ pub async fn list(client: &AriClient) -> Result<Vec<Channel>> {
 
 /// get details for a specific channel
 pub async fn get(client: &AriClient, channel_id: &str) -> Result<Channel> {
-    client.get(&format!("/channels/{channel_id}")).await
+    client
+        .get(&format!("/channels/{}", url_encode(channel_id)))
+        .await
 }
 
 /// originate a new channel

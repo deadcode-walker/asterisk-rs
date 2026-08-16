@@ -171,4 +171,4 @@ while let Some(audio) = media.recv_audio().await? {
 - [API Reference](https://docs.rs/asterisk-rs-ari)
 - [User Guide](https://deadcode-walker.github.io/asterisk-rs/)
 
-Part of [asterisk-rs](https://github.com/deadcode-walker/asterisk-rs). MSRV 1.83. MIT/Apache-2.0.
+Part of [asterisk-rs](https://github.com/deadcode-walker/asterisk-rs). MSRV 1.86. MIT/Apache-2.0.

@@ -6,13 +6,14 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, watch, Notify};
+use tokio::sync::{Notify, broadcast, watch};
 use tokio_tungstenite::tungstenite::Message;
 
 /// pre-configured response for a given (method, path) pair
@@ -20,6 +21,42 @@ use tokio_tungstenite::tungstenite::Message;
 pub struct MockRoute {
     pub status: u16,
     pub body: String,
+    framing: ResponseFraming,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ResponseFraming {
+    Fixed,
+    Chunked,
+    Disconnect,
+}
+
+/// parsed HTTP request captured at the mock transport boundary
+#[derive(Clone)]
+pub struct MockRequest {
+    pub method: String,
+    pub path: String,
+    pub content_length: usize,
+    pub authorization: Option<String>,
+    pub content_type: Option<String>,
+    pub body: Vec<u8>,
+}
+
+impl std::fmt::Debug for MockRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MockRequest")
+            .field("method", &self.method)
+            .field("path", &self.path)
+            .field("content_length", &self.content_length)
+            .field(
+                "authorization",
+                &self.authorization.as_ref().map(|_| "[redacted]"),
+            )
+            .field("content_type", &self.content_type)
+            .field("body", &String::from_utf8_lossy(&self.body))
+            .finish()
+    }
 }
 
 /// shared state visible to all connection handlers
@@ -28,6 +65,8 @@ struct ServerState {
     event_tx: broadcast::Sender<String>,
     ws_clients: AtomicUsize,
     ws_connected: Notify,
+    requests: Mutex<Vec<MockRequest>>,
+    request_received: Notify,
 }
 
 /// mock ARI server binding HTTP and WebSocket on one port
@@ -58,10 +97,17 @@ impl MockAriServer {
         let _ = self.event_tx.send(json.to_string());
     }
 
-    /// shut down the accept loop and abort all handlers
-    pub fn shutdown(self) {
+    /// signal active handlers to close, then stop the accept loop
+    pub async fn shutdown(self) {
         let _ = self.shutdown_tx.send(true);
-        self.task.abort();
+        let mut task = self.task;
+        if tokio::time::timeout(std::time::Duration::from_secs(2), &mut task)
+            .await
+            .is_err()
+        {
+            task.abort();
+            let _ = task.await;
+        }
     }
 
     /// wait until at least one websocket client has connected
@@ -76,11 +122,39 @@ impl MockAriServer {
             notified.await;
         }
     }
+
+    /// snapshot parsed HTTP requests received by the mock server
+    pub fn requests(&self) -> Vec<MockRequest> {
+        self.state
+            .requests
+            .lock()
+            .expect("mock request mutex poisoned")
+            .clone()
+    }
+
+    /// wait until at least `count` HTTP requests have been captured
+    pub async fn wait_for_requests(&self, count: usize) {
+        loop {
+            let notified = self.state.request_received.notified();
+            if self
+                .state
+                .requests
+                .lock()
+                .expect("mock request mutex poisoned")
+                .len()
+                >= count
+            {
+                return;
+            }
+            notified.await;
+        }
+    }
 }
 
 /// builder for [`MockAriServer`] with route registration
 pub struct MockAriServerBuilder {
     routes: HashMap<(String, String), MockRoute>,
+    bind_addr: SocketAddr,
 }
 
 impl Default for MockAriServerBuilder {
@@ -93,6 +167,7 @@ impl MockAriServerBuilder {
     pub fn new() -> Self {
         Self {
             routes: HashMap::new(),
+            bind_addr: "127.0.0.1:0".parse().expect("valid mock bind address"),
         }
     }
 
@@ -103,14 +178,47 @@ impl MockAriServerBuilder {
             MockRoute {
                 status,
                 body: body.to_string(),
+                framing: ResponseFraming::Fixed,
             },
         );
         self
     }
 
+    /// register a response encoded with HTTP chunked transfer framing
+    pub fn route_chunked(mut self, method: &str, path: &str, status: u16, body: &str) -> Self {
+        self.routes.insert(
+            (method.to_uppercase(), path.to_string()),
+            MockRoute {
+                status,
+                body: body.to_owned(),
+                framing: ResponseFraming::Chunked,
+            },
+        );
+        self
+    }
+
+    /// capture a request and close the connection before response headers
+    pub fn route_disconnect(mut self, method: &str, path: &str) -> Self {
+        self.routes.insert(
+            (method.to_uppercase(), path.to_owned()),
+            MockRoute {
+                status: 500,
+                body: String::new(),
+                framing: ResponseFraming::Disconnect,
+            },
+        );
+        self
+    }
+
+    /// bind the mock server to an exact address
+    pub fn bind(mut self, addr: SocketAddr) -> Self {
+        self.bind_addr = addr;
+        self
+    }
+
     /// bind to a random port and start accepting connections
     pub async fn start(self) -> MockAriServer {
-        let listener = TcpListener::bind("127.0.0.1:0")
+        let listener = TcpListener::bind(self.bind_addr)
             .await
             .expect("failed to bind mock ARI listener");
         let addr = listener
@@ -125,6 +233,8 @@ impl MockAriServerBuilder {
             event_tx: event_tx.clone(),
             ws_clients: AtomicUsize::new(0),
             ws_connected: Notify::new(),
+            requests: Mutex::new(Vec::new()),
+            request_received: Notify::new(),
         });
 
         let task = tokio::spawn(accept_loop(listener, Arc::clone(&state), shutdown_rx));
@@ -145,30 +255,57 @@ async fn accept_loop(
     state: Arc<ServerState>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
+    let mut handlers = tokio::task::JoinSet::new();
     loop {
         tokio::select! {
+            biased;
+            changed = shutdown_rx.changed() => {
+                if changed.is_err() || *shutdown_rx.borrow() {
+                    break;
+                }
+            }
+            result = handlers.join_next(), if !handlers.is_empty() => {
+                if let Some(Err(error)) = result {
+                    tracing::warn!(error = %error, "mock ARI connection task failed");
+                }
+            }
             result = listener.accept() => {
                 match result {
                     Ok((stream, _peer)) => {
                         let st = Arc::clone(&state);
-                        tokio::spawn(handle_connection(stream, st));
+                        handlers.spawn(handle_connection(stream, st, shutdown_rx.clone()));
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, "mock ARI accept error");
                     }
                 }
             }
-            _ = shutdown_rx.changed() => {
-                if *shutdown_rx.borrow() {
-                    return;
-                }
+        }
+    }
+
+    drop(listener);
+    let drain = async {
+        while let Some(result) = handlers.join_next().await {
+            if let Err(error) = result {
+                tracing::warn!(error = %error, "mock ARI connection task failed");
             }
         }
+    };
+    if tokio::time::timeout(std::time::Duration::from_secs(1), drain)
+        .await
+        .is_err()
+    {
+        handlers.abort_all();
+        while handlers.join_next().await.is_some() {}
     }
 }
 
 /// route a single TCP connection to either websocket or HTTP handling
-async fn handle_connection(stream: TcpStream, state: Arc<ServerState>) {
+async fn handle_connection(
+    stream: TcpStream,
+    state: Arc<ServerState>,
+    shutdown_rx: watch::Receiver<bool>,
+) {
     // peek at the request to decide protocol without consuming bytes
     let mut buf = [0u8; 4096];
     let n = match stream.peek(&mut buf).await {
@@ -183,14 +320,18 @@ async fn handle_connection(stream: TcpStream, state: Arc<ServerState>) {
     let lower = request_preview.to_lowercase();
 
     if lower.contains("upgrade: websocket") {
-        handle_websocket(stream, state).await;
+        handle_websocket(stream, state, shutdown_rx).await;
     } else {
         handle_http(stream, state).await;
     }
 }
 
 /// perform websocket handshake and stream events until client disconnects
-async fn handle_websocket(stream: TcpStream, state: Arc<ServerState>) {
+async fn handle_websocket(
+    stream: TcpStream,
+    state: Arc<ServerState>,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
     let ws = match tokio_tungstenite::accept_async(stream).await {
         Ok(ws) => ws,
         Err(e) => {
@@ -208,6 +349,12 @@ async fn handle_websocket(stream: TcpStream, state: Arc<ServerState>) {
 
     loop {
         tokio::select! {
+            changed = shutdown_rx.changed() => {
+                if changed.is_err() || *shutdown_rx.borrow() {
+                    let _ = write.send(Message::Close(None)).await;
+                    break;
+                }
+            }
             event = event_rx.recv() => {
                 match event {
                     Ok(json) => {
@@ -223,7 +370,50 @@ async fn handle_websocket(stream: TcpStream, state: Arc<ServerState>) {
                 match msg {
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Err(_)) => break,
-                    _ => {} // ignore pings, text from client, etc.
+                    Some(Ok(Message::Text(text))) => {
+                        let request: serde_json::Value = match serde_json::from_str(&text) {
+                            Ok(request) => request,
+                            Err(_) => continue,
+                        };
+                        if request["type"] != "RESTRequest" {
+                            continue;
+                        }
+
+                        let method = request["method"].as_str().unwrap_or_default().to_owned();
+                        let uri = request["uri"].as_str().unwrap_or_default().to_owned();
+                        let request_id = request["request_id"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_owned();
+                        let path = format!("/ari/{}", uri.trim_start_matches('/'));
+                        let route = state
+                            .routes
+                            .get(&(method, path))
+                            .cloned()
+                            .unwrap_or(MockRoute {
+                                status: 404,
+                                body: r#"{"message":"not found"}"#.to_owned(),
+                                framing: ResponseFraming::Fixed,
+                            });
+                        let response = serde_json::json!({
+                            "type": "RESTResponse",
+                            "status_code": route.status,
+                            "reason_phrase": status_reason(route.status),
+                            "uri": uri,
+                            "request_id": request_id,
+                            "transaction_id": "mock-transaction",
+                            "content_type": "application/json",
+                            "message_body": if route.body.is_empty() {
+                                serde_json::Value::Null
+                            } else {
+                                serde_json::Value::String(route.body)
+                            },
+                        });
+                        if write.send(Message::Text(response.to_string().into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    _ => {} // ignore pings and binary frames
                 }
             }
         }
@@ -232,47 +422,134 @@ async fn handle_websocket(stream: TcpStream, state: Arc<ServerState>) {
 
 /// parse an HTTP request from the stream and send a canned response
 async fn handle_http(mut stream: TcpStream, state: Arc<ServerState>) {
-    let mut buf = vec![0u8; 8192];
-    let n = match stream.read(&mut buf).await {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::warn!(error = %e, "mock ARI http read failed");
+    const MAX_REQUEST_BYTES: usize = 1024 * 1024;
+
+    let mut request_bytes = Vec::with_capacity(4096);
+    let header_end = loop {
+        if let Some(position) = request_bytes
+            .windows(4)
+            .position(|bytes| bytes == b"\r\n\r\n")
+        {
+            break position + 4;
+        }
+        if request_bytes.len() >= MAX_REQUEST_BYTES {
+            tracing::warn!("mock ARI request headers exceeded limit");
             return;
+        }
+
+        let mut chunk = [0_u8; 4096];
+        match stream.read(&mut chunk).await {
+            Ok(0) => return,
+            Ok(read) => request_bytes.extend_from_slice(&chunk[..read]),
+            Err(error) => {
+                tracing::warn!(error = %error, "mock ARI http read failed");
+                return;
+            }
         }
     };
 
-    let request = String::from_utf8_lossy(&buf[..n]);
+    let headers_text = String::from_utf8_lossy(&request_bytes[..header_end]);
+    let mut lines = headers_text.split("\r\n");
+    let request_line = lines.next().unwrap_or_default();
+    let mut request_parts = request_line.splitn(3, ' ');
+    let method = request_parts.next().unwrap_or_default().to_uppercase();
+    let path = request_parts.next().unwrap_or_default().to_owned();
+    let mut content_length = 0_usize;
+    let mut authorization = None;
+    let mut content_type = None;
+    for line in lines.filter(|line| !line.is_empty()) {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        match name.trim().to_ascii_lowercase().as_str() {
+            "content-length" => {
+                content_length = value.trim().parse().unwrap_or_default();
+            }
+            "authorization" => authorization = Some(value.trim().to_owned()),
+            "content-type" => content_type = Some(value.trim().to_owned()),
+            _ => {}
+        }
+    }
 
-    // parse request line: "METHOD /path HTTP/1.1"
-    let first_line = request.lines().next().unwrap_or_default();
-    let parts: Vec<&str> = first_line.splitn(3, ' ').collect();
-    let method = parts.first().copied().unwrap_or_default().to_uppercase();
-    let path = parts.get(1).copied().unwrap_or_default().to_string();
+    let total_length = match header_end.checked_add(content_length) {
+        Some(length) if length <= MAX_REQUEST_BYTES => length,
+        _ => {
+            tracing::warn!(content_length, "mock ARI request body exceeded limit");
+            return;
+        }
+    };
+    while request_bytes.len() < total_length {
+        let mut chunk = [0_u8; 4096];
+        match stream.read(&mut chunk).await {
+            Ok(0) => return,
+            Ok(read) => request_bytes.extend_from_slice(&chunk[..read]),
+            Err(error) => {
+                tracing::warn!(error = %error, "mock ARI http body read failed");
+                return;
+            }
+        }
+    }
+    let body = request_bytes[header_end..total_length].to_vec();
+    state
+        .requests
+        .lock()
+        .expect("mock request mutex poisoned")
+        .push(MockRequest {
+            method: method.clone(),
+            path: path.clone(),
+            content_length,
+            authorization,
+            content_type,
+            body,
+        });
+    state.request_received.notify_waiters();
 
     let key = (method, path);
     let route = state.routes.get(&key).cloned().unwrap_or(MockRoute {
         status: 404,
         body: r#"{"message":"not found"}"#.to_string(),
+        framing: ResponseFraming::Fixed,
     });
 
     let reason = status_reason(route.status);
-    let headers = format!(
-        "Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close",
-        route.body.len(),
-    );
-    let response = format!(
-        "HTTP/1.1 {status} {reason}\r\n{headers}\r\n\r\n{body}",
-        status = route.status,
-        body = route.body,
-    );
-
-    let _ = stream.write_all(response.as_bytes()).await;
+    match route.framing {
+        ResponseFraming::Fixed => {
+            let response = format!(
+                "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n{body}",
+                status = route.status,
+                length = route.body.len(),
+                body = route.body,
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+        }
+        ResponseFraming::Chunked => {
+            let headers = format!(
+                "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+                route.status, reason,
+            );
+            if stream.write_all(headers.as_bytes()).await.is_err() {
+                return;
+            }
+            for chunk in route.body.as_bytes().chunks(7) {
+                let prefix = format!("{:x}\r\n", chunk.len());
+                if stream.write_all(prefix.as_bytes()).await.is_err()
+                    || stream.write_all(chunk).await.is_err()
+                    || stream.write_all(b"\r\n").await.is_err()
+                {
+                    return;
+                }
+            }
+            let _ = stream.write_all(b"0\r\n\r\n").await;
+        }
+        ResponseFraming::Disconnect => {}
+    }
 }
 
 fn status_reason(code: u16) -> &'static str {
     match code {
         200 => "OK",
         201 => "Created",
+        302 => "Found",
         204 => "No Content",
         400 => "Bad Request",
         401 => "Unauthorized",

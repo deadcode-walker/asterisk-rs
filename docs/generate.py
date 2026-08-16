@@ -12,6 +12,24 @@ ROOT = Path(__file__).parent.parent
 DOCS_SRC = Path(__file__).parent / "src"
 
 
+def summarize_doc_lines(doc_lines: list[str]) -> str:
+    """return the first prose paragraph, escaped for a Markdown table cell."""
+    paragraph = []
+    for raw_line in doc_lines:
+        line = raw_line.strip()
+        if not line:
+            if paragraph:
+                break
+            continue
+        if line.startswith("#"):
+            if paragraph:
+                break
+            continue
+        paragraph.append(line)
+
+    return " ".join(paragraph).replace("|", r"\|")
+
+
 def extract_enum_variants(path: Path, enum_name: str) -> list[dict]:
     """extract variants from a rust enum, capturing doc comments."""
     text = path.read_text()
@@ -35,7 +53,7 @@ def extract_enum_variants(path: Path, enum_name: str) -> list[dict]:
             # variant line
             name = stripped.split("{")[0].split("(")[0].split(",")[0].strip()
             if name and name[0].isupper():
-                doc = " ".join(doc_lines) if doc_lines else ""
+                doc = summarize_doc_lines(doc_lines)
                 variants.append({"name": name, "doc": doc})
             doc_lines = []
         elif stripped == "":
@@ -62,7 +80,7 @@ def extract_action_structs(path: Path) -> list[dict]:
             while j >= 0 and lines[j].strip().startswith("///"):
                 doc_lines.insert(0, lines[j].strip()[3:].strip())
                 j -= 1
-            doc = " ".join(doc_lines) if doc_lines else ""
+            doc = summarize_doc_lines(doc_lines)
             actions.append({"name": name, "doc": doc})
 
     return actions
@@ -94,7 +112,7 @@ def extract_methods(path: Path, impl_type: str) -> list[dict]:
                 while j >= 0 and lines[j].strip().startswith("///"):
                     doc_lines.insert(0, lines[j].strip()[3:].strip())
                     j -= 1
-                doc = " ".join(doc_lines) if doc_lines else ""
+                doc = summarize_doc_lines(doc_lines)
                 methods.append({"name": name, "doc": doc})
 
     return methods
@@ -116,7 +134,7 @@ def extract_command_constants(path: Path) -> list[dict]:
             while j >= 0 and lines[j].strip().startswith("///"):
                 doc_lines.insert(0, lines[j].strip()[3:].strip())
                 j -= 1
-            doc = " ".join(doc_lines) if doc_lines else ""
+            doc = summarize_doc_lines(doc_lines)
             commands.append({"name": name, "value": value, "doc": doc})
 
     return commands
@@ -139,7 +157,7 @@ def extract_domain_types(path: Path) -> list[dict]:
             while j >= 0 and lines[j].strip().startswith("///"):
                 doc_lines.insert(0, lines[j].strip()[3:].strip())
                 j -= 1
-            doc = " ".join(doc_lines) if doc_lines else ""
+            doc = summarize_doc_lines(doc_lines)
             types.append({"name": name, "doc": doc})
         i += 1
     return types
@@ -230,7 +248,9 @@ def generate_ari_reference():
         for m in re.finditer(
             r"/// (.+?)\npub async fn (\w+)", text
         ):
-            methods.append({"name": m.group(2), "doc": m.group(1)})
+            methods.append(
+                {"name": m.group(2), "doc": summarize_doc_lines([m.group(1)])}
+            )
 
         if methods:
             resource_methods[module_name] = {

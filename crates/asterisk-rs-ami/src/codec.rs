@@ -69,6 +69,20 @@ impl RawAmiMessage {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
     }
+
+    /// approximate retained bytes for bounded multi-message aggregation
+    pub(crate) fn retained_size(&self) -> usize {
+        self.headers
+            .iter()
+            .map(|(key, value)| key.len() + value.len())
+            .sum::<usize>()
+            + self.output.iter().map(String::len).sum::<usize>()
+            + self
+                .channel_variables
+                .iter()
+                .map(|(name, value)| name.len() + value.len())
+                .sum::<usize>()
+    }
 }
 
 /// codec for AMI's line-based protocol
@@ -83,6 +97,65 @@ impl AmiCodec {
         Self {
             banner_consumed: false,
         }
+    }
+
+    /// validate a complete outbound frame before any socket write begins
+    pub(crate) fn validate_outbound(item: &RawAmiMessage) -> Result<(), AmiError> {
+        let contains_line_terminator = |s: &str| s.bytes().any(|b| b == b'\r' || b == b'\n');
+        if item.headers.len() + item.channel_variables.len() > MAX_HEADERS {
+            return Err(AmiError::Protocol(
+                asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                    details: format!("message exceeds {} header limit", MAX_HEADERS),
+                },
+            ));
+        }
+
+        let mut frame_len = 2usize;
+        for (key, value) in &item.headers {
+            if contains_line_terminator(key) {
+                return Err(AmiError::Protocol(
+                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                        details: format!("header key contains illegal line terminator: {key:?}"),
+                    },
+                ));
+            }
+            if contains_line_terminator(value) {
+                return Err(AmiError::Protocol(
+                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                        details: "header value contains illegal line terminator".to_owned(),
+                    },
+                ));
+            }
+            frame_len = frame_len
+                .checked_add(key.len() + value.len() + 4)
+                .ok_or_else(message_too_large)?;
+        }
+        for (name, value) in &item.channel_variables {
+            if contains_line_terminator(name) {
+                return Err(AmiError::Protocol(
+                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                        details: format!(
+                            "channel variable name contains illegal line terminator: {name:?}"
+                        ),
+                    },
+                ));
+            }
+            if contains_line_terminator(value) {
+                return Err(AmiError::Protocol(
+                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                        details: "channel variable value contains illegal line terminator"
+                            .to_owned(),
+                    },
+                ));
+            }
+            frame_len = frame_len
+                .checked_add(name.len() + value.len() + 18)
+                .ok_or_else(message_too_large)?;
+        }
+        if frame_len > MAX_MESSAGE_SIZE {
+            return Err(message_too_large());
+        }
+        Ok(())
     }
 }
 
@@ -120,10 +193,11 @@ impl Decoder for AmiCodec {
 
         // AMI Response: Follows frames embed output lines between the header
         // lines and a --END COMMAND-- marker, all terminated by \r\n\r\n.
-        // the output lines lack a colon-separated key, so the line parser
-        // already puts them in `output`. the only framing concern is that
-        // we must not accept a \r\n\r\n that appears before the end marker.
+        // output may use repeated Output headers or raw lines, including
+        // blank and colon-bearing lines. do not accept a \r\n\r\n that
+        // appears before the line-delimited end marker.
         const END_MARKER: &[u8] = b"--END COMMAND--";
+        const END_SEQUENCE: &[u8] = b"\r\n--END COMMAND--\r\n\r\n";
 
         // loop to skip empty frames instead of recursing
         loop {
@@ -138,25 +212,8 @@ impl Decoder for AmiCodec {
             // peek: does this frame contain a Follows header?
             // if so, the real terminator is \r\n\r\n *after* --END COMMAND--
             let frame_end = if is_follows_response(&src[..first_blank]) {
-                // the marker may appear after the first \r\n\r\n because the
-                // output body can contain blank lines in some edge cases.
-                // scan the entire buffer for --END COMMAND--\r\n\r\n
-                match find_subsequence(src, END_MARKER) {
-                    Some(marker_pos) => {
-                        let after_marker = marker_pos + END_MARKER.len();
-                        // expect \r\n after the marker (Asterisk always sends it)
-                        if src.len() < after_marker + 2 {
-                            reject_oversized_incomplete(src)?;
-                            return Ok(None);
-                        }
-                        // then look for \r\n\r\n immediately after the marker line
-                        if &src[after_marker..after_marker + 2] != b"\r\n" {
-                            reject_oversized_incomplete(src)?;
-                            return Ok(None);
-                        }
-                        // frame ends after marker + \r\n
-                        after_marker + 2
-                    }
+                match find_subsequence(src, END_SEQUENCE) {
+                    Some(marker_pos) => marker_pos + END_SEQUENCE.len(),
                     None => {
                         reject_oversized_incomplete(src)?;
                         return Ok(None);
@@ -176,66 +233,21 @@ impl Decoder for AmiCodec {
                 ));
             }
 
-            // parse all lines in the frame: key:value pairs go to headers,
-            // everything else goes to output (command body for Response: Follows)
             let message_bytes = &src[..frame_end];
-            let mut headers = Vec::new();
-            let mut output = Vec::new();
-            let mut channel_variables = HashMap::new();
-
-            for line in message_bytes.split(|&b| b == b'\n') {
-                let line = line.strip_suffix(b"\r").unwrap_or(line);
-                if line.is_empty() {
-                    continue;
-                }
-                if line == END_MARKER {
-                    continue;
-                }
-                if let Some(colon_pos) = line.iter().position(|&b| b == b':') {
-                    if headers.len() + channel_variables.len() >= MAX_HEADERS {
-                        return Err(AmiError::Protocol(
-                            asterisk_rs_core::error::ProtocolError::MalformedMessage {
-                                details: format!("message exceeds {} header limit", MAX_HEADERS),
-                            },
-                        ));
-                    }
-                    let key = String::from_utf8_lossy(&line[..colon_pos])
-                        .trim()
-                        .to_string();
-                    let value_start = colon_pos + 1;
-                    let value = if value_start < line.len() {
-                        String::from_utf8_lossy(&line[value_start..])
-                            .trim()
-                            .to_string()
-                    } else {
-                        String::new()
-                    };
-                    if let Some(var_name) = key
-                        .strip_prefix("ChanVariable(")
-                        .and_then(|s| s.strip_suffix(')'))
-                    {
-                        channel_variables.insert(var_name.to_string(), value);
-                    } else {
-                        headers.push((key, value));
-                    }
-                } else {
-                    // non-key-value line: command output
-                    output.push(String::from_utf8_lossy(line).into_owned());
-                }
-            }
+            let message = parse_message(
+                message_bytes,
+                is_follows_response(&src[..first_blank]),
+                END_MARKER,
+            )?;
 
             src.advance(frame_end);
 
-            if headers.is_empty() {
+            if message.headers.is_empty() {
                 // empty frame, skip and try next
                 continue;
             }
 
-            return Ok(Some(RawAmiMessage {
-                headers,
-                output,
-                channel_variables,
-            }));
+            return Ok(Some(message));
         }
     }
 }
@@ -244,45 +256,7 @@ impl Encoder<RawAmiMessage> for AmiCodec {
     type Error = AmiError;
 
     fn encode(&mut self, item: RawAmiMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        // reject any header key or value containing CR or LF — either can inject
-        // extra AMI headers or split the frame boundary
-        let contains_line_terminator = |s: &str| s.bytes().any(|b| b == b'\r' || b == b'\n');
-        for (key, value) in &item.headers {
-            if contains_line_terminator(key) {
-                return Err(AmiError::Protocol(
-                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
-                        details: format!("header key contains illegal line terminator: {:?}", key),
-                    },
-                ));
-            }
-            if contains_line_terminator(value) {
-                return Err(AmiError::Protocol(
-                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
-                        details: "header value contains illegal line terminator".to_owned(),
-                    },
-                ));
-            }
-        }
-        for (name, value) in &item.channel_variables {
-            if contains_line_terminator(name) {
-                return Err(AmiError::Protocol(
-                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
-                        details: format!(
-                            "channel variable name contains illegal line terminator: {:?}",
-                            name
-                        ),
-                    },
-                ));
-            }
-            if contains_line_terminator(value) {
-                return Err(AmiError::Protocol(
-                    asterisk_rs_core::error::ProtocolError::MalformedMessage {
-                        details: "channel variable value contains illegal line terminator"
-                            .to_owned(),
-                    },
-                ));
-            }
-        }
+        Self::validate_outbound(&item)?;
 
         let mut frame = BytesMut::new();
         for (key, value) in &item.headers {
@@ -299,12 +273,118 @@ impl Encoder<RawAmiMessage> for AmiCodec {
             frame.extend_from_slice(b"\r\n");
         }
         frame.extend_from_slice(b"\r\n"); // message terminator
-        if frame.len() > MAX_MESSAGE_SIZE {
-            return Err(message_too_large());
-        }
         dst.extend_from_slice(&frame);
         Ok(())
     }
+}
+
+fn parse_message(
+    message_bytes: &[u8],
+    follows: bool,
+    end_marker: &[u8],
+) -> Result<RawAmiMessage, AmiError> {
+    let mut headers = Vec::new();
+    let mut output = Vec::new();
+    let mut channel_variables = HashMap::new();
+    let mut output_started = false;
+
+    for line in message_bytes.split(|&byte| byte == b'\n') {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        if follows && line == end_marker {
+            break;
+        }
+        if follows {
+            if let Some(value) = output_header_value(line) {
+                output_started = true;
+                output.push(String::from_utf8_lossy(value).into_owned());
+                continue;
+            }
+        }
+        if follows && output_started {
+            output.push(String::from_utf8_lossy(line).into_owned());
+            continue;
+        }
+        if line.is_empty() {
+            if follows && !headers.is_empty() {
+                output_started = true;
+                output.push(String::new());
+            }
+            continue;
+        }
+
+        let Some(colon_pos) = line.iter().position(|&byte| byte == b':') else {
+            if follows {
+                output_started = true;
+            }
+            output.push(String::from_utf8_lossy(line).into_owned());
+            continue;
+        };
+        let key_bytes = trim_ascii(&line[..colon_pos]);
+        if follows && !is_follows_envelope_header(key_bytes) {
+            output_started = true;
+            output.push(String::from_utf8_lossy(line).into_owned());
+            continue;
+        }
+        if headers.len() + channel_variables.len() >= MAX_HEADERS {
+            return Err(AmiError::Protocol(
+                asterisk_rs_core::error::ProtocolError::MalformedMessage {
+                    details: format!("message exceeds {} header limit", MAX_HEADERS),
+                },
+            ));
+        }
+        let key = String::from_utf8_lossy(key_bytes).into_owned();
+        let value = String::from_utf8_lossy(trim_ascii(&line[colon_pos + 1..])).into_owned();
+        if let Some(var_name) = key
+            .strip_prefix("ChanVariable(")
+            .and_then(|name| name.strip_suffix(')'))
+        {
+            channel_variables.insert(var_name.to_owned(), value);
+        } else {
+            headers.push((key, value));
+        }
+    }
+
+    Ok(RawAmiMessage {
+        headers,
+        output,
+        channel_variables,
+    })
+}
+
+fn output_header_value(line: &[u8]) -> Option<&[u8]> {
+    let colon_pos = line.iter().position(|&byte| byte == b':')?;
+    if !trim_ascii(&line[..colon_pos]).eq_ignore_ascii_case(b"Output") {
+        return None;
+    }
+    Some(
+        line[colon_pos + 1..]
+            .strip_prefix(b" ")
+            .unwrap_or(&line[colon_pos + 1..]),
+    )
+}
+
+fn is_follows_envelope_header(key: &[u8]) -> bool {
+    [
+        b"Response".as_slice(),
+        b"ActionID".as_slice(),
+        b"Privilege".as_slice(),
+        b"Message".as_slice(),
+        b"EventList".as_slice(),
+        b"Timestamp".as_slice(),
+        b"Server".as_slice(),
+    ]
+    .iter()
+    .any(|candidate| key.eq_ignore_ascii_case(candidate))
+}
+
+fn trim_ascii(mut value: &[u8]) -> &[u8] {
+    while value.first().is_some_and(u8::is_ascii_whitespace) {
+        value = &value[1..];
+    }
+    while value.last().is_some_and(u8::is_ascii_whitespace) {
+        value = &value[..value.len() - 1];
+    }
+    value
 }
 
 fn reject_oversized_incomplete(src: &BytesMut) -> Result<(), AmiError> {

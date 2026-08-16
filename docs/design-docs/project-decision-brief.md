@@ -53,6 +53,25 @@ exchange, and ARI REST/WebSocket resource lifecycle.
 6. Use stable Rust for primary development, exact MSRV for compatibility, and nightly only for
    rustfmt where a nightly-only formatting option is intentionally configured.
 7. Prefer behavior and boundary checks over test-count or source-shape assertions.
+8. Use reqwest 0.13's explicit [`rustls` backend](https://docs.rs/reqwest/0.13.4/reqwest/tls/).
+   It selects the maintained AWS-LC provider and platform certificate verifier without requiring
+   this library to install a process-global Rustls provider. Accept and document the provider's C/C++
+   compiler requirement, supported target matrix, and Windows NASM/prebuilt-object behavior. CMake
+   and Go are required only for FIPS builds in the selected AWS-LC release.
+9. Treat the Rust 2024 migration, public Reqwest error-type upgrade, and removal of the inert core
+   `serde` feature as a coordinated 0.8 compatibility boundary across the published workspace.
+10. Keep workspace dependency versions centralized, but declare Tokio features at each consumer.
+    Production crates enable only the runtime capabilities they use; examples and tests own their
+    additional runtime, signal, and macro features.
+11. Give every secure ARI WebSocket an explicit AWS-LC Rustls configuration and the same platform
+    certificate verifier used by HTTPS. This avoids process-global provider selection, remains safe
+    when downstream crates also enable Rustls's ring feature, and keeps HTTPS and WSS trust semantics
+    aligned. Certificate verification is never disabled.
+12. Treat Linux, macOS, and Windows as the release-proven TLS target set. Android is not currently a
+    supported release target: rustls-platform-verifier requires its Kotlin/Gradle component plus
+    application initialization before either HTTPS or WSS is constructed. Adding Android support
+    requires documenting that host integration and exercising it in CI rather than hiding a runtime
+    initialization requirement inside this reusable library.
 
 ## Alternatives rejected
 
@@ -63,6 +82,43 @@ exchange, and ARI REST/WebSocket resource lifecycle.
   do not justify that lifecycle cost.
 - Put harness material in a private Codex-only directory: hides architecture and evidence from human
   contributors and other tools, creating competing knowledge systems.
+- Use reqwest's `rustls-no-provider` feature with ring: avoids AWS-LC's native build surface, but
+  requires a provider to be installed before constructing a client. A reusable library should not claim the
+  process-global provider merely to reduce its build graph.
+- Keep Tokio `full` at workspace scope: convenient for examples, but it leaks filesystem, process,
+  signal, multithreaded-runtime, and parking-lot features into every published protocol crate.
+- Preserve core's no-op `serde` feature past 0.7: feature names are API promises, and an inert feature
+  plus a permanent unused-dependency suppression is misleading rather than compatible behavior.
+
+## 0.8 dependency compatibility boundary
+
+All five published crates move to 0.8.0 together and require 0.8 protocol/core siblings. This is an
+intentional incompatible baseline rather than a claim that the 0.7 API is preserved:
+
+- `asterisk-rs-ari` replaces the public `AriError::Http(reqwest::Error)` payload with the crate-owned
+  `HttpError` wrapper, removing Reqwest's concrete error type from the public API.
+- Callers of `MediaChannel::from_accepted` must move their public tokio-tungstenite/tungstenite stream
+  types from 0.29 to 0.30.
+- `asterisk-rs-core` removes the advertised but inert `serde` feature and its unused optional
+  dependency.
+- `ChannelHandle::redirect` changes from
+  `redirect(context: &str, extension: &str, priority: i64)` to `redirect(endpoint: &str)`, matching
+  Asterisk's required endpoint-based redirect route. Callers must replace dialplan-location
+  arguments with the destination endpoint string.
+- FastAGI keeps its loopback bind default, but the server now defaults to at most 256 concurrent
+  connections instead of an unbounded listener. A non-loopback `.bind(...)` must be followed by
+  `.allow_external_bind(true)`; callers must also protect that listener at the network boundary
+  because FastAGI has no native authentication.
+- Published crates stop enabling Tokio's `full` feature by workspace-wide unification. Applications
+  must enable any Tokio facilities they use directly instead of inheriting unrelated facilities from
+  asterisk-rs.
+- Secure ARI WebSockets move from the bundled WebPKI root set to the platform verifier used by HTTPS
+  and select AWS-LC explicitly rather than relying on Rustls process-global provider inference. This
+  can deliberately change which certificate chains are accepted.
+
+Semver tooling should record these known 0.7-to-0.8 incompatibilities. It becomes a blocking
+compatibility check for later 0.8 patch releases; it must not be muted merely to make this breaking
+boundary appear compatible.
 
 ## Acceptance
 

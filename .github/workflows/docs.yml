@@ -1,59 +1,60 @@
 name: Docs
 
 on:
-   push:
-      branches: [main]
-   release:
-      types: [published]
+  workflow_call:
 
-permissions:
-   contents: read
-   pages: write
-   id-token: write
+permissions: {}
 
 concurrency:
-   group: "pages"
-   cancel-in-progress: true
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-   build:
-      name: Build Documentation
-      runs-on: ubuntu-latest
-      steps:
-         - uses: actions/checkout@v6
-         - uses: dtolnay/rust-toolchain@stable
-         - uses: Swatinem/rust-cache@v2
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install exact Rust toolchain
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+        with:
+          tool: just,mdbook
+          fallback: none
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: true
+          shared-key: docs-1.97.1
+      - run: just docs
+        env:
+          RUSTDOCFLAGS: --cfg docsrs
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp -R docs/book/. _site/
+          cp -R target/doc _site/api
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
 
-         - name: Install mdBook
-           uses: taiki-e/install-action@mdbook
-
-         - name: Build rustdoc
-           run: cargo doc --workspace --all-features --no-deps
-           env:
-              RUSTDOCFLAGS: "--cfg docsrs"
-
-         - name: Generate reference pages
-           run: python3 docs/generate.py
-
-         - name: Build mdBook
-           run: mdbook build docs/
-
-         - name: Assemble site
-           run: |
-              mkdir -p _site
-              cp -r docs/book/* _site/
-              cp -r target/doc _site/api
-
-         - uses: actions/upload-pages-artifact@v5
-           with:
-              path: _site
-
-   deploy:
-      needs: build
-      runs-on: ubuntu-latest
-      environment:
-         name: github-pages
-         url: ${{ steps.deployment.outputs.page_url }}
-      steps:
-         - id: deployment
-           uses: actions/deploy-pages@v5
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write # deploy the artifact built by the read-only job
+      id-token: write # authenticate the deployment to GitHub Pages
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

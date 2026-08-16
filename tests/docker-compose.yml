@@ -2,13 +2,20 @@ services:
   asterisk:
     build:
       context: ./asterisk
+    init: true
     ports:
-      - "5038:5038"
-      - "8088:8088"
+      - "127.0.0.1:5038:5038"
+      - "127.0.0.1:8088:8088"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD", "asterisk", "-rx", "core show version"]
+      test:
+        - CMD-SHELL
+        - >-
+          asterisk -rx 'core show version' >/dev/null &&
+          asterisk -rx 'manager show settings' | grep -q 'Manager (AMI):.*Yes' &&
+          asterisk -rx 'http show status' | grep -q 'Server Enabled and Bound'
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 15
+      start_period: 10s

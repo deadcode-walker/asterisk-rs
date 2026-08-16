@@ -6,12 +6,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use asterisk_rs_ami::AmiClient;
 use asterisk_rs_ami::action::{HangupAction, OriginateAction};
 use asterisk_rs_ami::event::AmiEvent;
 use asterisk_rs_ami::tracker::{CallTracker, CompletedCall};
-use asterisk_rs_ami::AmiClient;
 use asterisk_rs_core::event::EventSubscription;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 /// a live call being tracked by the PBX
 ///

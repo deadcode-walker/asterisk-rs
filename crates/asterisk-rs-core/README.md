@@ -59,4 +59,4 @@ a custom protocol integration. Add `asterisk-rs-ami`, `asterisk-rs-agi`, or
 
 ---
 
-Part of [asterisk-rs](https://github.com/deadcode-walker/asterisk-rs). MSRV 1.83. MIT OR Apache-2.0.
+Part of [asterisk-rs](https://github.com/deadcode-walker/asterisk-rs). MSRV 1.86. MIT OR Apache-2.0.

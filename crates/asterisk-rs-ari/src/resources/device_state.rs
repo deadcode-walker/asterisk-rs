@@ -1,6 +1,6 @@
 //! device state operations.
 
-use crate::client::{url_encode, AriClient};
+use crate::client::{AriClient, url_encode};
 use crate::error::Result;
 
 /// ari device state representation
@@ -23,12 +23,9 @@ pub async fn get(client: &AriClient, name: &str) -> Result<DeviceState> {
 }
 
 /// update a device state
-///
-/// note: asterisk ari spec uses PUT for this endpoint, but asterisk
-/// also accepts POST for compatibility
 pub async fn update(client: &AriClient, name: &str, state: &str) -> Result<()> {
     client
-        .post_empty(&format!(
+        .put_empty(&format!(
             "/deviceStates/{}?deviceState={}",
             url_encode(name),
             url_encode(state)

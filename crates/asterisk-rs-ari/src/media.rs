@@ -6,11 +6,15 @@
 //! requires Asterisk 20.16.0+ / 22.6.0+ / 23.0.0+
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{mpsc, watch};
 
 use crate::error::{AriError, Result};
+use crate::websocket::OwnedTask;
+
+const MEDIA_CLOSE_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// events received from Asterisk over the media websocket
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -140,7 +144,7 @@ pub struct MediaChannel {
     audio_rx: mpsc::Receiver<Vec<u8>>,
     command_tx: mpsc::Sender<InternalCmd>,
     shutdown_tx: watch::Sender<bool>,
-    task_handle: tokio::task::JoinHandle<()>,
+    task: OwnedTask,
 }
 
 impl std::fmt::Debug for MediaChannel {
@@ -164,9 +168,17 @@ impl MediaChannel {
     /// url should be the full websocket URL including the connection_id path,
     /// e.g. `ws://asterisk:8088/media/32966726-4388-456b-a333-fdf5dbecc60d`
     pub async fn connect(url: &str) -> Result<Self> {
+        let tls_connector = crate::websocket::connector_for_url(url)?;
         let (ws_stream, _) = tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            tokio_tungstenite::connect_async(url),
+            tokio_tungstenite::connect_async_tls_with_config(
+                url,
+                Some(crate::websocket::websocket_config(
+                    crate::config::DEFAULT_MAX_WEBSOCKET_MESSAGE_BYTES,
+                )),
+                false,
+                Some(tls_connector),
+            ),
         )
         .await
         .map_err(|_| AriError::WebSocket("media websocket connection timed out".to_owned()))?
@@ -178,6 +190,8 @@ impl MediaChannel {
     /// create from an already-accepted websocket stream over raw TCP
     ///
     /// useful when running a media server that accepts incoming connections
+    /// The accepting server remains responsible for configuring frame, message,
+    /// and write-buffer limits before passing the established stream here.
     pub fn from_accepted(ws_stream: AcceptedWsStream) -> Self {
         let (event_tx, event_rx) = mpsc::channel(64);
         let (audio_tx, audio_rx) = mpsc::channel(256);
@@ -197,7 +211,7 @@ impl MediaChannel {
             audio_rx,
             command_tx,
             shutdown_tx,
-            task_handle,
+            task: OwnedTask::new(task_handle),
         }
     }
 
@@ -220,7 +234,7 @@ impl MediaChannel {
             audio_rx,
             command_tx,
             shutdown_tx,
-            task_handle,
+            task: OwnedTask::new(task_handle),
         }
     }
 
@@ -318,7 +332,13 @@ impl MediaChannel {
     /// shut down the connection
     pub fn disconnect(&self) {
         let _ = self.shutdown_tx.send(true);
-        self.task_handle.abort();
+        self.task.abort();
+    }
+
+    /// shut down the connection cooperatively and wait for the actor to stop
+    pub async fn disconnect_and_wait(&self) {
+        let _ = self.shutdown_tx.send(true);
+        self.task.shutdown_and_wait("ARI media websocket").await;
     }
 }
 
@@ -431,6 +451,18 @@ async fn media_loop<S>(
             _ = shutdown_rx.changed() => {
                 if *shutdown_rx.borrow() {
                     tracing::debug!("media channel shutdown requested");
+                    match tokio::time::timeout(
+                        MEDIA_CLOSE_TIMEOUT,
+                        write.send(Message::Close(None)),
+                    )
+                    .await
+                    {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => {
+                            tracing::debug!(error = %error, "failed to send media close frame");
+                        }
+                        Err(_) => tracing::debug!("timed out sending media close frame"),
+                    }
                     return;
                 }
             }

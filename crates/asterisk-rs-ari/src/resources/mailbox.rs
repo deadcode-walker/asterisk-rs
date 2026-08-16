@@ -1,6 +1,6 @@
 //! mailbox operations.
 
-use crate::client::{url_encode, AriClient};
+use crate::client::{AriClient, url_encode};
 use crate::error::Result;
 
 /// ari mailbox representation
@@ -24,9 +24,6 @@ pub async fn get(client: &AriClient, name: &str) -> Result<Mailbox> {
 }
 
 /// update a mailbox message count
-///
-/// note: asterisk ari spec uses PUT for this endpoint, but asterisk
-/// also accepts POST for compatibility
 pub async fn update(
     client: &AriClient,
     name: &str,
@@ -34,7 +31,7 @@ pub async fn update(
     new_messages: u32,
 ) -> Result<()> {
     client
-        .post_empty(&format!(
+        .put_empty(&format!(
             "/mailboxes/{}?oldMessages={old_messages}&newMessages={new_messages}",
             url_encode(name)
         ))

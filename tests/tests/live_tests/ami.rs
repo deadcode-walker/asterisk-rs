@@ -1,12 +1,12 @@
 use std::time::Duration;
 
+use asterisk_rs_ami::AmiEvent;
 use asterisk_rs_ami::action::{
     CoreSettingsAction, CoreShowChannelsAction, CoreStatusAction, DBDelAction, DBDelTreeAction,
     DBGetAction, DBPutAction, EventsAction, ExtensionStateAction, ListCommandsAction,
     OriginateAction, ReloadAction, StatusAction,
 };
 use asterisk_rs_ami::client::AmiClient;
-use asterisk_rs_ami::AmiEvent;
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_tests::helpers::*;
 
@@ -28,6 +28,7 @@ async fn connect() -> AmiClient {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn connect_authenticate_and_ping() {
     init_tracing();
 
@@ -40,6 +41,7 @@ async fn connect_authenticate_and_ping() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn cli_command() {
     init_tracing();
 
@@ -63,6 +65,7 @@ async fn cli_command() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn status_collecting() {
     init_tracing();
 
@@ -90,6 +93,7 @@ async fn status_collecting() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn originate_to_invalid_extension() {
     init_tracing();
 
@@ -125,6 +129,7 @@ async fn originate_to_invalid_extension() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn reconnect_after_connection_drop() {
     init_tracing();
 
@@ -168,6 +173,7 @@ async fn reconnect_after_connection_drop() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn full_event_sequence_from_originate() {
     init_tracing();
 
@@ -245,6 +251,7 @@ async fn full_event_sequence_from_originate() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_variables_in_originate() {
     init_tracing();
 
@@ -307,6 +314,7 @@ async fn channel_variables_in_originate() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn originate_busy_extension() {
     init_tracing();
 
@@ -357,6 +365,7 @@ async fn originate_busy_extension() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn originate_congestion_extension() {
     init_tracing();
 
@@ -406,6 +415,7 @@ async fn originate_congestion_extension() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn concurrent_stress_50_pings() {
     init_tracing();
 
@@ -437,6 +447,7 @@ async fn concurrent_stress_50_pings() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn hangup_live_channel() {
     init_tracing();
 
@@ -505,6 +516,7 @@ async fn hangup_live_channel() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn setvar_getvar_on_live_channel() {
     init_tracing();
 
@@ -579,6 +591,7 @@ async fn setvar_getvar_on_live_channel() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn core_settings_action() {
     init_tracing();
 
@@ -606,6 +619,7 @@ async fn core_settings_action() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn core_status_action() {
     init_tracing();
 
@@ -628,6 +642,7 @@ async fn core_status_action() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn core_show_channels_collecting() {
     init_tracing();
 
@@ -653,6 +668,7 @@ async fn core_show_channels_collecting() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn db_put_get_del_cycle() {
     init_tracing();
 
@@ -718,6 +734,7 @@ async fn db_put_get_del_cycle() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn db_del_tree() {
     init_tracing();
 
@@ -765,6 +782,7 @@ async fn db_del_tree() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn list_commands_action() {
     init_tracing();
 
@@ -788,6 +806,7 @@ async fn list_commands_action() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn multiple_cli_commands() {
     init_tracing();
 
@@ -806,6 +825,7 @@ async fn multiple_cli_commands() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn originate_application_mode() {
     init_tracing();
 
@@ -849,6 +869,7 @@ async fn originate_application_mode() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn filtered_event_subscription() {
     init_tracing();
 
@@ -905,6 +926,7 @@ async fn filtered_event_subscription() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn multiple_concurrent_clients() {
     init_tracing();
 
@@ -974,6 +996,7 @@ async fn multiple_concurrent_clients() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn extension_state_query() {
     init_tracing();
 
@@ -1003,6 +1026,7 @@ async fn extension_state_query() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn reload_action() {
     init_tracing();
 
@@ -1018,6 +1042,7 @@ async fn reload_action() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn events_action_toggle() {
     init_tracing();
 
@@ -1075,6 +1100,7 @@ async fn events_action_toggle() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn originate_to_nonexistent_extension_sync_rejected() {
     init_tracing();
 
@@ -1109,6 +1135,7 @@ async fn originate_to_nonexistent_extension_sync_rejected() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn originate_with_account_code() {
     init_tracing();
 
@@ -1177,6 +1204,7 @@ async fn originate_with_account_code() {
 // ── call tracker live tests ───────────────────────────────
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn call_tracker_captures_originate_lifecycle() {
     init_tracing();
 

@@ -1,10 +1,10 @@
 // integration tests requiring a running Asterisk instance
-// run with: cargo test -p asterisk-rs-tests --test live_integration --features integration
-#![cfg(feature = "integration")]
+// every test is ignored so generic workspace/all-features commands cannot contact a PBX
+// run with: cargo test-live
 
 mod live_tests {
-    pub mod agi;
-    pub mod ami;
-    pub mod ari;
-    pub mod cross_protocol;
+    mod agi;
+    mod ami;
+    mod ari;
+    mod cross_protocol;
 }

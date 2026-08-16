@@ -1,12 +1,18 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use asterisk_rs_ami::action::{AmiAction, HangupAction};
 use asterisk_rs_ami::client::AmiClient;
+use asterisk_rs_ami::error::AmiError;
+use asterisk_rs_ami::response::{
+    MAX_CONNECTION_EVENT_LIST_BYTES, MAX_EVENT_LIST_BYTES, MAX_EVENT_LIST_EVENTS,
+    MAX_IN_FLIGHT_ACTIONS, MAX_IN_FLIGHT_EVENT_LISTS,
+};
 use asterisk_rs_core::config::{ConnectionState, ReconnectPolicy};
 use asterisk_rs_tests::helpers::{assert_server_ok, init_tracing};
 use asterisk_rs_tests::mock::ami_server::{
-    get_header, handle_login, handle_login_reject, MockAmiServer,
+    MockAmiServer, get_header, handle_login, handle_login_reject,
 };
 
 #[tokio::test]
@@ -173,12 +179,9 @@ async fn send_action_timeout() {
         .expect("client should connect");
 
     let result = client.ping().await;
-    assert!(result.is_err(), "ping should timeout");
-    let err = result.expect_err("already asserted err");
-    let msg = format!("{err}");
     assert!(
-        msg.contains("timeout"),
-        "error should mention timeout: {msg}"
+        matches!(result, Err(AmiError::OutcomeUnknown { .. })),
+        "a sent action without a response has an unknown outcome: {result:?}"
     );
 
     // drop client to close connection
@@ -1884,12 +1887,9 @@ async fn action_timeout_on_no_response() {
         .await
         .expect("client should connect");
 
-    let result = client.ping().await;
-    assert!(result.is_err(), "action should timeout");
-    let err = format!("{}", result.expect_err("already asserted err"));
     assert!(
-        err.contains("timeout"),
-        "error should mention timeout: {err}"
+        matches!(client.ping().await, Err(AmiError::OutcomeUnknown { .. })),
+        "a sent action without a response must report an unknown outcome"
     );
 
     drop(client);
@@ -2212,12 +2212,9 @@ async fn builder_custom_timeout() {
         .await
         .expect("client should connect");
 
-    let result = client.ping().await;
-    assert!(result.is_err(), "action should timeout with 50ms timeout");
-    let err = format!("{}", result.expect_err("already asserted err"));
     assert!(
-        err.contains("timeout"),
-        "error should mention timeout: {err}"
+        matches!(client.ping().await, Err(AmiError::OutcomeUnknown { .. })),
+        "a written action must report an unknown outcome after its response deadline"
     );
 
     drop(client);
@@ -2253,7 +2250,7 @@ async fn reconnect_login_failure_gives_up() {
 }
 
 #[tokio::test]
-async fn reconnect_login_failure_retries_then_gives_up() {
+async fn definitive_auth_failure_is_not_retried() {
     init_tracing();
 
     let server = MockAmiServer::start().await;
@@ -2279,22 +2276,822 @@ async fn reconnect_login_failure_retries_then_gives_up() {
             .port(port)
             .credentials("admin", "wrong")
             .require_challenge(false)
-            .reconnect(ReconnectPolicy::fixed(Duration::from_millis(50)).with_max_retries(2))
+            .reconnect(ReconnectPolicy::fixed(Duration::from_millis(50)).with_max_retries(10))
             .timeout(Duration::from_secs(5))
             .build(),
     )
     .await;
 
     assert!(
-        matches!(result, Ok(Err(_))),
-        "build should fail after exhausting retries: {result:?}"
+        matches!(result, Ok(Err(AmiError::Auth(_)))),
+        "build should return the definitive authentication error: {result:?}"
     );
 
     let attempts = attempt_count.load(Ordering::SeqCst);
-    assert_eq!(attempts, 3, "initial login plus two retries expected");
+    assert_eq!(
+        attempts, 1,
+        "unchanged invalid credentials must not be retried"
+    );
 
     handle.abort();
 }
+
+#[tokio::test]
+async fn initial_connection_timeout_bounds_builder() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let handle = server.accept_one(|mut conn| async move {
+        let _challenge = conn.read_message().await;
+        std::future::pending::<()>().await;
+    });
+
+    let started = tokio::time::Instant::now();
+    let result = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .connect_timeout(Duration::from_millis(100))
+        .build()
+        .await;
+
+    assert!(
+        matches!(result, Err(AmiError::Timeout(_))),
+        "builder should return its connection deadline: {result:?}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "builder exceeded its configured connection deadline"
+    );
+    handle.abort();
+}
+
+#[tokio::test]
+async fn timed_out_queued_mutations_never_reach_the_wire() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let challenge_seen = Arc::new(tokio::sync::Notify::new());
+    let release_auth = Arc::new(tokio::sync::Notify::new());
+    let server_challenge_seen = challenge_seen.clone();
+    let server_release_auth = release_auth.clone();
+
+    let (handle, _ready) = server.accept_loop(move |mut conn, index| {
+        let challenge_seen = server_challenge_seen.clone();
+        let release_auth = server_release_auth.clone();
+        async move {
+            if index == 0 {
+                handle_login(&mut conn).await;
+                return;
+            }
+
+            let challenge = conn
+                .read_message()
+                .await
+                .expect("reconnect should send Challenge");
+            let challenge_id = get_header(&challenge, "ActionID")
+                .expect("challenge should have ActionID")
+                .to_owned();
+            challenge_seen.notify_one();
+            release_auth.notified().await;
+            conn.send_message(&[
+                ("Response", "Success"),
+                ("ActionID", &challenge_id),
+                ("Challenge", "reconnect-challenge"),
+            ])
+            .await;
+
+            let login = conn
+                .read_message()
+                .await
+                .expect("reconnect should send Login");
+            let login_id = get_header(&login, "ActionID")
+                .expect("login should have ActionID")
+                .to_owned();
+            conn.send_message(&[
+                ("Response", "Success"),
+                ("ActionID", &login_id),
+                ("Message", "Authentication accepted"),
+            ])
+            .await;
+
+            let next = tokio::time::timeout(Duration::from_secs(2), conn.read_message())
+                .await
+                .expect("client should send Logoff")
+                .expect("connection should remain open through Logoff");
+            assert_eq!(
+                get_header(&next, "Action"),
+                Some("Logoff"),
+                "a cancelled Hangup must not execute after reconnect"
+            );
+            let logoff_id = get_header(&next, "ActionID")
+                .expect("logoff should have ActionID")
+                .to_owned();
+            conn.send_message(&[("Response", "Goodbye"), ("ActionID", &logoff_id)])
+                .await;
+        }
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::fixed(Duration::from_millis(10)))
+        .timeout(Duration::from_millis(100))
+        .build()
+        .await
+        .expect("initial connection should succeed");
+
+    challenge_seen.notified().await;
+
+    // More requests than the actor mailbox prove the same deadline covers
+    // both queue admission and queued-but-not-yet-written requests.
+    let mut tasks = Vec::new();
+    for index in 0..300 {
+        let client = client.clone();
+        tasks.push(tokio::spawn(async move {
+            client
+                .hangup(HangupAction::new(format!("PJSIP/test-{index}")))
+                .await
+        }));
+    }
+    for task in tasks {
+        let result = task.await.expect("action task should not panic");
+        assert!(
+            matches!(result, Err(AmiError::Timeout(_))),
+            "an action cancelled before its wire write is a definite timeout: {result:?}"
+        );
+    }
+
+    release_auth.notify_one();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while client.connection_state() != ConnectionState::Connected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("client should finish reconnecting");
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(!handle.is_finished(), "accept loop should still be healthy");
+    handle.abort();
+}
+
+struct InvalidOutboundAction {
+    value: String,
+}
+
+impl AmiAction for InvalidOutboundAction {
+    fn action_name(&self) -> &str {
+        "UserEvent"
+    }
+
+    fn to_headers(&self) -> Vec<(String, String)> {
+        vec![("Value".to_owned(), self.value.clone())]
+    }
+}
+
+#[tokio::test]
+async fn invalid_outbound_actions_are_unsent_and_connection_stays_usable() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let ping = conn
+            .read_message()
+            .await
+            .expect("valid Ping should be the next wire action");
+        assert_eq!(get_header(&ping, "Action"), Some("Ping"));
+        let ping_id = get_header(&ping, "ActionID")
+            .expect("ping should have ActionID")
+            .to_owned();
+        conn.send_message(&[
+            ("Response", "Success"),
+            ("ActionID", &ping_id),
+            ("Ping", "Pong"),
+        ])
+        .await;
+
+        let logoff = conn.read_message().await.expect("client should log off");
+        assert_eq!(get_header(&logoff, "Action"), Some("Logoff"));
+        let logoff_id = get_header(&logoff, "ActionID")
+            .expect("logoff should have ActionID")
+            .to_owned();
+        conn.send_message(&[("Response", "Goodbye"), ("ActionID", &logoff_id)])
+            .await;
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(2))
+        .build()
+        .await
+        .expect("client should connect");
+
+    for invalid in [
+        InvalidOutboundAction {
+            value: "safe\r\nInjected: yes".to_owned(),
+        },
+        InvalidOutboundAction {
+            value: "x".repeat(64 * 1024),
+        },
+    ] {
+        assert!(
+            matches!(
+                client.send_action(&invalid).await,
+                Err(AmiError::Protocol(_))
+            ),
+            "deterministic encoder failures should retain their protocol error"
+        );
+        assert_eq!(client.connection_state(), ConnectionState::Connected);
+    }
+
+    let pong = client
+        .ping()
+        .await
+        .expect("connection should remain usable");
+    assert_eq!(pong.get("Ping"), Some("Pong"));
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    assert_server_ok(handle.await);
+}
+
+#[tokio::test]
+async fn keepalive_requires_exact_pong_before_its_deadline() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let keepalive_seen = Arc::new(tokio::sync::Notify::new());
+    let server_keepalive_seen = keepalive_seen.clone();
+    let handle = server.accept_one(move |mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let keepalive = conn
+            .read_message()
+            .await
+            .expect("client should send keepalive Ping");
+        assert_eq!(get_header(&keepalive, "Action"), Some("Ping"));
+        server_keepalive_seen.notify_one();
+
+        let command = conn
+            .read_message()
+            .await
+            .expect("client should send unrelated command");
+        assert_eq!(get_header(&command, "Action"), Some("Command"));
+        let command_id = get_header(&command, "ActionID")
+            .expect("command should have ActionID")
+            .to_owned();
+        conn.send_message(&[
+            ("Response", "Success"),
+            ("ActionID", &command_id),
+            ("Message", "command accepted"),
+        ])
+        .await;
+
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), conn.read_message())
+                .await
+                .expect("missing exact pong should close the connection")
+                .is_none(),
+            "client should not send another action after the pong deadline"
+        );
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(2))
+        .ping_interval(Duration::from_millis(100))
+        .build()
+        .await
+        .expect("client should connect");
+
+    keepalive_seen.notified().await;
+    client
+        .command("core show uptime")
+        .await
+        .expect("unrelated response should still reach its caller");
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while client.connection_state() != ConnectionState::Disconnected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("missing exact pong should hit its explicit deadline");
+
+    assert_server_ok(handle.await);
+}
+
+#[tokio::test]
+async fn collecting_initial_error_resolves_immediately() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+        let action = conn.read_message().await.expect("Status action");
+        let action_id = get_header(&action, "ActionID")
+            .expect("status should have ActionID")
+            .to_owned();
+        conn.send_message(&[
+            ("Response", "Error"),
+            ("ActionID", &action_id),
+            ("Message", "Permission denied"),
+        ])
+        .await;
+
+        let logoff = conn.read_message().await.expect("client should log off");
+        let logoff_id = get_header(&logoff, "ActionID")
+            .expect("logoff should have ActionID")
+            .to_owned();
+        conn.send_message(&[("Response", "Goodbye"), ("ActionID", &logoff_id)])
+            .await;
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(2))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let result = client
+        .send_collecting(&asterisk_rs_ami::action::StatusAction { channel: None })
+        .await
+        .expect("an AMI Error response is still a definitive response");
+    assert!(!result.response.success);
+    assert_eq!(
+        result.response.message.as_deref(),
+        Some("Permission denied")
+    );
+    assert!(result.events.is_empty());
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    assert_server_ok(handle.await);
+}
+
+#[tokio::test]
+async fn collecting_cancelled_is_a_typed_terminal_error() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+        let action = conn.read_message().await.expect("Status action");
+        let action_id = get_header(&action, "ActionID")
+            .expect("status should have ActionID")
+            .to_owned();
+        conn.send_message(&[
+            ("Response", "Success"),
+            ("ActionID", &action_id),
+            ("Message", "events follow"),
+        ])
+        .await;
+        conn.send_message(&[
+            ("Event", "CollectionCancelled"),
+            ("ActionID", &action_id),
+            ("EventList", "Cancelled"),
+        ])
+        .await;
+
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(2))
+        .build()
+        .await
+        .expect("client should connect");
+
+    let result = client
+        .send_collecting(&asterisk_rs_ami::action::StatusAction { channel: None })
+        .await;
+    assert!(
+        matches!(result, Err(AmiError::EventListCancelled { .. })),
+        "Cancelled must resolve as a typed terminal state: {result:?}"
+    );
+    drop(client);
+    assert_server_ok(handle.await);
+}
+
+#[tokio::test]
+async fn collecting_enforces_aggregate_byte_limit() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+        let action = conn.read_message().await.expect("Status action");
+        let action_id = get_header(&action, "ActionID")
+            .expect("status should have ActionID")
+            .to_owned();
+        conn.send_message(&[("Response", "Success"), ("ActionID", &action_id)])
+            .await;
+
+        let payload = "x".repeat(60 * 1024);
+        let event_count = MAX_EVENT_LIST_BYTES / payload.len() + 2;
+        for _ in 0..event_count {
+            conn.send_message(&[
+                ("Event", "LimitItem"),
+                ("ActionID", &action_id),
+                ("Payload", &payload),
+            ])
+            .await;
+        }
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(10))
+        .build()
+        .await
+        .expect("client should connect");
+    let result = client
+        .send_collecting(&asterisk_rs_ami::action::StatusAction { channel: None })
+        .await;
+    assert!(
+        matches!(result, Err(AmiError::EventListByteLimitExceeded { .. })),
+        "aggregate bytes must have a typed bound: {result:?}"
+    );
+    drop(client);
+    assert_server_ok(handle.await);
+}
+
+#[tokio::test]
+async fn collecting_enforces_event_count_limit() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+        let action = conn.read_message().await.expect("Status action");
+        let action_id = get_header(&action, "ActionID")
+            .expect("status should have ActionID")
+            .to_owned();
+        conn.send_message(&[("Response", "Success"), ("ActionID", &action_id)])
+            .await;
+        for _ in 0..=MAX_EVENT_LIST_EVENTS {
+            conn.send_message(&[("Event", "LimitItem"), ("ActionID", &action_id)])
+                .await;
+        }
+        while conn.read_message().await.is_some() {}
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(10))
+        .build()
+        .await
+        .expect("client should connect");
+    let result = client
+        .send_collecting(&asterisk_rs_ami::action::StatusAction { channel: None })
+        .await;
+    assert!(
+        matches!(result, Err(AmiError::EventListEventLimitExceeded { .. })),
+        "event count must have a typed bound: {result:?}"
+    );
+    drop(client);
+    assert_server_ok(handle.await);
+}
+
+#[tokio::test]
+async fn collecting_enforces_connection_byte_budget_and_releases_it_for_reuse() {
+    init_tracing();
+
+    const COLLECTORS: usize = 3;
+    const EVENT_PAYLOAD_BYTES: usize = 60 * 1024;
+    const EVENT_ROUNDS: usize =
+        MAX_CONNECTION_EVENT_LIST_BYTES / (EVENT_PAYLOAD_BYTES * COLLECTORS) + 2;
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let handle = server.accept_one(|mut conn| async move {
+        handle_login(&mut conn).await;
+
+        let mut action_ids = Vec::with_capacity(COLLECTORS);
+        for _ in 0..COLLECTORS {
+            let action = conn.read_message().await.expect("Status action");
+            assert_eq!(get_header(&action, "Action"), Some("Status"));
+            action_ids.push(
+                get_header(&action, "ActionID")
+                    .expect("Status should have ActionID")
+                    .to_owned(),
+            );
+        }
+        for action_id in &action_ids {
+            conn.send_message(&[("Response", "Success"), ("ActionID", action_id)])
+                .await;
+        }
+
+        let payload = "x".repeat(EVENT_PAYLOAD_BYTES);
+        for _ in 0..EVENT_ROUNDS {
+            for action_id in &action_ids {
+                conn.send_message(&[
+                    ("Event", "BudgetItem"),
+                    ("ActionID", action_id),
+                    ("Payload", &payload),
+                ])
+                .await;
+            }
+        }
+        for action_id in &action_ids {
+            conn.send_message(&[
+                ("Event", "StatusComplete"),
+                ("ActionID", action_id),
+                ("EventList", "Complete"),
+            ])
+            .await;
+        }
+
+        let reuse = conn.read_message().await.expect("reused Status action");
+        assert_eq!(get_header(&reuse, "Action"), Some("Status"));
+        let reuse_id = get_header(&reuse, "ActionID")
+            .expect("reused Status should have ActionID")
+            .to_owned();
+        conn.send_message(&[("Response", "Success"), ("ActionID", &reuse_id)])
+            .await;
+        for _ in 0..EVENT_ROUNDS {
+            conn.send_message(&[
+                ("Event", "BudgetItem"),
+                ("ActionID", &reuse_id),
+                ("Payload", &payload),
+            ])
+            .await;
+        }
+        conn.send_message(&[
+            ("Event", "StatusComplete"),
+            ("ActionID", &reuse_id),
+            ("EventList", "Complete"),
+        ])
+        .await;
+
+        let logoff = conn.read_message().await.expect("client should log off");
+        assert_eq!(get_header(&logoff, "Action"), Some("Logoff"));
+        let logoff_id = get_header(&logoff, "ActionID")
+            .expect("logoff should have ActionID")
+            .to_owned();
+        conn.send_message(&[("Response", "Goodbye"), ("ActionID", &logoff_id)])
+            .await;
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(30))
+        .build()
+        .await
+        .expect("client should connect");
+    let mut collectors = Vec::with_capacity(COLLECTORS);
+    for _ in 0..COLLECTORS {
+        let client = client.clone();
+        collectors.push(tokio::spawn(async move {
+            client
+                .send_collecting(&asterisk_rs_ami::action::StatusAction { channel: None })
+                .await
+        }));
+    }
+
+    let mut completed = 0;
+    let mut connection_limit_errors = 0;
+    for collector in collectors {
+        match collector.await.expect("collector task should not panic") {
+            Ok(response) => {
+                completed += 1;
+                assert_eq!(response.events.len(), EVENT_ROUNDS + 1);
+            }
+            Err(AmiError::EventListConnectionByteLimitExceeded { limit, .. }) => {
+                connection_limit_errors += 1;
+                assert_eq!(limit, MAX_CONNECTION_EVENT_LIST_BYTES);
+            }
+            Err(error) => panic!("unexpected collecting result: {error:?}"),
+        }
+    }
+    assert_eq!(completed, 2);
+    assert_eq!(connection_limit_errors, 1);
+
+    let reused = client
+        .send_collecting(&asterisk_rs_ami::action::StatusAction { channel: None })
+        .await
+        .expect("completed collectors must release the connection byte budget");
+    assert_eq!(reused.events.len(), EVENT_ROUNDS + 1);
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    assert_server_ok(handle.await);
+}
+
+#[tokio::test]
+async fn actor_rejects_collectors_above_the_collecting_limit_without_writing_them() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let full = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let server_full = full.clone();
+    let server_release = release.clone();
+    let handle = server.accept_one(move |mut conn| async move {
+        handle_login(&mut conn).await;
+        let mut action_ids = Vec::with_capacity(MAX_IN_FLIGHT_EVENT_LISTS);
+        for _ in 0..MAX_IN_FLIGHT_EVENT_LISTS {
+            let action = conn.read_message().await.expect("in-flight Status");
+            assert_eq!(get_header(&action, "Action"), Some("Status"));
+            action_ids.push(
+                get_header(&action, "ActionID")
+                    .expect("Status should have ActionID")
+                    .to_owned(),
+            );
+        }
+        server_full.notify_one();
+        server_release.notified().await;
+        for action_id in action_ids {
+            conn.send_message(&[
+                ("Response", "Error"),
+                ("ActionID", &action_id),
+                ("Message", "test complete"),
+            ])
+            .await;
+        }
+
+        let logoff = conn.read_message().await.expect("client should log off");
+        assert_eq!(
+            get_header(&logoff, "Action"),
+            Some("Logoff"),
+            "the over-limit Status must not reach the wire"
+        );
+        let logoff_id = get_header(&logoff, "ActionID")
+            .expect("logoff should have ActionID")
+            .to_owned();
+        conn.send_message(&[("Response", "Goodbye"), ("ActionID", &logoff_id)])
+            .await;
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(10))
+        .build()
+        .await
+        .expect("client should connect");
+    let mut tasks = Vec::with_capacity(MAX_IN_FLIGHT_EVENT_LISTS);
+    for _ in 0..MAX_IN_FLIGHT_EVENT_LISTS {
+        let client = client.clone();
+        tasks.push(tokio::spawn(async move {
+            client
+                .send_collecting(&asterisk_rs_ami::action::StatusAction { channel: None })
+                .await
+        }));
+    }
+    full.notified().await;
+
+    let over_limit = client
+        .send_collecting(&asterisk_rs_ami::action::StatusAction { channel: None })
+        .await;
+    assert!(
+        matches!(
+            over_limit,
+            Err(AmiError::EventListInFlightLimitExceeded { limit })
+                if limit == MAX_IN_FLIGHT_EVENT_LISTS
+        ),
+        "over-limit collector should fail before writing: {over_limit:?}"
+    );
+    release.notify_one();
+    for task in tasks {
+        let response = task
+            .await
+            .expect("collector task should not panic")
+            .expect("admitted collector should resolve");
+        assert!(!response.response.success);
+    }
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    assert_server_ok(handle.await);
+}
+
+#[tokio::test]
+async fn actor_rejects_actions_above_in_flight_limit_without_writing_them() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let full = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let server_full = full.clone();
+    let server_release = release.clone();
+    let handle = server.accept_one(move |mut conn| async move {
+        handle_login(&mut conn).await;
+        let mut action_ids = Vec::with_capacity(MAX_IN_FLIGHT_ACTIONS);
+        for _ in 0..MAX_IN_FLIGHT_ACTIONS {
+            let action = conn.read_message().await.expect("in-flight Ping");
+            assert_eq!(get_header(&action, "Action"), Some("Ping"));
+            action_ids.push(
+                get_header(&action, "ActionID")
+                    .expect("ping should have ActionID")
+                    .to_owned(),
+            );
+        }
+        server_full.notify_one();
+        server_release.notified().await;
+        for action_id in action_ids {
+            conn.send_message(&[
+                ("Response", "Success"),
+                ("ActionID", &action_id),
+                ("Ping", "Pong"),
+            ])
+            .await;
+        }
+
+        let logoff = conn.read_message().await.expect("client should log off");
+        assert_eq!(
+            get_header(&logoff, "Action"),
+            Some("Logoff"),
+            "the over-limit Ping must not reach the wire"
+        );
+        let logoff_id = get_header(&logoff, "ActionID")
+            .expect("logoff should have ActionID")
+            .to_owned();
+        conn.send_message(&[("Response", "Goodbye"), ("ActionID", &logoff_id)])
+            .await;
+    });
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::none())
+        .timeout(Duration::from_secs(10))
+        .build()
+        .await
+        .expect("client should connect");
+    let mut tasks = Vec::with_capacity(MAX_IN_FLIGHT_ACTIONS);
+    for _ in 0..MAX_IN_FLIGHT_ACTIONS {
+        let client = client.clone();
+        tasks.push(tokio::spawn(async move { client.ping().await }));
+    }
+    full.notified().await;
+
+    let over_limit = client.ping().await;
+    assert!(
+        matches!(over_limit, Err(AmiError::InFlightLimitExceeded { .. })),
+        "over-limit action should fail before writing: {over_limit:?}"
+    );
+    release.notify_one();
+    for task in tasks {
+        task.await
+            .expect("ping task should not panic")
+            .expect("admitted ping should complete");
+    }
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    assert_server_ok(handle.await);
+}
+
 #[tokio::test]
 async fn pending_action_cancelled_on_disconnect() {
     init_tracing();
@@ -2326,12 +3123,9 @@ async fn pending_action_cancelled_on_disconnect() {
         "ping should fail when server closes connection"
     );
 
-    let err = format!("{}", ping_result.expect_err("already asserted err"));
     assert!(
-        err.contains("channel closed")
-            || err.contains("ResponseChannelClosed")
-            || err.contains("timeout"),
-        "error should indicate channel closed or timeout: {err}"
+        matches!(ping_result, Err(AmiError::OutcomeUnknown { .. })),
+        "a sent action interrupted by disconnect has an unknown outcome: {ping_result:?}"
     );
 
     assert_server_ok(handle.await);

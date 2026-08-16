@@ -11,7 +11,9 @@ Only the latest release receives security updates.
 
 ## Reporting a Vulnerability
 
-**Do not open a public issue for security vulnerabilities.**
+**Do not open a public issue for security vulnerabilities.** Use the repository's
+[private vulnerability report](https://github.com/deadcode-walker/asterisk-rs/security/advisories/new)
+so maintainers can investigate and coordinate disclosure without exposing the report.
 
 ## Response Timeline
 

@@ -2,11 +2,11 @@ use std::time::Duration;
 
 use asterisk_rs_ami::action::OriginateAction;
 use asterisk_rs_ami::client::AmiClient;
+use asterisk_rs_ari::TransportMode;
 use asterisk_rs_ari::config::AriConfigBuilder;
 use asterisk_rs_ari::error::AriError;
 use asterisk_rs_ari::event::AriMessage;
 use asterisk_rs_ari::resources::channel::{ExternalMediaParams, OriginateParams};
-use asterisk_rs_ari::TransportMode;
 use asterisk_rs_ari::{AriClient, AriEvent};
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_core::event::EventSubscription;
@@ -49,6 +49,7 @@ async fn connect_ami() -> AmiClient {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn connect_and_get_asterisk_info() {
     init_tracing();
 
@@ -72,6 +73,7 @@ async fn connect_and_get_asterisk_info() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn list_channels() {
     init_tracing();
 
@@ -89,6 +91,7 @@ async fn list_channels() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn list_bridges() {
     init_tracing();
 
@@ -103,6 +106,7 @@ async fn list_bridges() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn stasis_event_from_originate() {
     init_tracing();
 
@@ -169,6 +173,7 @@ async fn stasis_event_from_originate() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_answer_and_hangup_via_ari() {
     init_tracing();
 
@@ -246,6 +251,7 @@ async fn channel_answer_and_hangup_via_ari() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn bridge_create_add_channels_destroy() {
     init_tracing();
 
@@ -343,6 +349,7 @@ async fn bridge_create_add_channels_destroy() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_dtmf_via_ari() {
     init_tracing();
 
@@ -415,6 +422,7 @@ async fn channel_dtmf_via_ari() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_variable_via_ari() {
     init_tracing();
 
@@ -530,6 +538,7 @@ async fn originate_into_stasis(
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn asterisk_ping() {
     init_tracing();
 
@@ -551,6 +560,7 @@ async fn asterisk_ping() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn asterisk_modules_list() {
     init_tracing();
 
@@ -569,6 +579,7 @@ async fn asterisk_modules_list() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn asterisk_global_variable_set_get() {
     init_tracing();
 
@@ -597,6 +608,7 @@ async fn asterisk_global_variable_set_get() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_moh_start_stop() {
     init_tracing();
 
@@ -635,6 +647,7 @@ async fn channel_moh_start_stop() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_hold_unhold() {
     init_tracing();
 
@@ -668,6 +681,7 @@ async fn channel_hold_unhold() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_mute_unmute() {
     init_tracing();
 
@@ -700,6 +714,7 @@ async fn channel_mute_unmute() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_ring_start_stop() {
     init_tracing();
 
@@ -754,6 +769,7 @@ async fn channel_ring_start_stop() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_continue_to_dialplan() {
     init_tracing();
 
@@ -797,6 +813,7 @@ async fn channel_continue_to_dialplan() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn endpoint_list() {
     init_tracing();
 
@@ -813,6 +830,7 @@ async fn endpoint_list() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn sound_list() {
     init_tracing();
 
@@ -835,6 +853,7 @@ async fn sound_list() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn rest_invalid_channel_404() {
     init_tracing();
 
@@ -854,6 +873,7 @@ async fn rest_invalid_channel_404() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn rest_delete_nonexistent_channel() {
     init_tracing();
 
@@ -871,6 +891,7 @@ async fn rest_delete_nonexistent_channel() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn stasis_start_with_args() {
     init_tracing();
 
@@ -920,6 +941,7 @@ async fn stasis_start_with_args() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn bridge_moh_start_stop() {
     init_tracing();
 
@@ -960,6 +982,7 @@ async fn bridge_moh_start_stop() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_play_media() {
     init_tracing();
 
@@ -995,6 +1018,7 @@ async fn channel_play_media() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn multiple_stasis_subscribers() {
     init_tracing();
 
@@ -1053,6 +1077,7 @@ async fn multiple_stasis_subscribers() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn channel_snoop() {
     init_tracing();
 
@@ -1091,6 +1116,7 @@ async fn channel_snoop() {
 // ── live tests ─────────────────────────────
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn originate_with_custom_channel_id() {
     init_tracing();
 
@@ -1150,6 +1176,7 @@ async fn originate_with_custom_channel_id() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn external_media_params_accepted() {
     init_tracing();
 
@@ -1188,6 +1215,7 @@ async fn external_media_params_accepted() {
 }
 
 #[tokio::test]
+#[ignore = "requires a caller-managed Asterisk instance"]
 async fn transport_mode_http_default_works() {
     init_tracing();
 

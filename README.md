@@ -3,7 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/asterisk-rs.svg)](https://crates.io/crates/asterisk-rs)
 [![docs.rs](https://img.shields.io/docsrs/asterisk-rs)](https://docs.rs/asterisk-rs)
 [![CI](https://github.com/deadcode-walker/asterisk-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/deadcode-walker/asterisk-rs/actions/workflows/ci.yml)
-[![MSRV](https://img.shields.io/badge/MSRV-1.83-blue)](https://blog.rust-lang.org/2024/12/05/Rust-1.83.0.html)
+[![MSRV](https://img.shields.io/badge/MSRV-1.86-blue)](https://blog.rust-lang.org/2025/04/03/Rust-1.86.0.html)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)](#license)
 
 Async Rust client for Asterisk PBX. Originate calls, handle events, control
@@ -49,16 +49,16 @@ Use the umbrella crate to pull in whichever protocols you need:
 
 ```toml
 [dependencies]
-asterisk-rs = "0.7"
+asterisk-rs = "0.8"
 ```
 
 Or add individual protocol crates directly:
 
 ```toml
 [dependencies]
-asterisk-rs-ami = "0.7"   # AMI only
-asterisk-rs-agi = "0.7"   # AGI only
-asterisk-rs-ari = "0.7"   # ARI only
+asterisk-rs-ami = "0.8"   # AMI only
+asterisk-rs-agi = "0.8"   # AGI only
+asterisk-rs-ari = "0.8"   # ARI only
 ```
 
 ## Feature Selection
@@ -67,7 +67,7 @@ The umbrella crate enables all protocols by default. To select only what you nee
 
 ```toml
 [dependencies]
-asterisk-rs = { version = "0.7", default-features = false, features = ["ami"] }
+asterisk-rs = { version = "0.8", default-features = false, features = ["ami"] }
 # or: features = ["agi"]
 # or: features = ["ari"]
 # or: features = ["ami", "ari"]
@@ -162,6 +162,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (server, _shutdown) = AgiServer::builder()
         .bind("0.0.0.0:4573")
+        .allow_external_bind(true)
         .handler(IvrHandler)
         .max_connections(100)
         .build()
@@ -272,7 +273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## MSRV
 
-1.83 -- required for `async fn` in traits (RPITIT).
+1.86 or newer.
 
 ## License
 

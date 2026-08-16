@@ -30,6 +30,8 @@ impl AgiHandler for MyIvr {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (server, _shutdown) = AgiServer::builder()
         .bind("0.0.0.0:4573")
+        // expose only on an isolated/private FastAGI network
+        .allow_external_bind(true)
         .handler(MyIvr)
         .max_connections(100)
         .build()
@@ -39,6 +41,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+FastAGI has no native peer authentication. The builder defaults to loopback and rejects external
+binds unless `allow_external_bind(true)` is explicit. Protect an external listener with a private
+network, firewall allowlist, or authenticated TLS proxy.
 
 ## Available Commands
 
@@ -118,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - Automatic channel hangup detection
 - Every AGI command with typed async methods
 - Configurable concurrency limits via semaphore
+- Optional command round-trip deadline, disabled by default for long-running AGI operations
 - Graceful shutdown via `ShutdownHandle`
 - Argument quoting and escaping for special characters
 
@@ -126,4 +133,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - [API Reference](https://docs.rs/asterisk-rs-agi)
 - [User Guide](https://deadcode-walker.github.io/asterisk-rs/)
 
-Part of [asterisk-rs](https://github.com/deadcode-walker/asterisk-rs). MSRV 1.83. MIT/Apache-2.0.
+Part of [asterisk-rs](https://github.com/deadcode-walker/asterisk-rs). MSRV 1.86. MIT/Apache-2.0.

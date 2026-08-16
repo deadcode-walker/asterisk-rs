@@ -23,6 +23,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (server, _shutdown) = AgiServer::builder()
         .bind("0.0.0.0:4573")
+        // expose only on an isolated/private FastAGI network
+        .allow_external_bind(true)
         .handler(MyHandler)
         .max_connections(100)
         .build()

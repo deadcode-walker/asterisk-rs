@@ -61,10 +61,12 @@ fn decode_partial_message() {
          ActionID: 1\r\n",
     );
     // no terminator yet
-    assert!(codec
-        .decode(&mut buf)
-        .expect("decode should succeed")
-        .is_none());
+    assert!(
+        codec
+            .decode(&mut buf)
+            .expect("decode should succeed")
+            .is_none()
+    );
 
     // now add the terminator
     buf.extend_from_slice(b"\r\n");
@@ -158,6 +160,45 @@ fn reject_oversized_encoded_message_without_mutating_destination() {
 }
 
 #[test]
+fn encoder_rejects_line_injection_without_mutating_destination() {
+    for terminator in ["\r", "\n", "\r\n"] {
+        for location in [
+            "header-key",
+            "header-value",
+            "variable-name",
+            "variable-value",
+        ] {
+            let mut headers = vec![("Action".to_owned(), "Ping".to_owned())];
+            let mut variables = HashMap::new();
+            match location {
+                "header-key" => headers.push((format!("Injected{terminator}Key"), "x".to_owned())),
+                "header-value" => {
+                    headers.push(("Value".to_owned(), format!("x{terminator}Injected: yes")));
+                }
+                "variable-name" => {
+                    variables.insert(format!("name{terminator}Injected"), "x".to_owned());
+                }
+                "variable-value" => {
+                    variables.insert("name".to_owned(), format!("x{terminator}Injected: yes"));
+                }
+                _ => unreachable!(),
+            }
+            let message = RawAmiMessage {
+                headers,
+                output: Vec::new(),
+                channel_variables: variables,
+            };
+            let mut destination = BytesMut::from(&b"existing"[..]);
+
+            AmiCodec::new()
+                .encode(message, &mut destination)
+                .expect_err("line injection must be rejected");
+            assert_eq!(&destination[..], b"existing", "location: {location}");
+        }
+    }
+}
+
+#[test]
 fn decode_multiple_messages() {
     let mut codec = AmiCodec::new();
     let mut buf = BytesMut::from(
@@ -216,6 +257,42 @@ fn decode_command_response() {
     assert_eq!(msg.output.len(), 2);
     assert_eq!(msg.output[0], "core show version");
     assert_eq!(msg.output[1], "Asterisk 23.0.0");
+}
+
+#[test]
+fn follows_marker_substring_does_not_truncate_or_desynchronize() {
+    let raw = with_banner(
+        "Response: Follows\r\n\
+         ActionID: 42\r\n\
+         output contains --END COMMAND-- inside a line\r\n\
+         final output\r\n\
+         --END COMMAND--\r\n\
+         \r\n\
+         Event: FullyBooted\r\n\
+         Privilege: system,all\r\n\
+         \r\n",
+    );
+    let mut buffer = BytesMut::from(raw.as_str());
+    let mut codec = AmiCodec::new();
+
+    let response = codec
+        .decode(&mut buffer)
+        .expect("response decode")
+        .expect("response frame");
+    assert_eq!(
+        response.output,
+        vec![
+            "output contains --END COMMAND-- inside a line",
+            "final output"
+        ]
+    );
+
+    let event = codec
+        .decode(&mut buffer)
+        .expect("event decode")
+        .expect("event frame");
+    assert_eq!(event.get("Event"), Some("FullyBooted"));
+    assert!(buffer.is_empty());
 }
 
 #[test]
@@ -908,6 +985,81 @@ fn decode_follows_case_insensitive() {
         .expect("should produce a message");
     assert_eq!(msg.get("response"), Some("follows"));
     assert_eq!(msg.output, vec!["output"]);
+}
+
+#[test]
+fn follows_preserves_output_headers_blank_lines_and_colons() {
+    let raw = with_banner(
+        "Response: Follows\r\n\
+         ActionID: 88\r\n\
+         Privilege: Command\r\n\
+         Output: first: value\r\n\
+         Output:\r\n\
+         Output: third\r\n\
+         --END COMMAND--\r\n\
+         \r\n",
+    );
+    let mut buffer = BytesMut::from(raw.as_str());
+    let response = AmiCodec::new()
+        .decode(&mut buffer)
+        .expect("decode should succeed")
+        .expect("response should be complete");
+
+    assert_eq!(response.get("Privilege"), Some("Command"));
+    assert_eq!(response.output, vec!["first: value", "", "third"]);
+}
+
+#[test]
+fn follows_preserves_raw_blank_and_colon_bearing_output() {
+    let raw = with_banner(
+        "Response: Follows\r\n\
+         ActionID: 89\r\n\
+         first line\r\n\
+         \r\n\
+         name: value\r\n\
+         \r\n\
+         --END COMMAND--\r\n\
+         \r\n",
+    );
+    let mut buffer = BytesMut::from(raw.as_str());
+    let response = AmiCodec::new()
+        .decode(&mut buffer)
+        .expect("decode should succeed")
+        .expect("response should be complete");
+
+    assert_eq!(response.output, vec!["first line", "", "name: value", ""]);
+}
+
+#[test]
+fn fragmented_follows_marker_keeps_coalesced_next_frame() {
+    let first = with_banner(
+        "Response: Follows\r\n\
+         ActionID: 90\r\n\
+         line one\r\n\
+         --END COMM",
+    );
+    let mut buffer = BytesMut::from(first.as_str());
+    let mut codec = AmiCodec::new();
+    assert!(
+        codec
+            .decode(&mut buffer)
+            .expect("fragment should be valid")
+            .is_none()
+    );
+
+    buffer.extend_from_slice(b"AND--\r\n\r\nEvent: FullyBooted\r\nPrivilege: system,all\r\n\r\n");
+    let response = codec
+        .decode(&mut buffer)
+        .expect("response decode")
+        .expect("response frame");
+    assert_eq!(response.output, vec!["line one"]);
+
+    let event = codec
+        .decode(&mut buffer)
+        .expect("event decode")
+        .expect("event frame");
+    assert_eq!(event.get("Event"), Some("FullyBooted"));
+    assert!(buffer.is_empty());
 }
 
 #[test]

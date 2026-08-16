@@ -1,6 +1,6 @@
 //! recording control operations — live and stored.
 
-use crate::client::{url_encode, AriClient};
+use crate::client::{AriClient, url_encode};
 use crate::error::Result;
 use crate::event::LiveRecording;
 

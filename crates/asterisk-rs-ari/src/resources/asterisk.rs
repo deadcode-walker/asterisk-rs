@@ -1,6 +1,6 @@
 //! asterisk system operations.
 
-use crate::client::{url_encode, AriClient};
+use crate::client::{AriClient, url_encode};
 use crate::error::Result;
 use serde::Deserialize;
 

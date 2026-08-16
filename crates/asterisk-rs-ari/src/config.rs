@@ -1,11 +1,20 @@
 //! ARI client configuration and builder.
 
+use std::time::Duration;
+
 use asterisk_rs_core::auth::Credentials;
 use asterisk_rs_core::config::ReconnectPolicy;
 use url::Url;
 use zeroize::Zeroizing;
 
 use crate::error::{AriError, Result};
+
+/// default deadline for one ARI REST operation
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// default maximum buffered HTTP response body
+pub const DEFAULT_MAX_RESPONSE_BODY_BYTES: usize = 4 * 1024 * 1024;
+/// default maximum WebSocket message and frame size
+pub const DEFAULT_MAX_WEBSOCKET_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 
 /// transport mode for ARI client communication
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -35,6 +44,12 @@ pub struct AriConfig {
     pub(crate) reconnect_policy: ReconnectPolicy,
     /// transport mode for rest communication
     pub(crate) transport_mode: TransportMode,
+    /// deadline for one REST operation, including queue admission
+    pub(crate) request_timeout: Duration,
+    /// maximum HTTP response body buffered by the client
+    pub(crate) max_response_body_bytes: usize,
+    /// maximum inbound WebSocket message and frame size
+    pub(crate) max_websocket_message_bytes: usize,
 }
 
 impl std::fmt::Debug for AriConfig {
@@ -46,6 +61,12 @@ impl std::fmt::Debug for AriConfig {
             .field("ws_url", &"[redacted]")
             .field("reconnect_policy", &self.reconnect_policy)
             .field("transport_mode", &self.transport_mode)
+            .field("request_timeout", &self.request_timeout)
+            .field("max_response_body_bytes", &self.max_response_body_bytes)
+            .field(
+                "max_websocket_message_bytes",
+                &self.max_websocket_message_bytes,
+            )
             .finish()
     }
 }
@@ -80,6 +101,21 @@ impl AriConfig {
     pub fn transport_mode(&self) -> TransportMode {
         self.transport_mode
     }
+
+    /// deadline for one REST operation, including transport queue admission
+    pub fn request_timeout(&self) -> Duration {
+        self.request_timeout
+    }
+
+    /// maximum HTTP response body buffered in application memory
+    pub fn max_response_body_bytes(&self) -> usize {
+        self.max_response_body_bytes
+    }
+
+    /// maximum inbound WebSocket message and frame size
+    pub fn max_websocket_message_bytes(&self) -> usize {
+        self.max_websocket_message_bytes
+    }
 }
 
 /// builder for constructing an [`AriConfig`] with validation
@@ -93,6 +129,9 @@ pub struct AriConfigBuilder {
     secure: bool,
     reconnect_policy: ReconnectPolicy,
     transport_mode: TransportMode,
+    request_timeout: Duration,
+    max_response_body_bytes: usize,
+    max_websocket_message_bytes: usize,
 }
 
 impl std::fmt::Debug for AriConfigBuilder {
@@ -105,6 +144,12 @@ impl std::fmt::Debug for AriConfigBuilder {
             .field("app_name", &self.app_name)
             .field("secure", &self.secure)
             .field("transport_mode", &self.transport_mode)
+            .field("request_timeout", &self.request_timeout)
+            .field("max_response_body_bytes", &self.max_response_body_bytes)
+            .field(
+                "max_websocket_message_bytes",
+                &self.max_websocket_message_bytes,
+            )
             .finish()
     }
 }
@@ -121,6 +166,9 @@ impl AriConfigBuilder {
             secure: false,
             reconnect_policy: ReconnectPolicy::default(),
             transport_mode: TransportMode::default(),
+            request_timeout: DEFAULT_REQUEST_TIMEOUT,
+            max_response_body_bytes: DEFAULT_MAX_RESPONSE_BODY_BYTES,
+            max_websocket_message_bytes: DEFAULT_MAX_WEBSOCKET_MESSAGE_BYTES,
         }
     }
 
@@ -175,6 +223,24 @@ impl AriConfigBuilder {
         self
     }
 
+    /// set the deadline for one REST operation (default 30 seconds)
+    pub fn request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
+        self
+    }
+
+    /// cap buffered HTTP response bodies (default 4 MiB)
+    pub fn max_response_body_bytes(mut self, bytes: usize) -> Self {
+        self.max_response_body_bytes = bytes;
+        self
+    }
+
+    /// cap inbound messages/frames and outbound REST envelopes (default 4 MiB)
+    pub fn max_websocket_message_bytes(mut self, bytes: usize) -> Self {
+        self.max_websocket_message_bytes = bytes;
+        self
+    }
+
     /// build the config, constructing base and websocket URLs
     ///
     /// fails if app_name, username, or password is empty, or URLs cannot be parsed
@@ -194,6 +260,29 @@ impl AriConfigBuilder {
                 "password must not be empty".to_owned(),
             ));
         }
+        if self.request_timeout.is_zero() {
+            return Err(AriError::InvalidConfig(
+                "request_timeout must be greater than zero".to_owned(),
+            ));
+        }
+        if std::time::Instant::now()
+            .checked_add(self.request_timeout)
+            .is_none()
+        {
+            return Err(AriError::InvalidConfig(
+                "request_timeout is too large for the platform clock".to_owned(),
+            ));
+        }
+        if self.max_response_body_bytes == 0 {
+            return Err(AriError::InvalidConfig(
+                "max_response_body_bytes must be greater than zero".to_owned(),
+            ));
+        }
+        if self.max_websocket_message_bytes == 0 {
+            return Err(AriError::InvalidConfig(
+                "max_websocket_message_bytes must be greater than zero".to_owned(),
+            ));
+        }
 
         let http_scheme = if self.secure { "https" } else { "http" };
         let ws_scheme = if self.secure { "wss" } else { "ws" };
@@ -206,7 +295,10 @@ impl AriConfigBuilder {
         // query values so special chars (&, =, #, spaces) don't break the url
         let query = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("app", &self.app_name)
-            .append_pair("api_key", &format!("{}:{}", self.username, &*self.password))
+            .append_pair(
+                "api_key",
+                &format!("{}:{}", self.username, self.password.as_str()),
+            )
             .finish();
         let ws_url_str = format!(
             "{ws_scheme}://{}:{}/ari/events?{query}",
@@ -223,6 +315,9 @@ impl AriConfigBuilder {
             ws_url,
             reconnect_policy: self.reconnect_policy,
             transport_mode: self.transport_mode,
+            request_timeout: self.request_timeout,
+            max_response_body_bytes: self.max_response_body_bytes,
+            max_websocket_message_bytes: self.max_websocket_message_bytes,
         })
     }
 }

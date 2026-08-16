@@ -1,6 +1,6 @@
 [package]
 name = "asterisk-rs-core"
-version = "0.7.1"
+version = "0.8.0"
 description = "Shared types, error framework, and event bus for asterisk-rs"
 edition.workspace = true
 rust-version.workspace = true
@@ -16,10 +16,5 @@ workspace = true
 [dependencies]
 thiserror.workspace = true
 tracing.workspace = true
-tokio = { workspace = true, features = ["sync", "time"] }
-serde = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["sync"] }
 zeroize.workspace = true
-
-[features]
-default = []
-serde = ["dep:serde"]

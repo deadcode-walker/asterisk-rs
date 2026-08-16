@@ -1,6 +1,6 @@
 //! bridge operations — create, destroy, add/remove channels, play, record.
 
-use crate::client::{url_encode, AriClient};
+use crate::client::{AriClient, url_encode};
 use crate::error::Result;
 use crate::event::{Bridge, LiveRecording, Playback};
 
@@ -151,5 +151,7 @@ pub async fn list(client: &AriClient) -> Result<Vec<Bridge>> {
 
 /// get details for a specific bridge
 pub async fn get(client: &AriClient, bridge_id: &str) -> Result<Bridge> {
-    client.get(&format!("/bridges/{bridge_id}")).await
+    client
+        .get(&format!("/bridges/{}", url_encode(bridge_id)))
+        .await
 }

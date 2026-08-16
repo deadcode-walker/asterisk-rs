@@ -124,7 +124,7 @@
 | `set_variable()` | set a channel variable |
 | `continue_in_dialplan()` | continue the channel in the dialplan |
 | `snoop()` | snoop on the channel — spy and/or whisper |
-| `redirect()` | redirect the channel to a different dialplan location |
+| `redirect()` | redirect the channel to a new endpoint |
 | `ring()` | start ringing on the channel |
 | `ring_stop()` | stop ringing on the channel |
 | `start_silence()` | start silence on the channel |
@@ -150,7 +150,7 @@
 |--------|-------------|
 | `list()` | list all device states |
 | `get()` | get a specific device state |
-| `update()` | also accepts POST for compatibility |
+| `update()` | update a device state |
 | `delete()` | delete a device state |
 
 ### Endpoint (7 operations)
@@ -171,7 +171,7 @@
 |--------|-------------|
 | `list()` | list all mailboxes |
 | `get()` | get a specific mailbox |
-| `update()` | also accepts POST for compatibility |
+| `update()` | update a mailbox message count |
 | `delete()` | delete a mailbox |
 
 ### Playback (`PlaybackHandle`, 3 operations)

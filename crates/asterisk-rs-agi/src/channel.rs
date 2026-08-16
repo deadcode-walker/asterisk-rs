@@ -1,9 +1,14 @@
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use std::time::Duration;
+
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
 use crate::command;
 use crate::error::{AgiError, Result};
 use crate::response::AgiResponse;
+
+const MAX_RESPONSE_LINE_BYTES: usize = 8 * 1024;
+const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 
 /// tracks whether a command round-trip is currently in progress
 ///
@@ -16,7 +21,7 @@ enum ChannelState {
     Ready,
     /// write has been sent; waiting for the response line(s)
     InFlight,
-    /// a previous I/O error left the stream in an undefined state
+    /// a previous failure left the stream in an undefined state
     Poisoned,
 }
 
@@ -27,6 +32,7 @@ pub struct AgiChannel {
     writer: OwnedWriteHalf,
     hung_up: bool,
     state: ChannelState,
+    command_timeout: Option<Duration>,
 }
 
 impl AgiChannel {
@@ -37,7 +43,31 @@ impl AgiChannel {
             writer,
             hung_up: false,
             state: ChannelState::Ready,
+            command_timeout: None,
         }
+    }
+
+    /// set or disable the deadline for each complete command round trip
+    ///
+    /// no deadline is configured by default because AGI commands such as
+    /// `WAIT FOR DIGIT -1`, `EXEC Dial`, and recording can legitimately wait
+    /// for an application-controlled amount of time. A finite deadline covers
+    /// both the command write and complete response read. If it expires, the
+    /// channel is poisoned because the late response cannot be correlated
+    /// safely with another command.
+    pub fn set_command_timeout(&mut self, timeout: Option<Duration>) -> Result<()> {
+        if timeout.is_some_and(|timeout| timeout.is_zero()) {
+            return Err(AgiError::InvalidArgument {
+                details: "command timeout must be greater than zero".to_owned(),
+            });
+        }
+        self.command_timeout = timeout;
+        Ok(())
+    }
+
+    /// return the configured command deadline, or `None` when disabled
+    pub fn command_timeout(&self) -> Option<Duration> {
+        self.command_timeout
     }
 
     /// send a raw command string and parse the response
@@ -60,10 +90,34 @@ impl AgiChannel {
             ChannelState::Ready => {}
         }
 
+        if command.contains('\r')
+            || !command.ends_with('\n')
+            || command[..command.len() - 1].contains('\n')
+        {
+            return Err(AgiError::InvalidArgument {
+                details: "raw command must contain exactly one trailing newline".to_owned(),
+            });
+        }
+
         // mark in-flight before write so that a cancellation between write and
         // read is visible to the next caller
         self.state = ChannelState::InFlight;
 
+        match self.command_timeout {
+            Some(timeout) => {
+                match tokio::time::timeout(timeout, self.command_round_trip(command)).await {
+                    Ok(result) => result,
+                    Err(_) => {
+                        self.state = ChannelState::Poisoned;
+                        Err(AgiError::CommandTimeout { elapsed: timeout })
+                    }
+                }
+            }
+            None => self.command_round_trip(command).await,
+        }
+    }
+
+    async fn command_round_trip(&mut self, command: &str) -> Result<AgiResponse> {
         if let Err(e) = self.writer.write_all(command.as_bytes()).await {
             self.state = ChannelState::Poisoned;
             return Err(AgiError::Io(e));
@@ -74,13 +128,7 @@ impl AgiChannel {
         }
 
         let mut line = String::new();
-        let bytes_read = match self.reader.read_line(&mut line).await {
-            Ok(n) => n,
-            Err(e) => {
-                self.state = ChannelState::Poisoned;
-                return Err(AgiError::Io(e));
-            }
-        };
+        let bytes_read = self.read_bounded_line(&mut line).await?;
 
         if bytes_read == 0 {
             self.hung_up = true;
@@ -93,19 +141,21 @@ impl AgiChannel {
         if let Some(stripped) = line.strip_prefix("520-") {
             let first = stripped.trim().to_owned();
             let mut usage = first;
+            let mut response_bytes = line.len();
             loop {
                 let mut next = String::new();
-                let n = match self.reader.read_line(&mut next).await {
-                    Ok(n) => n,
-                    Err(e) => {
-                        self.state = ChannelState::Poisoned;
-                        return Err(AgiError::Io(e));
-                    }
-                };
+                let n = self.read_bounded_line(&mut next).await?;
                 if n == 0 {
                     self.hung_up = true;
                     self.state = ChannelState::Poisoned;
                     return Err(AgiError::ChannelHungUp);
+                }
+                response_bytes = response_bytes.saturating_add(n);
+                if response_bytes > MAX_RESPONSE_BYTES {
+                    self.state = ChannelState::Poisoned;
+                    return Err(AgiError::ResponseTooLarge {
+                        limit: MAX_RESPONSE_BYTES,
+                    });
                 }
                 let trimmed = next.trim();
                 if trimmed == "520 End of proper usage." {
@@ -140,6 +190,34 @@ impl AgiChannel {
 
         self.state = ChannelState::Ready;
         Ok(response)
+    }
+
+    async fn read_bounded_line(&mut self, line: &mut String) -> Result<usize> {
+        let bytes_read = match (&mut self.reader)
+            .take((MAX_RESPONSE_LINE_BYTES + 1) as u64)
+            .read_line(line)
+            .await
+        {
+            Ok(n) => n,
+            Err(error) => {
+                self.state = ChannelState::Poisoned;
+                return Err(AgiError::Io(error));
+            }
+        };
+
+        if line.len() > MAX_RESPONSE_LINE_BYTES {
+            self.state = ChannelState::Poisoned;
+            return Err(AgiError::ResponseTooLarge {
+                limit: MAX_RESPONSE_LINE_BYTES,
+            });
+        }
+        if bytes_read != 0 && !line.ends_with('\n') {
+            self.state = ChannelState::Poisoned;
+            return Err(AgiError::InvalidResponse {
+                raw: "response line ended without a newline".to_owned(),
+            });
+        }
+        Ok(bytes_read)
     }
 
     /// answer the channel
@@ -211,7 +289,9 @@ impl AgiChannel {
         self.send_command(&cmd).await
     }
 
-    /// wait for a DTMF digit, -1 for infinite timeout
+    /// wait for a DTMF digit, -1 for infinite Asterisk-side timeout
+    ///
+    /// an explicitly configured channel command deadline still applies
     pub async fn wait_for_digit(&mut self, timeout_ms: i64) -> Result<AgiResponse> {
         let timeout = timeout_ms.to_string();
         let cmd = command::format_command(command::WAIT_FOR_DIGIT, &[&timeout])?;

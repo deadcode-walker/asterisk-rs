@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use asterisk_rs_core::event::{EventBus, EventSubscription};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::config::{AriConfig, TransportMode};
 use crate::error::{AriError, Result};
@@ -43,21 +43,11 @@ impl AriClient {
 
         let transport = match config.transport_mode() {
             TransportMode::Http => {
-                let http = HttpTransport::new(
-                    config.base_url().as_str(),
-                    config.credentials().clone(),
-                    config.ws_url().to_string(),
-                    event_bus.clone(),
-                    config.reconnect_policy().clone(),
-                )?;
+                let http = HttpTransport::new(&config, event_bus.clone())?;
                 TransportInner::Http(http)
             }
             TransportMode::WebSocket => {
-                let ws = WsTransport::spawn(
-                    config.ws_url().to_string(),
-                    event_bus.clone(),
-                    config.reconnect_policy().clone(),
-                );
+                let ws = WsTransport::spawn(&config, event_bus.clone())?;
                 TransportInner::WebSocket(ws)
             }
         };
@@ -171,8 +161,20 @@ impl AriClient {
     }
 
     /// shut down the websocket listener and transport
+    ///
+    /// This compatibility method aborts the background actor immediately. Use
+    /// [`Self::disconnect_and_wait`] when the caller can await cooperative,
+    /// bounded actor shutdown.
     pub fn disconnect(&self) {
         self.transport.shutdown();
+    }
+
+    /// cooperatively shut down and await the background actor
+    ///
+    /// The actor receives a shutdown signal, is awaited for a bounded interval,
+    /// and is forcibly aborted only if it does not finish within that interval.
+    pub async fn disconnect_and_wait(&self) {
+        self.transport.shutdown_and_wait().await;
     }
 }
 

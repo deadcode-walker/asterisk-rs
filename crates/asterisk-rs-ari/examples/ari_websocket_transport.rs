@@ -18,10 +18,10 @@
 //!
 //! Usage: cargo run --example ari_websocket_transport
 
+use asterisk_rs_ari::AriClient;
 use asterisk_rs_ari::config::{AriConfigBuilder, TransportMode};
 use asterisk_rs_ari::event::{AriEvent, Channel};
 use asterisk_rs_ari::resources::asterisk::{self, AsteriskPing};
-use asterisk_rs_ari::AriClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
