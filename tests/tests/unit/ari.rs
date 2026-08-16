@@ -535,6 +535,124 @@ fn deserialize_unknown_event() {
 }
 
 #[test]
+fn unknown_message_preserves_type_and_raw_payload() {
+    let json = r#"{
+        "application": "demo",
+        "timestamp": "2026-08-17T12:00:00Z",
+        "asterisk_id": "pbx-1",
+        "type": "FutureChannelEvent",
+        "channel_id": "chan-42",
+        "nested": {"answer": 42}
+    }"#;
+
+    let message: AriMessage =
+        serde_json::from_str(json).expect("unknown ARI message should deserialize");
+    assert!(matches!(message.event, AriEvent::Unknown));
+    let unknown = message
+        .unknown
+        .as_ref()
+        .expect("unknown event metadata must be retained");
+    assert_eq!(unknown.event_type, "FutureChannelEvent");
+    assert_eq!(unknown.payload["channel_id"], "chan-42");
+    assert_eq!(unknown.payload["nested"]["answer"], 42);
+    assert_eq!(unknown.payload["application"], "demo");
+    assert!(!unknown.payload.contains_key("type"));
+
+    let round_trip = serde_json::to_value(&message).expect("unknown message should serialize");
+    assert_eq!(round_trip["type"], "FutureChannelEvent");
+    assert_eq!(round_trip["channel_id"], "chan-42");
+    assert_eq!(round_trip["nested"]["answer"], 42);
+    assert_eq!(round_trip["application"], "demo");
+}
+
+#[test]
+fn inconsistent_unknown_message_cannot_fabricate_an_event_type() {
+    let message = AriMessage {
+        application: String::new(),
+        timestamp: String::new(),
+        asterisk_id: None,
+        event: AriEvent::Unknown,
+        unknown: None,
+    };
+
+    let error = serde_json::to_value(message).expect_err("missing unknown payload must fail");
+    assert!(error.to_string().contains("missing its retained type"));
+}
+
+#[test]
+fn unknown_message_rejects_reserved_metadata_in_payload() {
+    let message = AriMessage {
+        application: String::new(),
+        timestamp: String::new(),
+        asterisk_id: None,
+        event: AriEvent::Unknown,
+        unknown: Some(asterisk_rs_ari::UnknownAriEvent::new(
+            "FutureEvent",
+            serde_json::Map::from_iter([("application".to_owned(), serde_json::json!("smuggled"))]),
+        )),
+    };
+
+    let error = serde_json::to_value(message).expect_err("reserved metadata must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("contradictory reserved field `application`")
+    );
+}
+
+#[test]
+fn unknown_message_preserves_explicit_null_metadata() {
+    let original = serde_json::json!({
+        "application": null,
+        "timestamp": null,
+        "asterisk_id": null,
+        "type": "FutureEvent",
+        "value": 42
+    });
+
+    let message: AriMessage =
+        serde_json::from_value(original.clone()).expect("unknown event should deserialize");
+    let round_trip = serde_json::to_value(message).expect("unknown event should serialize");
+    assert_eq!(round_trip, original);
+}
+
+#[test]
+fn known_message_rejects_null_string_metadata() {
+    let error = serde_json::from_value::<AriMessage>(serde_json::json!({
+        "application": null,
+        "type": "ApplicationRegistered"
+    }))
+    .expect_err("known events must retain strict string metadata validation");
+
+    assert!(error.to_string().contains("must be a string"));
+}
+
+#[test]
+fn known_message_preserves_default_metadata_serialization() {
+    let message: AriMessage = serde_json::from_value(serde_json::json!({
+        "type": "ApplicationRegistered"
+    }))
+    .expect("known event should deserialize");
+    let serialized = serde_json::to_value(message).expect("known event should serialize");
+
+    assert_eq!(serialized["application"], "");
+    assert_eq!(serialized["timestamp"], "");
+    assert!(serialized["asterisk_id"].is_null());
+}
+
+#[test]
+fn unknown_message_distinguishes_empty_metadata_from_absence() {
+    for original in [
+        serde_json::json!({"type": "FutureEvent"}),
+        serde_json::json!({"application": "", "type": "FutureEvent"}),
+    ] {
+        let message: AriMessage =
+            serde_json::from_value(original.clone()).expect("unknown event should deserialize");
+        assert_eq!(serde_json::to_value(message).unwrap(), original);
+    }
+}
+
+#[test]
 fn deserialize_stasis_start_minimal() {
     // no optional fields provided
     let json = r#"{

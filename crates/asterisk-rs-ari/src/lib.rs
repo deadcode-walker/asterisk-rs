@@ -20,5 +20,5 @@ pub(crate) mod ws_transport;
 pub use client::AriClient;
 pub use config::{AriConfig, TransportMode};
 pub use error::AriError;
-pub use event::{AriEvent, AriMessage};
+pub use event::{AriEvent, AriMessage, UnknownAriEvent};
 pub use pending::{PendingBridge, PendingChannel, PendingPlayback};

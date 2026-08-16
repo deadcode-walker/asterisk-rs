@@ -76,6 +76,11 @@ docs:
 # validate repository knowledge and dependency boundaries
 harness:
     python3 scripts/check_harness.py
+    python3 scripts/check_protocol_contracts.py
+
+# verify pinned protocol artifacts against the exact upstream Asterisk commit
+protocol-contracts-upstream:
+    python3 scripts/check_protocol_contracts.py --verify-upstream
 
 # validate GitHub Actions syntax and security policy
 workflows:

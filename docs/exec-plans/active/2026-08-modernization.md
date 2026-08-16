@@ -78,6 +78,22 @@ is either a green local harness commit or a concrete authority/external-state bl
   resume with `just ci`: 949 unit tests and 252 mock tests passed together with formatting, strict
   Clippy, workspace/feature gates, supply-chain, generated documentation, harness, workflows, and
   typo checks.
+- [x] 2026-08-17: completed the pinned-contract and unknown-ARI-event portion of Slice 1. Pinned the official
+  Asterisk `22.9.0` ARI documents and chan_websocket implementation at peeled commit
+  `da123773c723ed1263ff74569544f7ee84626c1a`, recorded their SHA-256 identities and upstream
+  operation/model counts, checked in the complete 102-route/82-model generated inventory, and added
+  exact local method/path/operation, model, and explicitly renamed media surface comparisons to
+  `just harness`. `just protocol-contracts-upstream` fetched the pinned source, verified all twelve
+  digests, regenerated the 102-route/82-model inventory in memory, and matched it exactly. Unknown
+  ARI messages retain type, raw payload, and absent/empty/null/populated metadata distinctions while
+  known-message validation and serialization remain compatible. Multiple fresh review rounds exposed
+  preservation and checker blind spots; every finding was repaired, and final read-only review found
+  no actionable defect. Frozen proof passed `just ci`, `just msrv`, `just semver`, 956 current and
+  MSRV unit tests, and 252 current and MSRV mock tests. Live Asterisk was not rerun because this batch
+  changes deserialization/serialization and offline contract enforcement without issuing PBX calls.
+- [ ] 2026-08-17: continue Slice 1 by classifying malformed known AMI events without synthesizing
+  empty/zero fields, completing the media JSON contract against the pin, and reconciling the remaining
+  model/API compatibility items against existing source and tests.
 
 ## Surprises and discoveries
 
@@ -173,7 +189,7 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
 - [ ] Record the 0.8 boundary for redirect, dependency-backed errors, media schemas, loss-aware events,
   model completeness, and private struct fields/builders; add downstream compile fixtures and make
   cargo-semver-checks blocking.
-- [ ] Pin the supported Asterisk REST and chan_websocket schemas. Generate or mechanically compare
+- [x] Pin the supported Asterisk REST and chan_websocket schemas. Generate or mechanically compare
   model/route coverage instead of claiming the full Asterisk surface from handwritten partial types.
 - [x] Change device-state and mailbox updates to PUT; encode every resource path/query segment; retain
   `callerId` and `appArgs`; implement redirect's required endpoint contract.

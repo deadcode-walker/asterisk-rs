@@ -1,0 +1,598 @@
+{
+  "upstream_routes": [
+    {
+      "method": "GET",
+      "path": "/applications",
+      "operation": "list"
+    },
+    {
+      "method": "GET",
+      "path": "/applications/{applicationName}",
+      "operation": "get"
+    },
+    {
+      "method": "PUT",
+      "path": "/applications/{applicationName}/eventFilter",
+      "operation": "filter"
+    },
+    {
+      "method": "DELETE",
+      "path": "/applications/{applicationName}/subscription",
+      "operation": "unsubscribe"
+    },
+    {
+      "method": "POST",
+      "path": "/applications/{applicationName}/subscription",
+      "operation": "subscribe"
+    },
+    {
+      "method": "DELETE",
+      "path": "/asterisk/config/dynamic/{configClass}/{objectType}/{id}",
+      "operation": "deleteObject"
+    },
+    {
+      "method": "GET",
+      "path": "/asterisk/config/dynamic/{configClass}/{objectType}/{id}",
+      "operation": "getObject"
+    },
+    {
+      "method": "PUT",
+      "path": "/asterisk/config/dynamic/{configClass}/{objectType}/{id}",
+      "operation": "updateObject"
+    },
+    {
+      "method": "GET",
+      "path": "/asterisk/info",
+      "operation": "getInfo"
+    },
+    {
+      "method": "GET",
+      "path": "/asterisk/logging",
+      "operation": "listLogChannels"
+    },
+    {
+      "method": "DELETE",
+      "path": "/asterisk/logging/{logChannelName}",
+      "operation": "deleteLog"
+    },
+    {
+      "method": "POST",
+      "path": "/asterisk/logging/{logChannelName}",
+      "operation": "addLog"
+    },
+    {
+      "method": "PUT",
+      "path": "/asterisk/logging/{logChannelName}/rotate",
+      "operation": "rotateLog"
+    },
+    {
+      "method": "GET",
+      "path": "/asterisk/modules",
+      "operation": "listModules"
+    },
+    {
+      "method": "DELETE",
+      "path": "/asterisk/modules/{moduleName}",
+      "operation": "unloadModule"
+    },
+    {
+      "method": "GET",
+      "path": "/asterisk/modules/{moduleName}",
+      "operation": "getModule"
+    },
+    {
+      "method": "POST",
+      "path": "/asterisk/modules/{moduleName}",
+      "operation": "loadModule"
+    },
+    {
+      "method": "PUT",
+      "path": "/asterisk/modules/{moduleName}",
+      "operation": "reloadModule"
+    },
+    {
+      "method": "GET",
+      "path": "/asterisk/ping",
+      "operation": "ping"
+    },
+    {
+      "method": "GET",
+      "path": "/asterisk/variable",
+      "operation": "getGlobalVar"
+    },
+    {
+      "method": "POST",
+      "path": "/asterisk/variable",
+      "operation": "setGlobalVar"
+    },
+    {
+      "method": "GET",
+      "path": "/bridges",
+      "operation": "list"
+    },
+    {
+      "method": "POST",
+      "path": "/bridges",
+      "operation": "create"
+    },
+    {
+      "method": "DELETE",
+      "path": "/bridges/{bridgeId}",
+      "operation": "destroy"
+    },
+    {
+      "method": "GET",
+      "path": "/bridges/{bridgeId}",
+      "operation": "get"
+    },
+    {
+      "method": "POST",
+      "path": "/bridges/{bridgeId}",
+      "operation": "createWithId"
+    },
+    {
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/addChannel",
+      "operation": "addChannel"
+    },
+    {
+      "method": "DELETE",
+      "path": "/bridges/{bridgeId}/moh",
+      "operation": "stopMoh"
+    },
+    {
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/moh",
+      "operation": "startMoh"
+    },
+    {
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/play",
+      "operation": "play"
+    },
+    {
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/play/{playbackId}",
+      "operation": "playWithId"
+    },
+    {
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/record",
+      "operation": "record"
+    },
+    {
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/removeChannel",
+      "operation": "removeChannel"
+    },
+    {
+      "method": "DELETE",
+      "path": "/bridges/{bridgeId}/videoSource",
+      "operation": "clearVideoSource"
+    },
+    {
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/videoSource/{channelId}",
+      "operation": "setVideoSource"
+    },
+    {
+      "method": "GET",
+      "path": "/channels",
+      "operation": "list"
+    },
+    {
+      "method": "POST",
+      "path": "/channels",
+      "operation": "originate"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/create",
+      "operation": "create"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/externalMedia",
+      "operation": "externalMedia"
+    },
+    {
+      "method": "DELETE",
+      "path": "/channels/{channelId}",
+      "operation": "hangup"
+    },
+    {
+      "method": "GET",
+      "path": "/channels/{channelId}",
+      "operation": "get"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}",
+      "operation": "originateWithId"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/answer",
+      "operation": "answer"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/continue",
+      "operation": "continueInDialplan"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/dial",
+      "operation": "dial"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/dtmf",
+      "operation": "sendDTMF"
+    },
+    {
+      "method": "DELETE",
+      "path": "/channels/{channelId}/hold",
+      "operation": "unhold"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/hold",
+      "operation": "hold"
+    },
+    {
+      "method": "DELETE",
+      "path": "/channels/{channelId}/moh",
+      "operation": "stopMoh"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/moh",
+      "operation": "startMoh"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/move",
+      "operation": "move"
+    },
+    {
+      "method": "DELETE",
+      "path": "/channels/{channelId}/mute",
+      "operation": "unmute"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/mute",
+      "operation": "mute"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/play",
+      "operation": "play"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/play/{playbackId}",
+      "operation": "playWithId"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/progress",
+      "operation": "progress"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/record",
+      "operation": "record"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/redirect",
+      "operation": "redirect"
+    },
+    {
+      "method": "DELETE",
+      "path": "/channels/{channelId}/ring",
+      "operation": "ringStop"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/ring",
+      "operation": "ring"
+    },
+    {
+      "method": "GET",
+      "path": "/channels/{channelId}/rtp_statistics",
+      "operation": "rtpstatistics"
+    },
+    {
+      "method": "DELETE",
+      "path": "/channels/{channelId}/silence",
+      "operation": "stopSilence"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/silence",
+      "operation": "startSilence"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/snoop",
+      "operation": "snoopChannel"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/snoop/{snoopId}",
+      "operation": "snoopChannelWithId"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/transfer_progress",
+      "operation": "transfer_progress"
+    },
+    {
+      "method": "GET",
+      "path": "/channels/{channelId}/variable",
+      "operation": "getChannelVar"
+    },
+    {
+      "method": "POST",
+      "path": "/channels/{channelId}/variable",
+      "operation": "setChannelVar"
+    },
+    {
+      "method": "GET",
+      "path": "/deviceStates",
+      "operation": "list"
+    },
+    {
+      "method": "DELETE",
+      "path": "/deviceStates/{deviceName}",
+      "operation": "delete"
+    },
+    {
+      "method": "GET",
+      "path": "/deviceStates/{deviceName}",
+      "operation": "get"
+    },
+    {
+      "method": "PUT",
+      "path": "/deviceStates/{deviceName}",
+      "operation": "update"
+    },
+    {
+      "method": "GET",
+      "path": "/endpoints",
+      "operation": "list"
+    },
+    {
+      "method": "POST",
+      "path": "/endpoints/refer",
+      "operation": "refer"
+    },
+    {
+      "method": "PUT",
+      "path": "/endpoints/sendMessage",
+      "operation": "sendMessage"
+    },
+    {
+      "method": "GET",
+      "path": "/endpoints/{tech}",
+      "operation": "listByTech"
+    },
+    {
+      "method": "GET",
+      "path": "/endpoints/{tech}/{resource}",
+      "operation": "get"
+    },
+    {
+      "method": "POST",
+      "path": "/endpoints/{tech}/{resource}/refer",
+      "operation": "referToEndpoint"
+    },
+    {
+      "method": "PUT",
+      "path": "/endpoints/{tech}/{resource}/sendMessage",
+      "operation": "sendMessageToEndpoint"
+    },
+    {
+      "method": "GET",
+      "path": "/events",
+      "operation": "eventWebsocket"
+    },
+    {
+      "method": "POST",
+      "path": "/events/user/{eventName}",
+      "operation": "userEvent"
+    },
+    {
+      "method": "GET",
+      "path": "/mailboxes",
+      "operation": "list"
+    },
+    {
+      "method": "DELETE",
+      "path": "/mailboxes/{mailboxName}",
+      "operation": "delete"
+    },
+    {
+      "method": "GET",
+      "path": "/mailboxes/{mailboxName}",
+      "operation": "get"
+    },
+    {
+      "method": "PUT",
+      "path": "/mailboxes/{mailboxName}",
+      "operation": "update"
+    },
+    {
+      "method": "DELETE",
+      "path": "/playbacks/{playbackId}",
+      "operation": "stop"
+    },
+    {
+      "method": "GET",
+      "path": "/playbacks/{playbackId}",
+      "operation": "get"
+    },
+    {
+      "method": "POST",
+      "path": "/playbacks/{playbackId}/control",
+      "operation": "control"
+    },
+    {
+      "method": "DELETE",
+      "path": "/recordings/live/{recordingName}",
+      "operation": "cancel"
+    },
+    {
+      "method": "GET",
+      "path": "/recordings/live/{recordingName}",
+      "operation": "getLive"
+    },
+    {
+      "method": "DELETE",
+      "path": "/recordings/live/{recordingName}/mute",
+      "operation": "unmute"
+    },
+    {
+      "method": "POST",
+      "path": "/recordings/live/{recordingName}/mute",
+      "operation": "mute"
+    },
+    {
+      "method": "DELETE",
+      "path": "/recordings/live/{recordingName}/pause",
+      "operation": "unpause"
+    },
+    {
+      "method": "POST",
+      "path": "/recordings/live/{recordingName}/pause",
+      "operation": "pause"
+    },
+    {
+      "method": "POST",
+      "path": "/recordings/live/{recordingName}/stop",
+      "operation": "stop"
+    },
+    {
+      "method": "GET",
+      "path": "/recordings/stored",
+      "operation": "listStored"
+    },
+    {
+      "method": "DELETE",
+      "path": "/recordings/stored/{recordingName}",
+      "operation": "deleteStored"
+    },
+    {
+      "method": "GET",
+      "path": "/recordings/stored/{recordingName}",
+      "operation": "getStored"
+    },
+    {
+      "method": "POST",
+      "path": "/recordings/stored/{recordingName}/copy",
+      "operation": "copyStored"
+    },
+    {
+      "method": "GET",
+      "path": "/recordings/stored/{recordingName}/file",
+      "operation": "getStoredFile"
+    },
+    {
+      "method": "GET",
+      "path": "/sounds",
+      "operation": "list"
+    },
+    {
+      "method": "GET",
+      "path": "/sounds/{soundId}",
+      "operation": "get"
+    }
+  ],
+  "upstream_models": [
+    "AdditionalParam",
+    "Application",
+    "ApplicationMoveFailed",
+    "ApplicationRegistered",
+    "ApplicationReplaced",
+    "ApplicationUnregistered",
+    "AsteriskInfo",
+    "AsteriskPing",
+    "Bridge",
+    "BridgeAttendedTransfer",
+    "BridgeBlindTransfer",
+    "BridgeCreated",
+    "BridgeDestroyed",
+    "BridgeMerged",
+    "BridgeVideoSourceChanged",
+    "BuildInfo",
+    "CallerID",
+    "Channel",
+    "ChannelCallerId",
+    "ChannelConnectedLine",
+    "ChannelCreated",
+    "ChannelDestroyed",
+    "ChannelDialplan",
+    "ChannelDtmfReceived",
+    "ChannelEnteredBridge",
+    "ChannelHangupRequest",
+    "ChannelHold",
+    "ChannelLeftBridge",
+    "ChannelStateChange",
+    "ChannelTalkingFinished",
+    "ChannelTalkingStarted",
+    "ChannelToneDetected",
+    "ChannelTransfer",
+    "ChannelUnhold",
+    "ChannelUserevent",
+    "ChannelVarset",
+    "ConfigInfo",
+    "ConfigTuple",
+    "ContactInfo",
+    "ContactStatusChange",
+    "DeviceState",
+    "DeviceStateChanged",
+    "Dial",
+    "Dialed",
+    "DialplanCEP",
+    "Endpoint",
+    "EndpointStateChange",
+    "Event",
+    "FormatLangPair",
+    "LiveRecording",
+    "LogChannel",
+    "Mailbox",
+    "Message",
+    "MissingParams",
+    "Module",
+    "Peer",
+    "PeerStatusChange",
+    "Playback",
+    "PlaybackContinuing",
+    "PlaybackFinished",
+    "PlaybackStarted",
+    "RESTHeader",
+    "RESTQueryStringParameter",
+    "RESTRequest",
+    "RESTResponse",
+    "RTPstat",
+    "RecordingFailed",
+    "RecordingFinished",
+    "RecordingStarted",
+    "ReferTo",
+    "ReferredBy",
+    "RequiredDestination",
+    "SetId",
+    "Sound",
+    "StasisEnd",
+    "StasisStart",
+    "StatusInfo",
+    "StoredRecording",
+    "SystemInfo",
+    "TextMessage",
+    "TextMessageReceived",
+    "Variable"
+  ]
+}

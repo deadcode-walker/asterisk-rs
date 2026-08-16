@@ -1,0 +1,37 @@
+{
+  "source": {
+    "repository": "https://github.com/asterisk/asterisk",
+    "tag": "22.9.0",
+    "commit": "da123773c723ed1263ff74569544f7ee84626c1a",
+    "ari_operation_count": 102,
+    "ari_model_count": 82,
+    "ari_documents": {
+      "applications.json": "741351872be075512e50f4067af0a540b85a08ee4601cbcec0bcf4bd4661a010",
+      "asterisk.json": "75eb34c7d814c09d1333c9e904ce647232e090a7180539dfff1966e0e0e89475",
+      "bridges.json": "52018ca811da9e4a55de12d71ab87d394274b0ad964fbb7df1fc072db0adad86",
+      "channels.json": "91d9f8fc42f64cea7f3fc1c41a0f1dd0becda8e930467f4cb2096e3781fde265",
+      "deviceStates.json": "ac19167a3cdda9c5f1cc26e9270e906f5927abf699e7e3f055bf9ff6a801d460",
+      "endpoints.json": "23536de4f1d9dde8a63cfea068a0595977915b8e185466ae5b52189173d8a302",
+      "events.json": "cadb54e0ddbf986d7d23a60570c5f9b9170967ff67ee00a1364a7c71407928e7",
+      "mailboxes.json": "68e1821e1d1b5eed578fb60d81b100cef41144f960652fe8b87c6d51ea96e615",
+      "playbacks.json": "6eb54efb3c6a1f15d8426a07be4befcd42d9a173f8abe6ecddac083fa9979fa1",
+      "recordings.json": "8da75756aef89cc06a8c13d16a49d9b3870f731327088050d3ed0d5a3f0754c8",
+      "sounds.json": "db1bcf2a2e68612fe5dc99fb2017023b49e77eefd6957129e9553bee025175ac"
+    },
+    "chan_websocket_sha256": "2ff79a2aca6334465796a0d503cffad0e70f984192bf171315628d56aa54ddc6"
+  },
+  "local": {
+    "resource_modules": [
+      "application", "asterisk", "bridge", "channel", "device_state", "endpoint", "mailbox",
+      "playback", "recording", "sound"
+    ],
+    "media_commands": [
+      "ANSWER", "CONTINUE_MEDIA", "FLUSH_MEDIA", "GET_STATUS", "HANGUP", "MARK_MEDIA",
+      "PAUSE_MEDIA", "REPORT_QUEUE_DRAINED", "START_MEDIA_BUFFERING", "STOP_MEDIA_BUFFERING"
+    ],
+    "media_events": [
+      "DTMF_END", "MEDIA_BUFFERING_COMPLETED", "MEDIA_MARK_PROCESSED", "MEDIA_START", "MEDIA_XOFF",
+      "MEDIA_XON", "QUEUE_DRAINED", "STATUS"
+    ]
+  }
+}

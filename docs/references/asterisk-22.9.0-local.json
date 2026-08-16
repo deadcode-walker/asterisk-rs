@@ -1,0 +1,564 @@
+{
+  "local_routes": [
+    {
+      "symbol": "application::get",
+      "method": "GET",
+      "path": "/applications/{applicationName}",
+      "operation": "get"
+    },
+    {
+      "symbol": "application::list",
+      "method": "GET",
+      "path": "/applications",
+      "operation": "list"
+    },
+    {
+      "symbol": "application::set_event_filter",
+      "method": "PUT",
+      "path": "/applications/{applicationName}/eventFilter",
+      "operation": "filter"
+    },
+    {
+      "symbol": "application::subscribe",
+      "method": "POST",
+      "path": "/applications/{applicationName}/subscription",
+      "operation": "subscribe"
+    },
+    {
+      "symbol": "application::unsubscribe",
+      "method": "DELETE",
+      "path": "/applications/{applicationName}/subscription",
+      "operation": "unsubscribe"
+    },
+    {
+      "symbol": "asterisk::add_log_channel",
+      "method": "POST",
+      "path": "/asterisk/logging/{logChannelName}",
+      "operation": "addLog"
+    },
+    {
+      "symbol": "asterisk::delete_config",
+      "method": "DELETE",
+      "path": "/asterisk/config/dynamic/{configClass}/{objectType}/{id}",
+      "operation": "deleteObject"
+    },
+    {
+      "symbol": "asterisk::get_config",
+      "method": "GET",
+      "path": "/asterisk/config/dynamic/{configClass}/{objectType}/{id}",
+      "operation": "getObject"
+    },
+    {
+      "symbol": "asterisk::get_module",
+      "method": "GET",
+      "path": "/asterisk/modules/{moduleName}",
+      "operation": "getModule"
+    },
+    {
+      "symbol": "asterisk::get_variable",
+      "method": "GET",
+      "path": "/asterisk/variable",
+      "operation": "getGlobalVar"
+    },
+    {
+      "symbol": "asterisk::info",
+      "method": "GET",
+      "path": "/asterisk/info",
+      "operation": "getInfo"
+    },
+    {
+      "symbol": "asterisk::list_log_channels",
+      "method": "GET",
+      "path": "/asterisk/logging",
+      "operation": "listLogChannels"
+    },
+    {
+      "symbol": "asterisk::list_modules",
+      "method": "GET",
+      "path": "/asterisk/modules",
+      "operation": "listModules"
+    },
+    {
+      "symbol": "asterisk::load_module",
+      "method": "POST",
+      "path": "/asterisk/modules/{moduleName}",
+      "operation": "loadModule"
+    },
+    {
+      "symbol": "asterisk::ping",
+      "method": "GET",
+      "path": "/asterisk/ping",
+      "operation": "ping"
+    },
+    {
+      "symbol": "asterisk::reload_module",
+      "method": "PUT",
+      "path": "/asterisk/modules/{moduleName}",
+      "operation": "reloadModule"
+    },
+    {
+      "symbol": "asterisk::remove_log_channel",
+      "method": "DELETE",
+      "path": "/asterisk/logging/{logChannelName}",
+      "operation": "deleteLog"
+    },
+    {
+      "symbol": "asterisk::rotate_log_channel",
+      "method": "PUT",
+      "path": "/asterisk/logging/{logChannelName}/rotate",
+      "operation": "rotateLog"
+    },
+    {
+      "symbol": "asterisk::set_variable",
+      "method": "POST",
+      "path": "/asterisk/variable",
+      "operation": "setGlobalVar"
+    },
+    {
+      "symbol": "asterisk::unload_module",
+      "method": "DELETE",
+      "path": "/asterisk/modules/{moduleName}",
+      "operation": "unloadModule"
+    },
+    {
+      "symbol": "asterisk::update_config",
+      "method": "PUT",
+      "path": "/asterisk/config/dynamic/{configClass}/{objectType}/{id}",
+      "operation": "updateObject"
+    },
+    {
+      "symbol": "bridge::add_channel",
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/addChannel",
+      "operation": "addChannel"
+    },
+    {
+      "symbol": "bridge::clear_video_source",
+      "method": "DELETE",
+      "path": "/bridges/{bridgeId}/videoSource",
+      "operation": "clearVideoSource"
+    },
+    {
+      "symbol": "bridge::create",
+      "method": "POST",
+      "path": "/bridges",
+      "operation": "create"
+    },
+    {
+      "symbol": "bridge::destroy",
+      "method": "DELETE",
+      "path": "/bridges/{bridgeId}",
+      "operation": "destroy"
+    },
+    {
+      "symbol": "bridge::get",
+      "method": "GET",
+      "path": "/bridges/{bridgeId}",
+      "operation": "get"
+    },
+    {
+      "symbol": "bridge::list",
+      "method": "GET",
+      "path": "/bridges",
+      "operation": "list"
+    },
+    {
+      "symbol": "bridge::play",
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/play",
+      "operation": "play"
+    },
+    {
+      "symbol": "bridge::play_with_id",
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/play/{playbackId}",
+      "operation": "playWithId"
+    },
+    {
+      "symbol": "bridge::record",
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/record",
+      "operation": "record"
+    },
+    {
+      "symbol": "bridge::remove_channel",
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/removeChannel",
+      "operation": "removeChannel"
+    },
+    {
+      "symbol": "bridge::set_video_source",
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/videoSource/{channelId}",
+      "operation": "setVideoSource"
+    },
+    {
+      "symbol": "bridge::start_moh",
+      "method": "POST",
+      "path": "/bridges/{bridgeId}/moh",
+      "operation": "startMoh"
+    },
+    {
+      "symbol": "bridge::stop_moh",
+      "method": "DELETE",
+      "path": "/bridges/{bridgeId}/moh",
+      "operation": "stopMoh"
+    },
+    {
+      "symbol": "channel::answer",
+      "method": "POST",
+      "path": "/channels/{channelId}/answer",
+      "operation": "answer"
+    },
+    {
+      "symbol": "channel::continue_in_dialplan",
+      "method": "POST",
+      "path": "/channels/{channelId}/continue",
+      "operation": "continueInDialplan"
+    },
+    {
+      "symbol": "channel::create",
+      "method": "POST",
+      "path": "/channels/create",
+      "operation": "create"
+    },
+    {
+      "symbol": "channel::dial",
+      "method": "POST",
+      "path": "/channels/{channelId}/dial",
+      "operation": "dial"
+    },
+    {
+      "symbol": "channel::external_media",
+      "method": "POST",
+      "path": "/channels/externalMedia",
+      "operation": "externalMedia"
+    },
+    {
+      "symbol": "channel::get",
+      "method": "GET",
+      "path": "/channels/{channelId}",
+      "operation": "get"
+    },
+    {
+      "symbol": "channel::get_variable",
+      "method": "GET",
+      "path": "/channels/{channelId}/variable",
+      "operation": "getChannelVar"
+    },
+    {
+      "symbol": "channel::hangup",
+      "method": "DELETE",
+      "path": "/channels/{channelId}",
+      "operation": "hangup"
+    },
+    {
+      "symbol": "channel::hold",
+      "method": "POST",
+      "path": "/channels/{channelId}/hold",
+      "operation": "hold"
+    },
+    {
+      "symbol": "channel::list",
+      "method": "GET",
+      "path": "/channels",
+      "operation": "list"
+    },
+    {
+      "symbol": "channel::mute",
+      "method": "POST",
+      "path": "/channels/{channelId}/mute",
+      "operation": "mute"
+    },
+    {
+      "symbol": "channel::originate",
+      "method": "POST",
+      "path": "/channels",
+      "operation": "originate"
+    },
+    {
+      "symbol": "channel::play",
+      "method": "POST",
+      "path": "/channels/{channelId}/play",
+      "operation": "play"
+    },
+    {
+      "symbol": "channel::play_with_id",
+      "method": "POST",
+      "path": "/channels/{channelId}/play/{playbackId}",
+      "operation": "playWithId"
+    },
+    {
+      "symbol": "channel::record",
+      "method": "POST",
+      "path": "/channels/{channelId}/record",
+      "operation": "record"
+    },
+    {
+      "symbol": "channel::redirect",
+      "method": "POST",
+      "path": "/channels/{channelId}/redirect",
+      "operation": "redirect"
+    },
+    {
+      "symbol": "channel::ring",
+      "method": "POST",
+      "path": "/channels/{channelId}/ring",
+      "operation": "ring"
+    },
+    {
+      "symbol": "channel::ring_stop",
+      "method": "DELETE",
+      "path": "/channels/{channelId}/ring",
+      "operation": "ringStop"
+    },
+    {
+      "symbol": "channel::rtp_statistics",
+      "method": "GET",
+      "path": "/channels/{channelId}/rtp_statistics",
+      "operation": "rtpstatistics"
+    },
+    {
+      "symbol": "channel::send_dtmf",
+      "method": "POST",
+      "path": "/channels/{channelId}/dtmf",
+      "operation": "sendDTMF"
+    },
+    {
+      "symbol": "channel::set_variable",
+      "method": "POST",
+      "path": "/channels/{channelId}/variable",
+      "operation": "setChannelVar"
+    },
+    {
+      "symbol": "channel::snoop",
+      "method": "POST",
+      "path": "/channels/{channelId}/snoop",
+      "operation": "snoopChannel"
+    },
+    {
+      "symbol": "channel::start_silence",
+      "method": "POST",
+      "path": "/channels/{channelId}/silence",
+      "operation": "startSilence"
+    },
+    {
+      "symbol": "channel::stop_silence",
+      "method": "DELETE",
+      "path": "/channels/{channelId}/silence",
+      "operation": "stopSilence"
+    },
+    {
+      "symbol": "channel::unhold",
+      "method": "DELETE",
+      "path": "/channels/{channelId}/hold",
+      "operation": "unhold"
+    },
+    {
+      "symbol": "channel::unmute",
+      "method": "DELETE",
+      "path": "/channels/{channelId}/mute",
+      "operation": "unmute"
+    },
+    {
+      "symbol": "device_state::delete",
+      "method": "DELETE",
+      "path": "/deviceStates/{deviceName}",
+      "operation": "delete"
+    },
+    {
+      "symbol": "device_state::get",
+      "method": "GET",
+      "path": "/deviceStates/{deviceName}",
+      "operation": "get"
+    },
+    {
+      "symbol": "device_state::list",
+      "method": "GET",
+      "path": "/deviceStates",
+      "operation": "list"
+    },
+    {
+      "symbol": "device_state::update",
+      "method": "PUT",
+      "path": "/deviceStates/{deviceName}",
+      "operation": "update"
+    },
+    {
+      "symbol": "endpoint::get",
+      "method": "GET",
+      "path": "/endpoints/{tech}/{resource}",
+      "operation": "get"
+    },
+    {
+      "symbol": "endpoint::list",
+      "method": "GET",
+      "path": "/endpoints",
+      "operation": "list"
+    },
+    {
+      "symbol": "endpoint::list_by_tech",
+      "method": "GET",
+      "path": "/endpoints/{tech}",
+      "operation": "listByTech"
+    },
+    {
+      "symbol": "endpoint::refer",
+      "method": "POST",
+      "path": "/endpoints/refer",
+      "operation": "refer"
+    },
+    {
+      "symbol": "endpoint::refer_to_endpoint",
+      "method": "POST",
+      "path": "/endpoints/{tech}/{resource}/refer",
+      "operation": "referToEndpoint"
+    },
+    {
+      "symbol": "endpoint::send_message",
+      "method": "PUT",
+      "path": "/endpoints/sendMessage",
+      "operation": "sendMessage"
+    },
+    {
+      "symbol": "endpoint::send_message_to_endpoint",
+      "method": "PUT",
+      "path": "/endpoints/{tech}/{resource}/sendMessage",
+      "operation": "sendMessageToEndpoint"
+    },
+    {
+      "symbol": "mailbox::delete",
+      "method": "DELETE",
+      "path": "/mailboxes/{mailboxName}",
+      "operation": "delete"
+    },
+    {
+      "symbol": "mailbox::get",
+      "method": "GET",
+      "path": "/mailboxes/{mailboxName}",
+      "operation": "get"
+    },
+    {
+      "symbol": "mailbox::list",
+      "method": "GET",
+      "path": "/mailboxes",
+      "operation": "list"
+    },
+    {
+      "symbol": "mailbox::update",
+      "method": "PUT",
+      "path": "/mailboxes/{mailboxName}",
+      "operation": "update"
+    },
+    {
+      "symbol": "playback::control",
+      "method": "POST",
+      "path": "/playbacks/{playbackId}/control",
+      "operation": "control"
+    },
+    {
+      "symbol": "playback::get",
+      "method": "GET",
+      "path": "/playbacks/{playbackId}",
+      "operation": "get"
+    },
+    {
+      "symbol": "playback::stop",
+      "method": "DELETE",
+      "path": "/playbacks/{playbackId}",
+      "operation": "stop"
+    },
+    {
+      "symbol": "recording::get",
+      "method": "GET",
+      "path": "/recordings/live/{recordingName}",
+      "operation": "getLive"
+    },
+    {
+      "symbol": "recording::list_stored",
+      "method": "GET",
+      "path": "/recordings/stored",
+      "operation": "listStored"
+    },
+    {
+      "symbol": "recording::mute",
+      "method": "POST",
+      "path": "/recordings/live/{recordingName}/mute",
+      "operation": "mute"
+    },
+    {
+      "symbol": "recording::pause",
+      "method": "POST",
+      "path": "/recordings/live/{recordingName}/pause",
+      "operation": "pause"
+    },
+    {
+      "symbol": "recording::stop",
+      "method": "POST",
+      "path": "/recordings/live/{recordingName}/stop",
+      "operation": "stop"
+    },
+    {
+      "symbol": "recording::unmute",
+      "method": "DELETE",
+      "path": "/recordings/live/{recordingName}/mute",
+      "operation": "unmute"
+    },
+    {
+      "symbol": "recording::unpause",
+      "method": "DELETE",
+      "path": "/recordings/live/{recordingName}/pause",
+      "operation": "unpause"
+    },
+    {
+      "symbol": "sound::get",
+      "method": "GET",
+      "path": "/sounds/{soundId}",
+      "operation": "get"
+    },
+    {
+      "symbol": "sound::list",
+      "method": "GET",
+      "path": "/sounds",
+      "operation": "list"
+    }
+  ],
+  "local_model_symbols": [
+    "application::Application",
+    "asterisk::AsteriskInfo",
+    "asterisk::AsteriskPing",
+    "asterisk::ConfigTuple",
+    "asterisk::LogChannel",
+    "asterisk::Module",
+    "asterisk::Variable",
+    "bridge::BridgeHandle",
+    "channel::ChannelHandle",
+    "channel::ExternalMediaParams",
+    "channel::OriginateParams",
+    "channel::Variable",
+    "device_state::DeviceState",
+    "endpoint::Endpoint",
+    "event::AriEvent",
+    "event::AriMessage",
+    "event::Bridge",
+    "event::CallerId",
+    "event::Channel",
+    "event::ContactInfo",
+    "event::DeviceState",
+    "event::DialplanCep",
+    "event::Endpoint",
+    "event::LiveRecording",
+    "event::Peer",
+    "event::Playback",
+    "event::ReferTo",
+    "event::ReferredBy",
+    "event::TextMessage",
+    "event::UnknownAriEvent",
+    "mailbox::Mailbox",
+    "playback::PlaybackHandle",
+    "recording::RecordingHandle",
+    "recording::StoredRecording",
+    "sound::Sound",
+    "sound::SoundFormat"
+  ]
+}

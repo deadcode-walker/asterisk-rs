@@ -1,6 +1,6 @@
 //! Typed ARI events deserialized from WebSocket JSON.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _, ser::Error as _};
 
 /// all known ARI event types
 ///
@@ -226,21 +226,204 @@ pub enum AriEvent {
     Unknown,
 }
 
+/// an unrecognized ARI event retained for forward-compatible handling
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[non_exhaustive]
+pub struct UnknownAriEvent {
+    /// upstream value of the event's `type` field
+    pub event_type: String,
+    /// original fields other than `type`, including common metadata when present
+    pub payload: serde_json::Map<String, serde_json::Value>,
+}
+
+impl UnknownAriEvent {
+    /// create retained data for an unrecognized upstream event
+    pub fn new(
+        event_type: impl Into<String>,
+        payload: serde_json::Map<String, serde_json::Value>,
+    ) -> Self {
+        Self {
+            event_type: event_type.into(),
+            payload,
+        }
+    }
+}
+
 /// a complete ARI event with common metadata and typed payload
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct AriMessage {
     /// the stasis application that received this event
-    #[serde(default)]
     pub application: String,
     /// ISO 8601 timestamp when the event was created
-    #[serde(default)]
     pub timestamp: String,
     /// unique id of the asterisk instance that generated this event
-    #[serde(default)]
     pub asterisk_id: Option<String>,
     /// the typed event payload
-    #[serde(flatten)]
     pub event: AriEvent,
+    /// original type and payload when [`Self::event`] is [`AriEvent::Unknown`]
+    pub unknown: Option<UnknownAriEvent>,
+}
+
+impl Serialize for AriMessage {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut object = match (&self.event, &self.unknown) {
+            (AriEvent::Unknown, Some(unknown)) => {
+                if unknown.payload.contains_key("type") {
+                    return Err(S::Error::custom(format_args!(
+                        "unknown ARI event payload contains reserved field `type`"
+                    )));
+                }
+                let metadata_matches =
+                    |key: &str, expected: Option<&str>, null_matches: bool| match unknown
+                        .payload
+                        .get(key)
+                    {
+                        None => true,
+                        Some(serde_json::Value::Null) => null_matches,
+                        Some(serde_json::Value::String(value)) => expected == Some(value),
+                        Some(_) => false,
+                    };
+                for (key, expected, null_matches) in [
+                    (
+                        "application",
+                        Some(self.application.as_str()),
+                        self.application.is_empty(),
+                    ),
+                    (
+                        "timestamp",
+                        Some(self.timestamp.as_str()),
+                        self.timestamp.is_empty(),
+                    ),
+                    (
+                        "asterisk_id",
+                        self.asterisk_id.as_deref(),
+                        self.asterisk_id.is_none(),
+                    ),
+                ] {
+                    if !metadata_matches(key, expected, null_matches) {
+                        return Err(S::Error::custom(format_args!(
+                            "unknown ARI event payload contains contradictory reserved field `{key}`"
+                        )));
+                    }
+                }
+                let mut payload = unknown.payload.clone();
+                payload.insert(
+                    "type".to_owned(),
+                    serde_json::Value::String(unknown.event_type.clone()),
+                );
+                payload
+            }
+            (AriEvent::Unknown, None) => {
+                return Err(S::Error::custom(
+                    "unknown ARI event is missing its retained type and payload",
+                ));
+            }
+            (_, Some(_)) => {
+                return Err(S::Error::custom(
+                    "known ARI event cannot carry an unknown event payload",
+                ));
+            }
+            (_, None) => serde_json::to_value(&self.event)
+                .map_err(S::Error::custom)?
+                .as_object()
+                .cloned()
+                .ok_or_else(|| S::Error::custom("ARI event did not serialize as an object"))?,
+        };
+        let is_unknown = matches!(self.event, AriEvent::Unknown);
+        if !is_unknown || !self.application.is_empty() {
+            object.insert(
+                "application".to_owned(),
+                serde_json::Value::String(self.application.clone()),
+            );
+        }
+        if !is_unknown || !self.timestamp.is_empty() {
+            object.insert(
+                "timestamp".to_owned(),
+                serde_json::Value::String(self.timestamp.clone()),
+            );
+        }
+        match &self.asterisk_id {
+            Some(asterisk_id) => {
+                object.insert(
+                    "asterisk_id".to_owned(),
+                    serde_json::Value::String(asterisk_id.clone()),
+                );
+            }
+            None if !is_unknown => {
+                object.insert("asterisk_id".to_owned(), serde_json::Value::Null);
+            }
+            None => {}
+        }
+        object.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for AriMessage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| D::Error::custom("ARI event must be a JSON object"))?;
+        let event_type = object
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| D::Error::missing_field("type"))?
+            .to_owned();
+        let event: AriEvent = serde_json::from_value(value.clone()).map_err(D::Error::custom)?;
+        let is_unknown = matches!(event, AriEvent::Unknown);
+        let application = string_field(object, "application", is_unknown)?;
+        let timestamp = string_field(object, "timestamp", is_unknown)?;
+        let asterisk_id = optional_string_field(object, "asterisk_id")?;
+        let unknown = if is_unknown {
+            let mut payload = object.clone();
+            payload.remove("type");
+            Some(UnknownAriEvent::new(event_type, payload))
+        } else {
+            None
+        };
+
+        Ok(Self {
+            application,
+            timestamp,
+            asterisk_id,
+            event,
+            unknown,
+        })
+    }
+}
+
+fn string_field<E: serde::de::Error>(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &'static str,
+    allow_null: bool,
+) -> Result<String, E> {
+    match object.get(field) {
+        None => Ok(String::new()),
+        Some(serde_json::Value::Null) if allow_null => Ok(String::new()),
+        Some(serde_json::Value::String(value)) => Ok(value.clone()),
+        Some(_) => Err(E::custom(format_args!(
+            "ARI field `{field}` must be a string"
+        ))),
+    }
+}
+
+fn optional_string_field<E: serde::de::Error>(
+    object: &serde_json::Map<String, serde_json::Value>,
+    field: &'static str,
+) -> Result<Option<String>, E> {
+    match object.get(field) {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) => Err(E::custom(format_args!(
+            "ARI field `{field}` must be a string"
+        ))),
+    }
 }
 
 impl asterisk_rs_core::event::Event for AriMessage {}
