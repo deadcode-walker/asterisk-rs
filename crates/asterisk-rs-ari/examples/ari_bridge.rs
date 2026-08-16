@@ -29,20 +29,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(bridge_id = %bridge_data.id, "bridge created");
 
     // originate first channel into the stasis app
-    let params_a = OriginateParams {
-        endpoint: "SIP/100".into(),
-        app: Some("bridge-demo".into()),
-        ..Default::default()
-    };
+    let params_a = OriginateParams::new("SIP/100").app("bridge-demo");
     let ch_a = channel::originate(&client, &params_a).await?;
     tracing::info!(channel = %ch_a.id, "channel A originated");
 
     // originate second channel
-    let params_b = OriginateParams {
-        endpoint: "SIP/200".into(),
-        app: Some("bridge-demo".into()),
-        ..Default::default()
-    };
+    let params_b = OriginateParams::new("SIP/200").app("bridge-demo");
     let ch_b = channel::originate(&client, &params_b).await?;
     tracing::info!(channel = %ch_b.id, "channel B originated");
 

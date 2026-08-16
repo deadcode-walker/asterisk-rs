@@ -7,57 +7,134 @@ use crate::error::Result;
 use crate::event::{Channel, LiveRecording, Playback};
 
 /// parameters for originating a new channel
-#[derive(Debug, Clone, Default, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[must_use]
+#[non_exhaustive]
 pub struct OriginateParams {
-    pub endpoint: String,
+    endpoint: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub extension: Option<String>,
+    extension: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub context: Option<String>,
+    context: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub priority: Option<i64>,
+    priority: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub app: Option<String>,
+    app: Option<String>,
     #[serde(rename = "appArgs", skip_serializing_if = "Option::is_none")]
-    pub app_args: Option<String>,
+    app_args: Option<String>,
     #[serde(rename = "callerId", skip_serializing_if = "Option::is_none")]
-    pub caller_id: Option<String>,
+    caller_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout: Option<i32>,
+    timeout: Option<i32>,
     #[serde(rename = "channelId", skip_serializing_if = "Option::is_none")]
-    pub channel_id: Option<String>,
+    pub(crate) channel_id: Option<String>,
     #[serde(rename = "otherChannelId", skip_serializing_if = "Option::is_none")]
-    pub other_channel_id: Option<String>,
+    other_channel_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub originator: Option<String>,
+    originator: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub formats: Option<String>,
+    formats: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub variables: Option<HashMap<String, String>>,
+    variables: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
+    label: Option<String>,
+}
+
+impl OriginateParams {
+    /// Create originate parameters with the required endpoint.
+    pub fn new(endpoint: impl Into<String>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            extension: None,
+            context: None,
+            priority: None,
+            app: None,
+            app_args: None,
+            caller_id: None,
+            timeout: None,
+            channel_id: None,
+            other_channel_id: None,
+            originator: None,
+            formats: None,
+            variables: None,
+            label: None,
+        }
+    }
+
+    pub fn extension(mut self, value: impl Into<String>) -> Self {
+        self.extension = Some(value.into());
+        self
+    }
+    pub fn context(mut self, value: impl Into<String>) -> Self {
+        self.context = Some(value.into());
+        self
+    }
+    pub fn priority(mut self, value: i64) -> Self {
+        self.priority = Some(value);
+        self
+    }
+    pub fn app(mut self, value: impl Into<String>) -> Self {
+        self.app = Some(value.into());
+        self
+    }
+    pub fn app_args(mut self, value: impl Into<String>) -> Self {
+        self.app_args = Some(value.into());
+        self
+    }
+    pub fn caller_id(mut self, value: impl Into<String>) -> Self {
+        self.caller_id = Some(value.into());
+        self
+    }
+    pub fn timeout(mut self, value: i32) -> Self {
+        self.timeout = Some(value);
+        self
+    }
+    pub fn channel_id(mut self, value: impl Into<String>) -> Self {
+        self.channel_id = Some(value.into());
+        self
+    }
+    pub fn other_channel_id(mut self, value: impl Into<String>) -> Self {
+        self.other_channel_id = Some(value.into());
+        self
+    }
+    pub fn originator(mut self, value: impl Into<String>) -> Self {
+        self.originator = Some(value.into());
+        self
+    }
+    pub fn formats(mut self, value: impl Into<String>) -> Self {
+        self.formats = Some(value.into());
+        self
+    }
+    pub fn variables(mut self, value: HashMap<String, String>) -> Self {
+        self.variables = Some(value);
+        self
+    }
+    pub fn label(mut self, value: impl Into<String>) -> Self {
+        self.label = Some(value.into());
+        self
+    }
 }
 
 /// parameters for starting an external media session
 #[derive(Debug, Clone, serde::Serialize)]
 #[must_use]
+#[non_exhaustive]
 pub struct ExternalMediaParams {
-    pub app: String,
-    pub external_host: String,
-    pub format: String,
+    app: String,
+    external_host: String,
+    format: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub encapsulation: Option<String>,
+    encapsulation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub transport: Option<String>,
+    transport: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub connection_type: Option<String>,
+    connection_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub direction: Option<String>,
+    direction: Option<String>,
     #[serde(rename = "channelId", skip_serializing_if = "Option::is_none")]
-    pub channel_id: Option<String>,
+    channel_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub variables: Option<HashMap<String, String>>,
+    variables: Option<HashMap<String, String>>,
 }
 
 impl ExternalMediaParams {
@@ -119,6 +196,7 @@ impl ExternalMediaParams {
 
 /// ari channel variable response
 #[derive(Debug, Clone, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Variable {
     pub value: String,
 }

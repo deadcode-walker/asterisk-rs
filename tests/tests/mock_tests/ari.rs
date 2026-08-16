@@ -1361,11 +1361,8 @@ async fn channel_originate() {
         .await;
 
     let client = connect_to_mock(server.port()).await;
-    let params = asterisk_rs_ari::resources::channel::OriginateParams {
-        endpoint: "SIP/300".to_owned(),
-        app: Some("test-app".to_owned()),
-        ..Default::default()
-    };
+    let params =
+        asterisk_rs_ari::resources::channel::OriginateParams::new("SIP/300").app("test-app");
     let channel = asterisk_rs_ari::resources::channel::originate(&client, &params)
         .await
         .expect("channel originate failed");
@@ -2197,7 +2194,7 @@ async fn sound_list() {
 
     assert_eq!(sounds.len(), 1);
     assert_eq!(sounds[0].id, "hello-world");
-    assert_eq!(sounds[0].text, "Hello World");
+    assert_eq!(sounds[0].text.as_deref(), Some("Hello World"));
     assert_eq!(sounds[0].formats[0].language, "en");
 
     client.disconnect();
@@ -2630,7 +2627,7 @@ async fn asterisk_ping() {
 async fn asterisk_list_modules() {
     init_tracing();
 
-    let body = r#"[{"name":"res_ari.so","description":"ARI","use_count":1,"status":"Running"}]"#;
+    let body = r#"[{"name":"res_ari.so","description":"ARI","use_count":1,"status":"Running","support_level":"core"}]"#;
     let server = MockAriServerBuilder::new()
         .route("GET", "/ari/asterisk/modules", 200, body)
         .start()
@@ -2666,7 +2663,7 @@ async fn asterisk_get_module() {
 
     assert_eq!(module.name, "res_ari.so");
     assert_eq!(module.use_count, 2);
-    assert_eq!(module.support_level, Some("core".to_owned()));
+    assert_eq!(module.support_level, "core");
 
     client.disconnect();
     server.shutdown().await;
@@ -3077,8 +3074,8 @@ async fn asterisk_get_config() {
             .expect("asterisk get_config failed");
 
     assert_eq!(tuples.len(), 1);
-    assert_eq!(tuples[0].attribute, "type");
-    assert_eq!(tuples[0].value, "friend");
+    assert_eq!(tuples[0].attribute(), "type");
+    assert_eq!(tuples[0].value(), "friend");
 
     client.disconnect();
     server.shutdown().await;
@@ -3100,10 +3097,9 @@ async fn asterisk_update_config() {
         .await;
 
     let client = connect_to_mock(server.port()).await;
-    let fields = vec![asterisk_rs_ari::resources::asterisk::ConfigTuple {
-        attribute: "type".to_owned(),
-        value: "friend".to_owned(),
-    }];
+    let fields = vec![asterisk_rs_ari::resources::asterisk::ConfigTuple::new(
+        "type", "friend",
+    )];
     let result = asterisk_rs_ari::resources::asterisk::update_config(
         &client,
         "res_pjsip",
@@ -3761,13 +3757,10 @@ async fn originate_with_channel_id() {
 
     let client = connect_to_mock(server.port()).await;
 
-    let params = asterisk_rs_ari::resources::channel::OriginateParams {
-        endpoint: "PJSIP/200".to_string(),
-        channel_id: Some("my-custom-chan-id".to_string()),
-        app: Some("test-app".to_string()),
-        caller_id: Some("100".to_string()),
-        ..Default::default()
-    };
+    let params = asterisk_rs_ari::resources::channel::OriginateParams::new("PJSIP/200")
+        .channel_id("my-custom-chan-id")
+        .app("test-app")
+        .caller_id("100");
 
     let channel: asterisk_rs_ari::event::Channel = client
         .post("channels", &params)

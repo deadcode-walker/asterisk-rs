@@ -44,13 +44,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // step 2: originate — channel_id is set automatically from the pending
     // reservation; the event subscription was already live before this call
-    let params = OriginateParams {
-        endpoint: "PJSIP/100".into(),
-        app: Some("pending-demo".into()),
-        caller_id: Some("\"Pending Demo\" <0000000000>".into()),
-        timeout: Some(30),
-        ..Default::default()
-    };
+    let params = OriginateParams::new("PJSIP/100")
+        .app("pending-demo")
+        .caller_id("\"Pending Demo\" <0000000000>")
+        .timeout(30);
 
     let (handle, mut events) = pending.originate(params).await?;
     tracing::info!(%channel_id, "originate sent, waiting for events");

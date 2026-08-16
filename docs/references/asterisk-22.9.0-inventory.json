@@ -594,5 +594,451 @@
     "TextMessage",
     "TextMessageReceived",
     "Variable"
-  ]
+  ],
+  "upstream_model_fields": {
+    "AdditionalParam": [
+      "parameter_name",
+      "parameter_value"
+    ],
+    "Application": [
+      "bridge_ids",
+      "channel_ids",
+      "device_names",
+      "endpoint_ids",
+      "events_allowed",
+      "events_disallowed",
+      "name"
+    ],
+    "ApplicationMoveFailed": [
+      "args",
+      "channel",
+      "destination"
+    ],
+    "ApplicationRegistered": [],
+    "ApplicationReplaced": [],
+    "ApplicationUnregistered": [],
+    "AsteriskInfo": [
+      "build",
+      "config",
+      "status",
+      "system"
+    ],
+    "AsteriskPing": [
+      "asterisk_id",
+      "ping",
+      "timestamp"
+    ],
+    "Bridge": [
+      "bridge_class",
+      "bridge_type",
+      "channels",
+      "creationtime",
+      "creator",
+      "id",
+      "name",
+      "technology",
+      "video_mode",
+      "video_source_id"
+    ],
+    "BridgeAttendedTransfer": [
+      "destination_application",
+      "destination_bridge",
+      "destination_link_first_leg",
+      "destination_link_second_leg",
+      "destination_threeway_bridge",
+      "destination_threeway_channel",
+      "destination_type",
+      "is_external",
+      "replace_channel",
+      "result",
+      "transfer_target",
+      "transferee",
+      "transferer_first_leg",
+      "transferer_first_leg_bridge",
+      "transferer_second_leg",
+      "transferer_second_leg_bridge"
+    ],
+    "BridgeBlindTransfer": [
+      "bridge",
+      "channel",
+      "context",
+      "exten",
+      "is_external",
+      "replace_channel",
+      "result",
+      "transferee"
+    ],
+    "BridgeCreated": [
+      "bridge"
+    ],
+    "BridgeDestroyed": [
+      "bridge"
+    ],
+    "BridgeMerged": [
+      "bridge",
+      "bridge_from"
+    ],
+    "BridgeVideoSourceChanged": [
+      "bridge",
+      "old_video_source_id"
+    ],
+    "BuildInfo": [
+      "date",
+      "kernel",
+      "machine",
+      "options",
+      "os",
+      "user"
+    ],
+    "CallerID": [
+      "name",
+      "number"
+    ],
+    "Channel": [
+      "accountcode",
+      "caller",
+      "caller_rdnis",
+      "channelvars",
+      "connected",
+      "creationtime",
+      "dialplan",
+      "id",
+      "language",
+      "name",
+      "protocol_id",
+      "state",
+      "tenantid"
+    ],
+    "ChannelCallerId": [
+      "caller_presentation",
+      "caller_presentation_txt",
+      "channel"
+    ],
+    "ChannelConnectedLine": [
+      "channel"
+    ],
+    "ChannelCreated": [
+      "channel"
+    ],
+    "ChannelDestroyed": [
+      "cause",
+      "cause_txt",
+      "channel",
+      "tech_cause"
+    ],
+    "ChannelDialplan": [
+      "channel",
+      "dialplan_app",
+      "dialplan_app_data"
+    ],
+    "ChannelDtmfReceived": [
+      "channel",
+      "digit",
+      "duration_ms"
+    ],
+    "ChannelEnteredBridge": [
+      "bridge",
+      "channel"
+    ],
+    "ChannelHangupRequest": [
+      "cause",
+      "channel",
+      "soft",
+      "tech_cause"
+    ],
+    "ChannelHold": [
+      "channel",
+      "musicclass"
+    ],
+    "ChannelLeftBridge": [
+      "bridge",
+      "channel"
+    ],
+    "ChannelStateChange": [
+      "channel"
+    ],
+    "ChannelTalkingFinished": [
+      "channel",
+      "duration"
+    ],
+    "ChannelTalkingStarted": [
+      "channel"
+    ],
+    "ChannelToneDetected": [
+      "channel"
+    ],
+    "ChannelTransfer": [
+      "refer_to",
+      "referred_by",
+      "state"
+    ],
+    "ChannelUnhold": [
+      "channel"
+    ],
+    "ChannelUserevent": [
+      "bridge",
+      "channel",
+      "endpoint",
+      "eventname",
+      "userevent"
+    ],
+    "ChannelVarset": [
+      "channel",
+      "value",
+      "variable"
+    ],
+    "ConfigInfo": [
+      "default_language",
+      "max_channels",
+      "max_load",
+      "max_open_files",
+      "name",
+      "setid"
+    ],
+    "ConfigTuple": [
+      "attribute",
+      "value"
+    ],
+    "ContactInfo": [
+      "aor",
+      "contact_status",
+      "roundtrip_usec",
+      "uri"
+    ],
+    "ContactStatusChange": [
+      "contact_info",
+      "endpoint"
+    ],
+    "DeviceState": [
+      "name",
+      "state"
+    ],
+    "DeviceStateChanged": [
+      "device_state"
+    ],
+    "Dial": [
+      "caller",
+      "dialstatus",
+      "dialstring",
+      "forward",
+      "forwarded",
+      "peer"
+    ],
+    "Dialed": [],
+    "DialplanCEP": [
+      "app_data",
+      "app_name",
+      "context",
+      "exten",
+      "priority"
+    ],
+    "Endpoint": [
+      "channel_ids",
+      "resource",
+      "state",
+      "technology"
+    ],
+    "EndpointStateChange": [
+      "endpoint"
+    ],
+    "Event": [
+      "application",
+      "timestamp"
+    ],
+    "FormatLangPair": [
+      "format",
+      "language"
+    ],
+    "LiveRecording": [
+      "cause",
+      "duration",
+      "format",
+      "name",
+      "silence_duration",
+      "state",
+      "talking_duration",
+      "target_uri"
+    ],
+    "LogChannel": [
+      "channel",
+      "configuration",
+      "status",
+      "type"
+    ],
+    "Mailbox": [
+      "name",
+      "new_messages",
+      "old_messages"
+    ],
+    "Message": [
+      "asterisk_id",
+      "type"
+    ],
+    "MissingParams": [
+      "params"
+    ],
+    "Module": [
+      "description",
+      "name",
+      "status",
+      "support_level",
+      "use_count"
+    ],
+    "Peer": [
+      "address",
+      "cause",
+      "peer_status",
+      "port",
+      "time"
+    ],
+    "PeerStatusChange": [
+      "endpoint",
+      "peer"
+    ],
+    "Playback": [
+      "id",
+      "language",
+      "media_uri",
+      "next_media_uri",
+      "state",
+      "target_uri"
+    ],
+    "PlaybackContinuing": [
+      "playback"
+    ],
+    "PlaybackFinished": [
+      "playback"
+    ],
+    "PlaybackStarted": [
+      "playback"
+    ],
+    "RESTHeader": [
+      "name",
+      "value"
+    ],
+    "RESTQueryStringParameter": [
+      "name",
+      "value"
+    ],
+    "RESTRequest": [
+      "content_type",
+      "message_body",
+      "method",
+      "query_strings",
+      "request_id",
+      "transaction_id",
+      "type",
+      "uri"
+    ],
+    "RESTResponse": [
+      "content_type",
+      "message_body",
+      "reason_phrase",
+      "request_id",
+      "status_code",
+      "transaction_id",
+      "uri"
+    ],
+    "RTPstat": [
+      "channel_uniqueid",
+      "local_maxjitter",
+      "local_maxrxploss",
+      "local_minjitter",
+      "local_minrxploss",
+      "local_normdevjitter",
+      "local_normdevrxploss",
+      "local_ssrc",
+      "local_stdevjitter",
+      "local_stdevrxploss",
+      "maxrtt",
+      "minrtt",
+      "normdevrtt",
+      "remote_maxjitter",
+      "remote_maxrxploss",
+      "remote_minjitter",
+      "remote_minrxploss",
+      "remote_normdevjitter",
+      "remote_normdevrxploss",
+      "remote_ssrc",
+      "remote_stdevjitter",
+      "remote_stdevrxploss",
+      "rtt",
+      "rxcount",
+      "rxjitter",
+      "rxoctetcount",
+      "rxploss",
+      "stdevrtt",
+      "txcount",
+      "txjitter",
+      "txoctetcount",
+      "txploss"
+    ],
+    "RecordingFailed": [
+      "recording"
+    ],
+    "RecordingFinished": [
+      "recording"
+    ],
+    "RecordingStarted": [
+      "recording"
+    ],
+    "ReferTo": [
+      "bridge",
+      "connected_channel",
+      "destination_channel",
+      "requested_destination"
+    ],
+    "ReferredBy": [
+      "bridge",
+      "connected_channel",
+      "source_channel"
+    ],
+    "RequiredDestination": [
+      "additional_protocol_params",
+      "destination",
+      "protocol_id"
+    ],
+    "SetId": [
+      "group",
+      "user"
+    ],
+    "Sound": [
+      "formats",
+      "id",
+      "text"
+    ],
+    "StasisEnd": [
+      "channel"
+    ],
+    "StasisStart": [
+      "args",
+      "channel",
+      "replace_channel"
+    ],
+    "StatusInfo": [
+      "last_reload_time",
+      "startup_time"
+    ],
+    "StoredRecording": [
+      "format",
+      "name"
+    ],
+    "SystemInfo": [
+      "entity_id",
+      "version"
+    ],
+    "TextMessage": [
+      "body",
+      "from",
+      "to",
+      "variables"
+    ],
+    "TextMessageReceived": [
+      "endpoint",
+      "message"
+    ],
+    "Variable": [
+      "value"
+    ]
+  }
 }

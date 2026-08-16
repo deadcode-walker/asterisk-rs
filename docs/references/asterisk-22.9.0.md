@@ -17,7 +17,8 @@ every digest, regenerates the route and model inventory in memory, and requires 
 the checked-in inventory. The ordinary `just harness` gate remains deterministic and offline.
 
 This crate does not claim the complete ARI surface. The upstream fixture contains 102 REST
-operations and 82 models. The local manifest records implemented resource groups and typed events;
+operations and 82 models. Implemented response models include every field in their pinned upstream
+model and are non-exhaustive so later Asterisk additions remain compatible. The local manifest records implemented resource groups and typed events;
 unknown ARI events must retain their type and raw payload so applications remain forward-compatible.
 Changing a route, model, or media command requires updating implementation, external behavior tests,
 the manifest, and this reference in one slice.

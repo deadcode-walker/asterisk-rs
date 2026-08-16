@@ -5,6 +5,7 @@ use crate::error::Result;
 
 /// ari endpoint representation
 #[derive(Debug, Clone, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Endpoint {
     pub technology: String,
     pub resource: String,

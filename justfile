@@ -40,6 +40,10 @@ test-features:
     cargo check --locked -p asterisk-rs --all-targets --no-default-features --features ari
     cargo check --locked -p asterisk-rs-core --all-targets --no-default-features
 
+# compile the intended public 0.8 API from an external crate boundary
+downstream:
+    cargo check --locked -p asterisk-rs-tests --test downstream_api
+
 # run the behavior and publishable-crate proof used on every supported runner
 platform: test test-workspace
 
@@ -88,7 +92,7 @@ workflows:
     zizmor --persona=pedantic .github/workflows
 
 # frozen-candidate local gate
-ci: check test-workspace test-minimal test-features supply-chain docs-check harness workflows
+ci: check test-workspace test-minimal test-features downstream supply-chain docs-check harness workflows
     typos
 
 # run every ignored live test against an explicitly selected Asterisk instance

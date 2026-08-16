@@ -81,6 +81,7 @@ def verify_upstream(contract: dict[str, object], upstream: dict[str, object]) ->
     base = f"https://raw.githubusercontent.com/asterisk/asterisk/{commit}"
     generated_routes: list[dict[str, str]] = []
     generated_models: set[str] = set()
+    generated_model_fields: dict[str, list[str]] = {}
 
     for name, expected_digest in source["ari_documents"].items():
         content = fetch(f"{base}/rest-api/api-docs/{name}")
@@ -99,7 +100,9 @@ def verify_upstream(contract: dict[str, object], upstream: dict[str, object]) ->
                         "operation": operation["nickname"],
                     }
                 )
-        generated_models.update(document.get("models", {}).keys())
+        for model_name, model in document.get("models", {}).items():
+            generated_models.add(model_name)
+            generated_model_fields[model_name] = sorted(model.get("properties", {}).keys())
 
     media = fetch(f"{base}/channels/chan_websocket.c")
     media_digest = hashlib.sha256(media).hexdigest()
@@ -127,6 +130,7 @@ def verify_upstream(contract: dict[str, object], upstream: dict[str, object]) ->
             key=lambda route: (route["path"], route["method"], route["operation"]),
         ),
         "upstream_models": sorted(generated_models),
+        "upstream_model_fields": dict(sorted(generated_model_fields.items())),
     }
     if generated != upstream:
         raise SystemExit("checked-in upstream inventory does not match the pinned Asterisk source")
@@ -183,6 +187,33 @@ def canonical_path(path: str) -> str:
     if path.endswith("{}") and not path.endswith("/{}"):
         path = path[:-2]
     return path
+
+
+def rust_struct_fields(path: Path, name: str) -> list[str]:
+    source = path.read_text(encoding="utf-8")
+    match = re.search(rf"^pub struct {re.escape(name)}\s*\{{", source, re.MULTILINE)
+    if match is None:
+        raise SystemExit(f"cannot locate local ARI model {path.stem}::{name}")
+    start = source.find("{", match.start())
+    depth = 0
+    for end in range(start, len(source)):
+        depth += (source[end] == "{") - (source[end] == "}")
+        if depth == 0:
+            body = source[start + 1 : end]
+            break
+    else:
+        raise SystemExit(f"unterminated local ARI model {path.stem}::{name}")
+
+    fields = []
+    pattern = re.compile(
+        r"(?P<attrs>(?:\s*#\[serde\([^\]]*\)\]\s*)*)"
+        r"\s*(?:pub(?:\(crate\))?\s+)?(?P<name>[a-z][a-z0-9_]*)\s*:(?!:)",
+        re.MULTILINE,
+    )
+    for field in pattern.finditer(body):
+        rename = re.search(r'rename\s*=\s*"([^"]+)"', field.group("attrs"))
+        fields.append(rename.group(1) if rename else field.group("name"))
+    return sorted(fields)
 
 
 def rust_function_bodies(source: str) -> list[tuple[str, str]]:
@@ -283,10 +314,13 @@ def main() -> None:
     routes = upstream["upstream_routes"]
     route_keys = {(route["method"], route["path"], route["operation"]) for route in routes}
     models = upstream["upstream_models"]
+    model_fields = upstream["upstream_model_fields"]
     if len(routes) != source["ari_operation_count"] or len(route_keys) != len(routes):
         raise SystemExit("generated upstream ARI route inventory is incomplete or duplicated")
     if len(models) != source["ari_model_count"] or len(set(models)) != len(models):
         raise SystemExit("generated upstream ARI model inventory is incomplete or duplicated")
+    if set(model_fields) != set(models):
+        raise SystemExit("generated upstream ARI model field inventory is incomplete")
 
     resources = {
         path.stem
@@ -326,6 +360,23 @@ def main() -> None:
         raise SystemExit(
             f"local ARI model inventory drift: expected {sorted(expected_models)}, got {sorted(model_symbols)}"
         )
+
+    model_paths = {"event": ROOT / "crates/asterisk-rs-ari/src/event.rs"}
+    model_paths.update(
+        {
+            path.stem: path
+            for path in (ROOT / "crates/asterisk-rs-ari/src/resources").glob("*.rs")
+        }
+    )
+    for symbol, upstream_name in local["local_model_contracts"].items():
+        module, name = symbol.split("::", 1)
+        actual_fields = rust_struct_fields(model_paths[module], name)
+        expected_fields = model_fields[upstream_name]
+        if actual_fields != expected_fields:
+            raise SystemExit(
+                f"local ARI model fields drift for {symbol}/{upstream_name}: "
+                f"expected {expected_fields}, got {actual_fields}"
+            )
 
     media = (ROOT / "crates/asterisk-rs-ari/src/media.rs").read_text(encoding="utf-8")
     local_names = {

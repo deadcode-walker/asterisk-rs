@@ -114,8 +114,17 @@ is either a green local harness commit or a concrete authority/external-state bl
   Final fresh review found no actionable defect. Frozen proof passed `just ci`, `just msrv`,
   `just semver`, 965 current/MSRV unit tests, and 252 current/MSRV mock tests. Live media proof remains
   part of the final isolated-Asterisk gate because this slice defines real chan_websocket behavior.
-- [ ] 2026-08-17: finish Slice 1 by recording the compatibility boundary, downstream compile
-  fixtures, and remaining future-facing model construction policy.
+- [x] 2026-08-17: completed the remaining Slice 1 compatibility boundary. The normative 0.8
+  reference records redirect, crate-owned HTTP errors, loss-aware events, exact media schemas,
+  private request builders, and non-exhaustive response/enumeration policy. `just downstream`
+  compiles the supported construction and wildcard-matching surface from the external tests crate
+  and is part of `just ci`; the GitHub aggregate `CI` already blocks on its semver job. Implemented
+  ARI response fields now match the pinned Asterisk 22.9.0 models, and the offline checker compares
+  27 mapped Rust models to the complete 82-model property inventory that the online verifier derives
+  from digest-verified upstream JSON. Fresh review found the first checker and downstream-enum gaps;
+  both were repaired, and final re-review found no actionable finding. Frozen proof passed
+  `just ci`, `just msrv`, and `just semver` with 966 current/MSRV unit tests and 252 current/MSRV mock
+  tests. Live proof remains in the final plan-wide isolated-Asterisk gate.
 
 ## Surprises and discoveries
 
@@ -208,7 +217,7 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
 
 ### Slice 1: define the 0.8 compatibility and protocol contracts
 
-- [ ] Record the 0.8 boundary for redirect, dependency-backed errors, media schemas, loss-aware events,
+- [x] Record the 0.8 boundary for redirect, dependency-backed errors, media schemas, loss-aware events,
   model completeness, and private struct fields/builders; add downstream compile fixtures and make
   cargo-semver-checks blocking.
 - [x] Pin the supported Asterisk REST and chan_websocket schemas. Generate or mechanically compare
@@ -219,7 +228,7 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
   preserve response/status/body-read sources.
 - [x] Replace malformed AMI event defaults (`""`/zero) with required-field parsing that distinguishes
   malformed, unknown, and valid events. Preserve unknown ARI event type and raw payload.
-- [ ] Complete ARI models from pinned fixtures and make future-facing models non-exhaustive or
+- [x] Complete ARI models from pinned fixtures and make future-facing models non-exhaustive or
   builder-based so fields can evolve without repeated breaks.
 
 ### Slice 2: one bounded actor and lifecycle policy

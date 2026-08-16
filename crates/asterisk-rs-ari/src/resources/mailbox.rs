@@ -5,6 +5,7 @@ use crate::error::Result;
 
 /// ari mailbox representation
 #[derive(Debug, Clone, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Mailbox {
     pub name: String,
     pub old_messages: u32,

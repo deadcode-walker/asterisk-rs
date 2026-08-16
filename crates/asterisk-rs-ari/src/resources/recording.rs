@@ -6,6 +6,7 @@ use crate::event::LiveRecording;
 
 /// stored recording metadata
 #[derive(Debug, Clone, serde::Deserialize)]
+#[non_exhaustive]
 pub struct StoredRecording {
     pub name: String,
     pub format: String,

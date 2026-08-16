@@ -70,11 +70,7 @@ that race by registering the event subscription before issuing the REST call.
 use asterisk_rs_ari::resources::channel::OriginateParams;
 
 let pending = client.channel();
-let params = OriginateParams {
-    endpoint: "PJSIP/100".into(),
-    app: Some("my-app".into()),
-    ..Default::default()
-};
+let params = OriginateParams::new("PJSIP/100").app("my-app");
 let (handle, mut events) = pending.originate(params).await?;
 // events are buffered from creation — StasisStart is guaranteed captured
 

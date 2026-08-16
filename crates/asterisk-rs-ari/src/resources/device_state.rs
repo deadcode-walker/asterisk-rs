@@ -5,6 +5,7 @@ use crate::error::Result;
 
 /// ari device state representation
 #[derive(Debug, Clone, serde::Deserialize)]
+#[non_exhaustive]
 pub struct DeviceState {
     pub name: String,
     pub state: String,

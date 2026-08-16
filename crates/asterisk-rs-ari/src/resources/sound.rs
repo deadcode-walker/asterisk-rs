@@ -5,6 +5,7 @@ use crate::error::Result;
 
 /// format information for a sound
 #[derive(Debug, Clone, serde::Deserialize)]
+#[non_exhaustive]
 pub struct SoundFormat {
     pub language: String,
     pub format: String,
@@ -12,10 +13,11 @@ pub struct SoundFormat {
 
 /// ari sound representation
 #[derive(Debug, Clone, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Sound {
     pub id: String,
     #[serde(default)]
-    pub text: String,
+    pub text: Option<String>,
     #[serde(default)]
     pub formats: Vec<SoundFormat>,
 }

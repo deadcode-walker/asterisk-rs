@@ -560,5 +560,34 @@
     "recording::StoredRecording",
     "sound::Sound",
     "sound::SoundFormat"
-  ]
+  ],
+  "local_model_contracts": {
+    "application::Application": "Application",
+    "asterisk::AsteriskInfo": "AsteriskInfo",
+    "asterisk::AsteriskPing": "AsteriskPing",
+    "asterisk::ConfigTuple": "ConfigTuple",
+    "asterisk::LogChannel": "LogChannel",
+    "asterisk::Module": "Module",
+    "asterisk::Variable": "Variable",
+    "channel::Variable": "Variable",
+    "device_state::DeviceState": "DeviceState",
+    "endpoint::Endpoint": "Endpoint",
+    "event::Bridge": "Bridge",
+    "event::CallerId": "CallerID",
+    "event::Channel": "Channel",
+    "event::ContactInfo": "ContactInfo",
+    "event::DeviceState": "DeviceState",
+    "event::DialplanCep": "DialplanCEP",
+    "event::Endpoint": "Endpoint",
+    "event::LiveRecording": "LiveRecording",
+    "event::Peer": "Peer",
+    "event::Playback": "Playback",
+    "event::ReferTo": "ReferTo",
+    "event::ReferredBy": "ReferredBy",
+    "event::TextMessage": "TextMessage",
+    "mailbox::Mailbox": "Mailbox",
+    "recording::StoredRecording": "StoredRecording",
+    "sound::Sound": "Sound",
+    "sound::SoundFormat": "FormatLangPair"
+  }
 }

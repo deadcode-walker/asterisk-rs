@@ -1125,14 +1125,11 @@ async fn originate_with_custom_channel_id() {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     let custom_id = "test-chan-custom-123";
-    let params = OriginateParams {
-        endpoint: "Local/999@default".to_string(),
-        app: Some("test-app".to_string()),
-        channel_id: Some(custom_id.to_string()),
-        timeout: Some(10),
-        caller_id: Some("originate-chanid-test <557>".to_string()),
-        ..Default::default()
-    };
+    let params = OriginateParams::new("Local/999@default")
+        .app("test-app")
+        .channel_id(custom_id)
+        .timeout(10)
+        .caller_id("originate-chanid-test <557>");
 
     // originate via ARI REST — the request should be accepted even if the
     // endpoint never answers.

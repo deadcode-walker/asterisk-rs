@@ -5,6 +5,7 @@ use crate::error::Result;
 
 /// ari stasis application representation
 #[derive(Debug, Clone, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Application {
     pub name: String,
     #[serde(default)]
@@ -15,6 +16,10 @@ pub struct Application {
     pub endpoint_ids: Vec<String>,
     #[serde(default)]
     pub device_names: Vec<String>,
+    #[serde(default)]
+    pub events_allowed: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub events_disallowed: Vec<serde_json::Value>,
 }
 
 /// list all stasis applications

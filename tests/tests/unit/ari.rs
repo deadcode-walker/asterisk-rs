@@ -922,11 +922,11 @@ fn minimal_bridge_json() -> &'static str {
 }
 
 fn minimal_playback_json() -> &'static str {
-    r#"{"id": "pb1", "media_uri": "sound:hello", "state": "playing"}"#
+    r#"{"id": "pb1", "media_uri": "sound:hello", "state": "playing", "target_uri": "channel:ch1"}"#
 }
 
 fn minimal_recording_json() -> &'static str {
-    r#"{"name": "rec1", "format": "wav", "state": "recording"}"#
+    r#"{"name": "rec1", "format": "wav", "state": "recording", "target_uri": "channel:ch1"}"#
 }
 
 fn minimal_endpoint_json() -> &'static str {
@@ -1793,7 +1793,7 @@ fn deserialize_sound() {
     }"#;
     let s: Sound = serde_json::from_str(json).expect("deser");
     assert_eq!(s.id, "hello-world");
-    assert_eq!(s.text, "Hello World");
+    assert_eq!(s.text.as_deref(), Some("Hello World"));
     assert_eq!(s.formats.len(), 2);
     assert_eq!(s.formats[0].language, "en");
     assert_eq!(s.formats[1].format, "wav");
@@ -1804,7 +1804,7 @@ fn deserialize_sound_minimal() {
     let json = r#"{"id": "beep"}"#;
     let s: Sound = serde_json::from_str(json).expect("deser");
     assert_eq!(s.id, "beep");
-    assert_eq!(s.text, "");
+    assert!(s.text.is_none());
     assert!(s.formats.is_empty());
 }
 
@@ -1905,7 +1905,7 @@ fn deserialize_module() {
     assert_eq!(m.description, "Basic SIP resource");
     assert_eq!(m.use_count, 5);
     assert_eq!(m.status, "Running");
-    assert_eq!(m.support_level.as_deref(), Some("core"));
+    assert_eq!(m.support_level, "core");
 }
 
 #[test]
@@ -1916,8 +1916,7 @@ fn deserialize_module_no_support_level() {
         "use_count": 0,
         "status": "Running"
     }"#;
-    let m: Module = serde_json::from_str(json).expect("deser");
-    assert!(m.support_level.is_none());
+    assert!(serde_json::from_str::<Module>(json).is_err());
 }
 
 #[test]
@@ -1939,16 +1938,13 @@ fn deserialize_log_channel() {
 fn deserialize_config_tuple() {
     let json = r#"{"attribute": "max_contacts", "value": "5"}"#;
     let ct: ConfigTuple = serde_json::from_str(json).expect("deser");
-    assert_eq!(ct.attribute, "max_contacts");
-    assert_eq!(ct.value, "5");
+    assert_eq!(ct.attribute(), "max_contacts");
+    assert_eq!(ct.value(), "5");
 }
 
 #[test]
 fn serialize_config_tuple() {
-    let ct = ConfigTuple {
-        attribute: "key".to_owned(),
-        value: "val".to_owned(),
-    };
+    let ct = ConfigTuple::new("key", "val");
     let json = serde_json::to_string(&ct).expect("ser");
     assert!(json.contains("\"attribute\":\"key\""));
     assert!(json.contains("\"value\":\"val\""));
@@ -1969,18 +1965,60 @@ fn deserialize_channel_variable() {
 }
 
 #[test]
+fn pinned_ari_response_models_retain_complete_fields() {
+    let channel: Channel = serde_json::from_value(serde_json::json!({
+        "id": "ch", "protocol_id": "call-id", "name": "PJSIP/100", "state": "Up",
+        "caller": {"name": "Alice", "number": "100"},
+        "connected": {"name": "Bob", "number": "200"},
+        "accountcode": "acct",
+        "dialplan": {"context": "default", "exten": "200", "priority": 1,
+                     "app_name": "Dial", "app_data": "PJSIP/200"},
+        "creationtime": "2026-08-17T00:00:00Z", "language": "en",
+        "channelvars": {"TRACE": "yes"}, "caller_rdnis": "300", "tenantid": "tenant"
+    }))
+    .expect("pinned Channel fixture");
+    assert_eq!(channel.protocol_id, "call-id");
+    assert_eq!(channel.accountcode, "acct");
+    assert_eq!(channel.dialplan.app_name, "Dial");
+    assert_eq!(channel.channelvars["TRACE"], "yes");
+    assert_eq!(channel.tenantid.as_deref(), Some("tenant"));
+
+    let bridge: Bridge = serde_json::from_value(serde_json::json!({
+        "id": "br", "technology": "simple_bridge", "bridge_type": "mixing",
+        "bridge_class": "basic", "creator": "Stasis", "name": "demo", "channels": ["ch"],
+        "video_mode": "talker", "video_source_id": "ch", "creationtime": "now"
+    }))
+    .expect("pinned Bridge fixture");
+    assert_eq!(bridge.bridge_class, "basic");
+    assert_eq!(bridge.video_source_id.as_deref(), Some("ch"));
+
+    let playback: Playback = serde_json::from_value(serde_json::json!({
+        "id": "pb", "media_uri": "sound:hello", "next_media_uri": "sound:world",
+        "target_uri": "channel:ch", "language": "en", "state": "playing"
+    }))
+    .expect("pinned Playback fixture");
+    assert_eq!(playback.next_media_uri.as_deref(), Some("sound:world"));
+    assert_eq!(playback.language, "en");
+
+    let recording: LiveRecording = serde_json::from_value(serde_json::json!({
+        "name": "rec", "format": "wav", "target_uri": "channel:ch", "state": "done",
+        "duration": 10, "talking_duration": 8, "silence_duration": 2, "cause": "normal"
+    }))
+    .expect("pinned LiveRecording fixture");
+    assert_eq!(recording.duration, Some(10));
+    assert_eq!(recording.cause.as_deref(), Some("normal"));
+}
+
+#[test]
 fn serialize_originate_params_full() {
-    let params = OriginateParams {
-        endpoint: "PJSIP/100".to_owned(),
-        extension: Some("100".to_owned()),
-        context: Some("default".to_owned()),
-        priority: Some(1),
-        app: Some("myapp".to_owned()),
-        app_args: Some("arg1,arg2".to_owned()),
-        caller_id: Some("\"Test\" <1000>".to_owned()),
-        timeout: Some(30),
-        ..Default::default()
-    };
+    let params = OriginateParams::new("PJSIP/100")
+        .extension("100")
+        .context("default")
+        .priority(1)
+        .app("myapp")
+        .app_args("arg1,arg2")
+        .caller_id("\"Test\" <1000>")
+        .timeout(30);
     let json = serde_json::to_string(&params).expect("ser");
     assert!(json.contains("\"endpoint\":\"PJSIP/100\""));
     assert!(json.contains("\"extension\":\"100\""));
@@ -1994,10 +2032,7 @@ fn serialize_originate_params_full() {
 
 #[test]
 fn serialize_originate_params_minimal() {
-    let params = OriginateParams {
-        endpoint: "PJSIP/200".to_owned(),
-        ..Default::default()
-    };
+    let params = OriginateParams::new("PJSIP/200");
     let json = serde_json::to_string(&params).expect("ser");
     assert!(json.contains("\"endpoint\":\"PJSIP/200\""));
     // none fields should be skipped
@@ -2010,16 +2045,10 @@ fn serialize_originate_params_minimal() {
 }
 
 #[test]
-fn originate_params_default() {
-    let params = OriginateParams::default();
-    assert_eq!(params.endpoint, "");
-    assert!(params.extension.is_none());
-    assert!(params.context.is_none());
-    assert!(params.priority.is_none());
-    assert!(params.app.is_none());
-    assert!(params.app_args.is_none());
-    assert!(params.caller_id.is_none());
-    assert!(params.timeout.is_none());
+fn originate_params_builder_defaults_optional_fields() {
+    let params = OriginateParams::new("PJSIP/100");
+    let json = serde_json::to_value(params).expect("serialize");
+    assert_eq!(json, serde_json::json!({"endpoint": "PJSIP/100"}));
 }
 
 // ── additional edge case tests ──────────────────────────────────────────────
@@ -2232,15 +2261,13 @@ fn builder_with_transport_mode() {
 #[test]
 fn external_media_params_new() {
     let params = ExternalMediaParams::new("myapp", "192.168.1.1:8000", "ulaw");
-    assert_eq!(params.app, "myapp");
-    assert_eq!(params.external_host, "192.168.1.1:8000");
-    assert_eq!(params.format, "ulaw");
-    assert!(params.encapsulation.is_none());
-    assert!(params.transport.is_none());
-    assert!(params.connection_type.is_none());
-    assert!(params.direction.is_none());
-    assert!(params.channel_id.is_none());
-    assert!(params.variables.is_none());
+    let json = serde_json::to_value(params).expect("serialize");
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "app": "myapp", "external_host": "192.168.1.1:8000", "format": "ulaw"
+        })
+    );
 }
 
 #[test]
@@ -2253,12 +2280,13 @@ fn external_media_params_builder() {
         .direction("both")
         .channel_id("chan-123")
         .variables(vars.clone());
-    assert_eq!(params.encapsulation.as_deref(), Some("rtp"));
-    assert_eq!(params.transport.as_deref(), Some("udp"));
-    assert_eq!(params.connection_type.as_deref(), Some("client"));
-    assert_eq!(params.direction.as_deref(), Some("both"));
-    assert_eq!(params.channel_id.as_deref(), Some("chan-123"));
-    assert_eq!(params.variables, Some(vars));
+    let json = serde_json::to_value(params).expect("serialize");
+    assert_eq!(json["encapsulation"], "rtp");
+    assert_eq!(json["transport"], "udp");
+    assert_eq!(json["connection_type"], "client");
+    assert_eq!(json["direction"], "both");
+    assert_eq!(json["channelId"], "chan-123");
+    assert_eq!(json["variables"]["key"], vars["key"]);
 }
 
 #[test]
@@ -2278,16 +2306,13 @@ fn external_media_params_serialization() {
 #[test]
 fn originate_params_new_fields() {
     let vars = HashMap::from([("CALLERID(name)".to_string(), "Test".to_string())]);
-    let params = OriginateParams {
-        endpoint: "PJSIP/100".to_string(),
-        channel_id: Some("chan-orig".to_string()),
-        other_channel_id: Some("chan-other".to_string()),
-        originator: Some("orig-chan".to_string()),
-        formats: Some("ulaw,alaw".to_string()),
-        variables: Some(vars),
-        label: Some("my-label".to_string()),
-        ..Default::default()
-    };
+    let params = OriginateParams::new("PJSIP/100")
+        .channel_id("chan-orig")
+        .other_channel_id("chan-other")
+        .originator("orig-chan")
+        .formats("ulaw,alaw")
+        .variables(vars)
+        .label("my-label");
     let json = serde_json::to_value(&params).expect("serialization should succeed");
     assert_eq!(json["channelId"], "chan-orig");
     assert_eq!(json["otherChannelId"], "chan-other");
@@ -2299,10 +2324,7 @@ fn originate_params_new_fields() {
 
 #[test]
 fn originate_params_skip_none() {
-    let params = OriginateParams {
-        endpoint: "PJSIP/200".to_string(),
-        ..Default::default()
-    };
+    let params = OriginateParams::new("PJSIP/200");
     let json = serde_json::to_value(&params).expect("serialization should succeed");
     assert_eq!(json["endpoint"], "PJSIP/200");
     // all optional fields should be absent
@@ -2702,11 +2724,7 @@ fn external_media_params_variables_serialize_as_object() {
 
 #[test]
 fn originate_params_channel_id_camelcase() {
-    let params = OriginateParams {
-        endpoint: "SIP/100".into(),
-        channel_id: Some("my-chan-id".into()),
-        ..Default::default()
-    };
+    let params = OriginateParams::new("SIP/100").channel_id("my-chan-id");
 
     let json: serde_json::Value = serde_json::to_value(&params).expect("should serialize");
     assert_eq!(json["channelId"], "my-chan-id");
@@ -2718,11 +2736,7 @@ fn originate_params_channel_id_camelcase() {
 
 #[test]
 fn originate_params_other_channel_id_camelcase() {
-    let params = OriginateParams {
-        endpoint: "SIP/100".into(),
-        other_channel_id: Some("other-chan-id".into()),
-        ..Default::default()
-    };
+    let params = OriginateParams::new("SIP/100").other_channel_id("other-chan-id");
 
     let json: serde_json::Value = serde_json::to_value(&params).expect("should serialize");
     assert_eq!(json["otherChannelId"], "other-chan-id");
@@ -2737,22 +2751,20 @@ fn originate_params_all_new_and_old_fields() {
     let mut vars = HashMap::new();
     vars.insert("VAR1".into(), "val1".into());
 
-    let params = OriginateParams {
-        endpoint: "PJSIP/200".into(),
-        extension: Some("s".into()),
-        context: Some("default".into()),
-        priority: Some(1),
-        app: Some("myapp".into()),
-        app_args: Some("arg1,arg2".into()),
-        caller_id: Some("\"Test\" <100>".into()),
-        timeout: Some(30),
-        channel_id: Some("chan-001".into()),
-        other_channel_id: Some("chan-002".into()),
-        originator: Some("PJSIP/100-00000001".into()),
-        formats: Some("ulaw,alaw".into()),
-        variables: Some(vars),
-        label: Some("my-label".into()),
-    };
+    let params = OriginateParams::new("PJSIP/200")
+        .extension("s")
+        .context("default")
+        .priority(1)
+        .app("myapp")
+        .app_args("arg1,arg2")
+        .caller_id("\"Test\" <100>")
+        .timeout(30)
+        .channel_id("chan-001")
+        .other_channel_id("chan-002")
+        .originator("PJSIP/100-00000001")
+        .formats("ulaw,alaw")
+        .variables(vars)
+        .label("my-label");
 
     let json: serde_json::Value = serde_json::to_value(&params).expect("should serialize");
 

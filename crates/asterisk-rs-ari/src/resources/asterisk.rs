@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 /// asterisk system information
 #[derive(Debug, Clone, Deserialize)]
+#[non_exhaustive]
 pub struct AsteriskInfo {
     #[serde(default)]
     pub build: Option<serde_json::Value>,
@@ -19,6 +20,7 @@ pub struct AsteriskInfo {
 
 /// asterisk ping response
 #[derive(Debug, Clone, Deserialize)]
+#[non_exhaustive]
 pub struct AsteriskPing {
     pub asterisk_id: String,
     pub ping: String,
@@ -27,17 +29,18 @@ pub struct AsteriskPing {
 
 /// loaded asterisk module
 #[derive(Debug, Clone, Deserialize)]
+#[non_exhaustive]
 pub struct Module {
     pub name: String,
     pub description: String,
     pub use_count: i32,
     pub status: String,
-    #[serde(default)]
-    pub support_level: Option<String>,
+    pub support_level: String,
 }
 
 /// asterisk log channel
 #[derive(Debug, Clone, Deserialize)]
+#[non_exhaustive]
 pub struct LogChannel {
     pub channel: String,
     #[serde(rename = "type")]
@@ -48,13 +51,35 @@ pub struct LogChannel {
 
 /// config tuple for dynamic config
 #[derive(Debug, Clone, serde::Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ConfigTuple {
-    pub attribute: String,
-    pub value: String,
+    attribute: String,
+    value: String,
+}
+
+impl ConfigTuple {
+    /// Create one dynamic-configuration attribute assignment.
+    pub fn new(attribute: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            attribute: attribute.into(),
+            value: value.into(),
+        }
+    }
+
+    /// Configuration attribute name.
+    pub fn attribute(&self) -> &str {
+        &self.attribute
+    }
+
+    /// Configuration attribute value.
+    pub fn value(&self) -> &str {
+        &self.value
+    }
 }
 
 /// variable value response
 #[derive(Debug, Clone, Deserialize)]
+#[non_exhaustive]
 pub struct Variable {
     pub value: String,
 }

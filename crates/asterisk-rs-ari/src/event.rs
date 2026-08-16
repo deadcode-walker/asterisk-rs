@@ -430,6 +430,7 @@ impl asterisk_rs_core::event::Event for AriMessage {}
 
 /// contact info for PJSIP registration status
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ContactInfo {
     pub uri: String,
     pub contact_status: String,
@@ -440,6 +441,7 @@ pub struct ContactInfo {
 
 /// peer status information
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Peer {
     pub peer_status: String,
     #[serde(default)]
@@ -454,6 +456,7 @@ pub struct Peer {
 
 /// endpoint state information
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Endpoint {
     pub technology: String,
     pub resource: String,
@@ -465,6 +468,7 @@ pub struct Endpoint {
 
 /// device state information
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DeviceState {
     pub name: String,
     pub state: String,
@@ -472,15 +476,21 @@ pub struct DeviceState {
 
 /// text message
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TextMessage {
     pub from: String,
     pub to: String,
     pub body: String,
+    #[serde(default)]
+    pub variables: serde_json::Map<String, serde_json::Value>,
 }
 
 /// refer-to information for channel transfers
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ReferTo {
+    #[serde(default)]
+    pub requested_destination: serde_json::Value,
     #[serde(default)]
     pub destination_channel: Option<Channel>,
     #[serde(default)]
@@ -491,6 +501,7 @@ pub struct ReferTo {
 
 /// referred-by information for channel transfers
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ReferredBy {
     pub source_channel: Channel,
     #[serde(default)]
@@ -500,8 +511,11 @@ pub struct ReferredBy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Channel {
     pub id: String,
+    #[serde(default)]
+    pub protocol_id: String,
     pub name: String,
     pub state: String,
     #[serde(default)]
@@ -509,10 +523,23 @@ pub struct Channel {
     #[serde(default)]
     pub connected: CallerId,
     #[serde(default)]
+    pub accountcode: String,
+    #[serde(default)]
     pub dialplan: DialplanCep,
+    #[serde(default)]
+    pub creationtime: String,
+    #[serde(default)]
+    pub language: String,
+    #[serde(default)]
+    pub channelvars: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    pub caller_rdnis: String,
+    #[serde(default)]
+    pub tenantid: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct CallerId {
     #[serde(default)]
     pub name: String,
@@ -521,6 +548,7 @@ pub struct CallerId {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DialplanCep {
     #[serde(default)]
     pub context: String,
@@ -528,31 +556,60 @@ pub struct DialplanCep {
     pub exten: String,
     #[serde(default)]
     pub priority: i64,
+    #[serde(default)]
+    pub app_name: String,
+    #[serde(default)]
+    pub app_data: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Bridge {
     pub id: String,
     pub technology: String,
     pub bridge_type: String,
     #[serde(default)]
+    pub bridge_class: String,
+    #[serde(default)]
+    pub creator: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
     pub channels: Vec<String>,
+    #[serde(default)]
+    pub video_mode: Option<String>,
+    #[serde(default)]
+    pub video_source_id: Option<String>,
+    #[serde(default)]
+    pub creationtime: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Playback {
     pub id: String,
     pub media_uri: String,
-    pub state: String,
     #[serde(default)]
+    pub next_media_uri: Option<String>,
+    pub state: String,
     pub target_uri: String,
+    #[serde(default)]
+    pub language: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct LiveRecording {
     pub name: String,
     pub format: String,
     pub state: String,
-    #[serde(default)]
     pub target_uri: String,
+    #[serde(default)]
+    pub duration: Option<i32>,
+    #[serde(default)]
+    pub talking_duration: Option<i32>,
+    #[serde(default)]
+    pub silence_duration: Option<i32>,
+    #[serde(default)]
+    pub cause: Option<String>,
 }
