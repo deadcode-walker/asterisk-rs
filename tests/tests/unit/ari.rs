@@ -11,7 +11,7 @@ use asterisk_rs_ari::event::{
     AriEvent, AriMessage, Bridge, CallerId, Channel, ContactInfo, DeviceState, DialplanCep,
     Endpoint, LiveRecording, Peer, Playback, ReferTo, ReferredBy, TextMessage,
 };
-use asterisk_rs_ari::media::{MediaCommand, MediaEvent};
+use asterisk_rs_ari::media::{MediaCommand, MediaDirection, MediaEvent};
 use asterisk_rs_ari::resources::application::Application;
 use asterisk_rs_ari::resources::asterisk::{
     AsteriskInfo, AsteriskPing, ConfigTuple, LogChannel, Module, Variable as AsteriskVariable,
@@ -2326,18 +2326,9 @@ fn media_command_answer_serialization() {
 }
 
 #[test]
-fn media_command_hangup_with_cause() {
-    let cmd = MediaCommand::Hangup { cause: Some(16) };
+fn media_command_hangup_matches_pinned_contract() {
+    let cmd = MediaCommand::Hangup;
     let json = serde_json::to_string(&cmd).expect("serialize hangup");
-    let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse hangup json");
-    assert_eq!(parsed["command"], "HANGUP");
-    assert_eq!(parsed["cause"], 16);
-}
-
-#[test]
-fn media_command_hangup_without_cause() {
-    let cmd = MediaCommand::Hangup { cause: None };
-    let json = serde_json::to_string(&cmd).expect("serialize hangup no cause");
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse hangup json");
     assert_eq!(parsed["command"], "HANGUP");
     assert!(parsed.get("cause").is_none());
@@ -2395,12 +2386,12 @@ fn media_event_media_start_deserialization() {
 
 #[test]
 fn media_event_dtmf_deserialization() {
-    let json = r#"{"event": "DTMF_END", "digit": "5", "duration_ms": 120}"#;
+    let json = r#"{"event": "DTMF_END", "channel_id": "chan-1", "digit": "5"}"#;
     let event: MediaEvent = serde_json::from_str(json).expect("deserialize DTMF_END");
     match event {
-        MediaEvent::DtmfEnd { digit, duration_ms } => {
+        MediaEvent::DtmfEnd { channel_id, digit } => {
+            assert_eq!(channel_id, "chan-1");
             assert_eq!(digit, "5");
-            assert_eq!(duration_ms, 120);
         }
         other => panic!("expected DtmfEnd, got {other:?}"),
     }
@@ -2408,34 +2399,40 @@ fn media_event_dtmf_deserialization() {
 
 #[test]
 fn media_event_xoff_deserialization() {
-    let json = r#"{"event": "MEDIA_XOFF"}"#;
+    let json = r#"{"event": "MEDIA_XOFF", "channel_id": "chan-1"}"#;
     let event: MediaEvent = serde_json::from_str(json).expect("deserialize MEDIA_XOFF");
-    assert!(matches!(event, MediaEvent::MediaXoff));
+    assert!(matches!(event, MediaEvent::MediaXoff { channel_id } if channel_id == "chan-1"));
 }
 
 #[test]
 fn media_event_status_deserialization() {
     let json = r#"{
         "event": "STATUS",
-        "channel": "WebSocket/ws-00000001",
-        "format": "ulaw",
-        "queue_size": 5,
-        "buffering_active": true,
+        "channel_id": "chan-1",
+        "queue_length": 5,
+        "xon_level": 400,
+        "xoff_level": 800,
+        "queue_full": false,
+        "bulk_media": true,
         "media_paused": false
     }"#;
     let event: MediaEvent = serde_json::from_str(json).expect("deserialize STATUS");
     match event {
         MediaEvent::Status {
-            channel,
-            format,
-            queue_size,
-            buffering_active,
+            channel_id,
+            queue_length,
+            xon_level,
+            xoff_level,
+            queue_full,
+            bulk_media,
             media_paused,
         } => {
-            assert_eq!(channel, "WebSocket/ws-00000001");
-            assert_eq!(format, "ulaw");
-            assert_eq!(queue_size, 5);
-            assert!(buffering_active);
+            assert_eq!(channel_id, "chan-1");
+            assert_eq!(queue_length, 5);
+            assert_eq!(xon_level, 400);
+            assert_eq!(xoff_level, 800);
+            assert!(!queue_full);
+            assert!(bulk_media);
             assert!(!media_paused);
         }
         other => panic!("expected Status, got {other:?}"),
@@ -2444,22 +2441,87 @@ fn media_event_status_deserialization() {
 
 #[test]
 fn media_event_buffering_completed_with_correlation() {
-    let json = r#"{"event": "MEDIA_BUFFERING_COMPLETED", "correlation_id": "req-42"}"#;
+    let json = r#"{"event": "MEDIA_BUFFERING_COMPLETED", "channel_id": "chan-1", "correlation_id": "req-42"}"#;
     let event: MediaEvent =
         serde_json::from_str(json).expect("deserialize MEDIA_BUFFERING_COMPLETED");
     match event {
-        MediaEvent::MediaBufferingCompleted { correlation_id } => {
-            assert_eq!(correlation_id.as_deref(), Some("req-42"));
+        MediaEvent::MediaBufferingCompleted {
+            channel_id,
+            correlation_id,
+        } => {
+            assert_eq!(channel_id, "chan-1");
+            assert_eq!(correlation_id, "req-42");
         }
         other => panic!("expected MediaBufferingCompleted, got {other:?}"),
     }
 }
 
 #[test]
+fn media_completion_events_preserve_empty_correlation_id() {
+    for json in [
+        r#"{"event":"MEDIA_BUFFERING_COMPLETED","channel_id":"chan-1","correlation_id":""}"#,
+        r#"{"event":"MEDIA_MARK_PROCESSED","channel_id":"chan-1","correlation_id":""}"#,
+    ] {
+        let event: MediaEvent = serde_json::from_str(json).expect("empty correlation is valid");
+        match event {
+            MediaEvent::MediaBufferingCompleted { correlation_id, .. }
+            | MediaEvent::MediaMarkProcessed { correlation_id, .. } => {
+                assert!(correlation_id.is_empty());
+            }
+            other => panic!("expected correlated completion event, got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn media_event_queue_drained_deserialization() {
-    let json = r#"{"event": "QUEUE_DRAINED"}"#;
+    let json = r#"{"event": "QUEUE_DRAINED", "channel_id": "chan-1"}"#;
     let event: MediaEvent = serde_json::from_str(json).expect("deserialize QUEUE_DRAINED");
-    assert!(matches!(event, MediaEvent::QueueDrained));
+    assert!(matches!(event, MediaEvent::QueueDrained { channel_id } if channel_id == "chan-1"));
+}
+
+#[test]
+fn media_event_error_deserialization() {
+    let json = r#"{"event": "ERROR", "channel_id": "chan-1", "error_text": "bad command"}"#;
+    let event: MediaEvent = serde_json::from_str(json).expect("deserialize ERROR");
+    assert!(matches!(
+        event,
+        MediaEvent::Error { channel_id, error_text }
+            if channel_id == "chan-1" && error_text == "bad command"
+    ));
+}
+
+#[test]
+fn media_event_requires_pinned_channel_id() {
+    let error = serde_json::from_str::<MediaEvent>(r#"{"event": "MEDIA_XOFF"}"#)
+        .expect_err("pinned JSON event fields must be required");
+    assert!(error.to_string().contains("channel_id"));
+}
+
+#[test]
+fn media_commands_serialize_pinned_parameters() {
+    let mark = serde_json::to_value(MediaCommand::MarkMedia {
+        correlation_id: Some("mark-1".into()),
+    })
+    .expect("serialize MARK_MEDIA");
+    assert_eq!(
+        mark,
+        serde_json::json!({
+            "command": "MARK_MEDIA",
+            "correlation_id": "mark-1"
+        })
+    );
+
+    for (direction, expected) in [
+        (MediaDirection::Both, "both"),
+        (MediaDirection::In, "in"),
+        (MediaDirection::Out, "out"),
+    ] {
+        let command = serde_json::to_value(MediaCommand::SetMediaDirection { direction })
+            .expect("serialize SET_MEDIA_DIRECTION");
+        assert_eq!(command["command"], "SET_MEDIA_DIRECTION");
+        assert_eq!(command["direction"], expected);
+    }
 }
 
 #[test]
@@ -2737,8 +2799,7 @@ fn config_default_transport_mode_is_http() {
 fn media_command_all_variants_serialize() {
     let variants: Vec<(MediaCommand, &str)> = vec![
         (MediaCommand::Answer, "ANSWER"),
-        (MediaCommand::Hangup { cause: None }, "HANGUP"),
-        (MediaCommand::Hangup { cause: Some(16) }, "HANGUP"),
+        (MediaCommand::Hangup, "HANGUP"),
         (MediaCommand::StartMediaBuffering, "START_MEDIA_BUFFERING"),
         (
             MediaCommand::StopMediaBuffering {
@@ -2749,9 +2810,20 @@ fn media_command_all_variants_serialize() {
         (MediaCommand::FlushMedia, "FLUSH_MEDIA"),
         (MediaCommand::PauseMedia, "PAUSE_MEDIA"),
         (MediaCommand::ContinueMedia, "CONTINUE_MEDIA"),
-        (MediaCommand::MarkMedia, "MARK_MEDIA"),
+        (
+            MediaCommand::MarkMedia {
+                correlation_id: Some("mark-1".into()),
+            },
+            "MARK_MEDIA",
+        ),
         (MediaCommand::GetStatus, "GET_STATUS"),
         (MediaCommand::ReportQueueDrained, "REPORT_QUEUE_DRAINED"),
+        (
+            MediaCommand::SetMediaDirection {
+                direction: MediaDirection::Both,
+            },
+            "SET_MEDIA_DIRECTION",
+        ),
     ];
 
     for (cmd, expected_tag) in variants {
@@ -2766,17 +2838,20 @@ fn media_command_all_variants_serialize() {
 
 #[test]
 fn media_event_mark_processed_deserialization() {
-    let input = r#"{"event": "MEDIA_MARK_PROCESSED"}"#;
+    let input =
+        r#"{"event": "MEDIA_MARK_PROCESSED", "channel_id": "chan-1", "correlation_id": "mark-1"}"#;
     let event: MediaEvent =
         serde_json::from_str(input).expect("should deserialize MEDIA_MARK_PROCESSED");
-    assert!(matches!(event, MediaEvent::MediaMarkProcessed));
+    assert!(
+        matches!(event, MediaEvent::MediaMarkProcessed { channel_id, correlation_id } if channel_id == "chan-1" && correlation_id == "mark-1")
+    );
 }
 
 #[test]
 fn media_event_xon_deserialization() {
-    let input = r#"{"event": "MEDIA_XON"}"#;
+    let input = r#"{"event": "MEDIA_XON", "channel_id": "chan-1"}"#;
     let event: MediaEvent = serde_json::from_str(input).expect("should deserialize MEDIA_XON");
-    assert!(matches!(event, MediaEvent::MediaXon));
+    assert!(matches!(event, MediaEvent::MediaXon { channel_id } if channel_id == "chan-1"));
 }
 
 #[test]

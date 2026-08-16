@@ -22,6 +22,59 @@ def fetch(url: str) -> bytes:
         return response.read()
 
 
+def c_function_body(source: str, name: str) -> str:
+    signature = re.search(rf"static [^\n]*\b{re.escape(name)}\s*\([^)]*\)\s*\{{", source)
+    if signature is None:
+        raise SystemExit(f"cannot locate pinned media function {name}")
+    start = source.find("{", signature.start())
+    depth = 0
+    for end in range(start, len(source)):
+        depth += (source[end] == "{") - (source[end] == "}")
+        if depth == 0:
+            return source[start : end + 1]
+    raise SystemExit(f"unterminated pinned media function {name}")
+
+
+def upstream_media_fields(
+    media: bytes, contract: dict[str, object]
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    source = media.decode("utf-8")
+    event_fields: dict[str, list[str]] = {}
+    for wire_name in contract["local"]["media_events"]:
+        macro = re.search(
+            rf"#define\s+_create_event_{re.escape(wire_name)}\([^\n]+_create_event_nodata",
+            source,
+        )
+        if macro is not None:
+            event_fields[wire_name] = ["channel_id"]
+            continue
+        body = c_function_body(source, f"_create_event_{wire_name}")
+        json_pack = re.search(r"ast_json_pack\((.*?)\);", body, re.DOTALL)
+        if json_pack is None:
+            raise SystemExit(f"pinned media event {wire_name} has no JSON contract")
+        keys = re.findall(r'^\s*"([a-z][a-z0-9_]*)"\s*,', json_pack.group(1), re.MULTILINE)
+        event_fields[wire_name] = sorted(key for key in keys if key != "event")
+
+    defines = dict(re.findall(r'^#define\s+([A-Z0-9_]+)\s+"([A-Z_]+)"', source, re.MULTILINE))
+    command_fields: dict[str, list[str]] = {}
+    handle = c_function_body(source, "handle_command")
+    for wire_name in contract["local"]["media_commands"]:
+        constants = [name for name, value in defines.items() if value == wire_name]
+        if len(constants) != 1:
+            raise SystemExit(f"cannot map pinned media command {wire_name} to one constant")
+        branch = re.search(
+            rf"ast_strings_equal\(command,\s*{re.escape(constants[0])}\)\)(.*?)(?=\n\s*\}} else if|\n\s*\}} else \{{)",
+            handle,
+            re.DOTALL,
+        )
+        if branch is None:
+            raise SystemExit(f"cannot locate pinned media command branch {wire_name}")
+        command_fields[wire_name] = sorted(
+            set(re.findall(r'ast_json_object_string_get\(json,\s*"([a-z_]+)"\)', branch.group(1)))
+        )
+    return event_fields, command_fields
+
+
 def verify_upstream(contract: dict[str, object], upstream: dict[str, object]) -> None:
     source = contract["source"]
     commit = source["commit"]
@@ -56,6 +109,18 @@ def verify_upstream(contract: dict[str, object], upstream: dict[str, object]) ->
             f"expected {source['chan_websocket_sha256']}, got {media_digest}"
         )
 
+    event_fields, command_fields = upstream_media_fields(media, contract)
+    if event_fields != contract["local"]["media_event_fields"]:
+        raise SystemExit(
+            f"pinned media event fields drift: expected {contract['local']['media_event_fields']}, "
+            f"got {event_fields}"
+        )
+    if command_fields != contract["local"]["media_command_fields"]:
+        raise SystemExit(
+            f"pinned media command fields drift: expected {contract['local']['media_command_fields']}, "
+            f"got {command_fields}"
+        )
+
     generated = {
         "upstream_routes": sorted(
             generated_routes,
@@ -85,6 +150,21 @@ def explicit_wire_names(source: str, enum_name: str) -> set[str]:
             f"variants={sorted(variants)}, renamed={sorted(renamed_variants)}"
         )
     return wire_names
+
+
+def explicit_wire_fields(source: str, enum_name: str) -> dict[str, list[str]]:
+    contracts: dict[str, list[str]] = {}
+    pattern = re.compile(
+        r'#\[serde\(rename\s*=\s*"([A-Z_]+)"\)\]\s*'
+        r'[A-Z][A-Za-z0-9_]*\s*(?:\{(.*?)\}|,)',
+        re.DOTALL,
+    )
+    for wire_name, body in pattern.findall(source):
+        fields = re.findall(r"\b([a-z][a-z0-9_]*)\s*:", body)
+        contracts[wire_name] = sorted(fields)
+    if len(contracts) != len(pattern.findall(source)):
+        raise SystemExit(f"{enum_name} wire field names must be unique")
+    return contracts
 
 
 def enum_source(source: str, name: str, next_name: str) -> str:
@@ -250,7 +330,7 @@ def main() -> None:
     media = (ROOT / "crates/asterisk-rs-ari/src/media.rs").read_text(encoding="utf-8")
     local_names = {
         "media_events": explicit_wire_names(
-            enum_source(media, "MediaEvent", "MediaCommand"), "MediaEvent"
+            enum_source(media, "MediaEvent", "MediaDirection"), "MediaEvent"
         ),
         "media_commands": explicit_wire_names(
             enum_source(media, "MediaCommand", "InternalCmd"), "MediaCommand"
@@ -262,6 +342,19 @@ def main() -> None:
             raise SystemExit(
                 f"{category} drift: expected {sorted(expected)}, got {sorted(actual)}"
             )
+
+    local_fields = {
+        "media_event_fields": explicit_wire_fields(
+            enum_source(media, "MediaEvent", "MediaDirection"), "MediaEvent"
+        ),
+        "media_command_fields": explicit_wire_fields(
+            enum_source(media, "MediaCommand", "InternalCmd"), "MediaCommand"
+        ),
+    }
+    for category, actual in local_fields.items():
+        expected = contract["local"][category]
+        if actual != expected:
+            raise SystemExit(f"{category} drift: expected {expected}, got {actual}")
 
     print("pinned Asterisk 22.9.0 contract and local coverage are valid")
 

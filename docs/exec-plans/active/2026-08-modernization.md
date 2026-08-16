@@ -102,8 +102,20 @@ is either a green local harness commit or a concrete authority/external-state bl
   Asterisk was not rerun because this slice changes malformed-wire classification without issuing a
   PBX operation; the final plan-wide live gate remains required. The same frozen gate exposed and
   repaired the user-authorized harness routing/checker drift, committed separately as `7189c67`.
-- [ ] 2026-08-17: continue Slice 1 by completing the media JSON contract against the pin and
-  reconciling the remaining model/API compatibility items against existing source and tests.
+- [x] 2026-08-17: completed the field-level chan_websocket JSON contract against pinned Asterisk
+  `22.9.0`. Media events now carry the exact upstream channel identity, DTMF, queue watermark/full,
+  bulk/pause, correlation, and `ERROR` fields; commands now model parameterless `HANGUP`, correlated
+  `MARK_MEDIA`, and typed `SET_MEDIA_DIRECTION`. The offline checker compares Rust names and fields
+  to the manifest, while `just protocol-contracts-upstream` derives the same field maps from the
+  fetched pinned C constructors/branches after digest verification. A reviewer correctly identified
+  that the first verifier compared only two local representations; this was repaired. Its claim that
+  completion correlations must be optional was rejected from pinned source evidence: JSON mode
+  always emits `correlation_id`, using the empty string when omitted, now covered by regression proof.
+  Final fresh review found no actionable defect. Frozen proof passed `just ci`, `just msrv`,
+  `just semver`, 965 current/MSRV unit tests, and 252 current/MSRV mock tests. Live media proof remains
+  part of the final isolated-Asterisk gate because this slice defines real chan_websocket behavior.
+- [ ] 2026-08-17: finish Slice 1 by recording the compatibility boundary, downstream compile
+  fixtures, and remaining future-facing model construction policy.
 
 ## Surprises and discoveries
 
@@ -254,9 +266,9 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
 
 - [ ] Support both default plaintext and JSON control formats, or make JSON an explicit construction
   contract and carry `data`/`transport_data=f(json)` through external-media creation.
-- [ ] Match every official JSON event: channel IDs, DTMF, queue length/watermarks/full state, bulk and
+- [x] Match every official JSON event: channel IDs, DTMF, queue length/watermarks/full state, bulk and
   pause state, buffering/mark correlation, and queue-drained identity.
-- [ ] Match every command: parameterless HANGUP, correlated MARK_MEDIA, STOP buffering correlation,
+- [x] Match every command: parameterless HANGUP, correlated MARK_MEDIA, STOP buffering correlation,
   typed SET_MEDIA_DIRECTION, and documented passthrough restrictions.
 - [ ] Remove full payload logging; log allowlisted event types, IDs, and byte counts only.
 - [ ] Redact AMI secrets and PIN-bearing fields from Debug/serialization, minimize credential copies,

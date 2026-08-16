@@ -36,40 +36,62 @@ pub enum MediaEvent {
 
     /// DTMF digit completed on the channel
     #[serde(rename = "DTMF_END")]
-    DtmfEnd { digit: String, duration_ms: u32 },
+    DtmfEnd { channel_id: String, digit: String },
 
     /// stop sending media — Asterisk buffer is full
     #[serde(rename = "MEDIA_XOFF")]
-    MediaXoff,
+    MediaXoff { channel_id: String },
 
     /// resume sending media — Asterisk buffer drained
     #[serde(rename = "MEDIA_XON")]
-    MediaXon,
+    MediaXon { channel_id: String },
 
     /// channel status response to a GetStatus command
     #[serde(rename = "STATUS")]
     Status {
-        channel: String,
-        format: String,
-        queue_size: u32,
-        buffering_active: bool,
+        channel_id: String,
+        queue_length: u32,
+        xon_level: u32,
+        xoff_level: u32,
+        queue_full: bool,
+        bulk_media: bool,
         media_paused: bool,
     },
 
     /// buffering mode completed, optional correlation_id ties to the stop request
     #[serde(rename = "MEDIA_BUFFERING_COMPLETED")]
     MediaBufferingCompleted {
-        #[serde(default)]
-        correlation_id: Option<String>,
+        channel_id: String,
+        correlation_id: String,
     },
 
     /// a previously inserted mark point has been processed
     #[serde(rename = "MEDIA_MARK_PROCESSED")]
-    MediaMarkProcessed,
+    MediaMarkProcessed {
+        channel_id: String,
+        correlation_id: String,
+    },
 
     /// all queued media has been sent to the channel
     #[serde(rename = "QUEUE_DRAINED")]
-    QueueDrained,
+    QueueDrained { channel_id: String },
+
+    /// Asterisk rejected a media control command
+    #[serde(rename = "ERROR")]
+    Error {
+        channel_id: String,
+        error_text: String,
+    },
+}
+
+/// media flow direction selected by `SET_MEDIA_DIRECTION`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum MediaDirection {
+    Both,
+    In,
+    Out,
 }
 
 /// commands sent to Asterisk over the media websocket
@@ -83,10 +105,7 @@ pub enum MediaCommand {
 
     /// hang up the channel with an optional cause code
     #[serde(rename = "HANGUP")]
-    Hangup {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        cause: Option<u32>,
-    },
+    Hangup,
 
     /// start buffering mode — assembles full frames across messages
     #[serde(rename = "START_MEDIA_BUFFERING")]
@@ -113,7 +132,10 @@ pub enum MediaCommand {
 
     /// insert a marker in the frame queue
     #[serde(rename = "MARK_MEDIA")]
-    MarkMedia,
+    MarkMedia {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        correlation_id: Option<String>,
+    },
 
     /// request channel status
     #[serde(rename = "GET_STATUS")]
@@ -122,6 +144,10 @@ pub enum MediaCommand {
     /// request notification when the media queue is empty
     #[serde(rename = "REPORT_QUEUE_DRAINED")]
     ReportQueueDrained,
+
+    /// select bidirectional, inbound, or outbound media flow
+    #[serde(rename = "SET_MEDIA_DIRECTION")]
+    SetMediaDirection { direction: MediaDirection },
 }
 
 /// internal command sent to the background task
@@ -283,9 +309,9 @@ impl MediaChannel {
         self.send_command(MediaCommand::Answer).await
     }
 
-    /// hang up the channel with an optional cause code
-    pub async fn hangup(&self, cause: Option<u32>) -> Result<()> {
-        self.send_command(MediaCommand::Hangup { cause }).await
+    /// hang up the channel
+    pub async fn hangup(&self) -> Result<()> {
+        self.send_command(MediaCommand::Hangup).await
     }
 
     /// start media buffering mode
@@ -315,8 +341,9 @@ impl MediaChannel {
     }
 
     /// insert a marker in the frame queue
-    pub async fn mark(&self) -> Result<()> {
-        self.send_command(MediaCommand::MarkMedia).await
+    pub async fn mark(&self, correlation_id: Option<String>) -> Result<()> {
+        self.send_command(MediaCommand::MarkMedia { correlation_id })
+            .await
     }
 
     /// request channel status
@@ -327,6 +354,12 @@ impl MediaChannel {
     /// request notification when the media queue is empty
     pub async fn report_queue_drained(&self) -> Result<()> {
         self.send_command(MediaCommand::ReportQueueDrained).await
+    }
+
+    /// select the media flow direction
+    pub async fn set_media_direction(&self, direction: MediaDirection) -> Result<()> {
+        self.send_command(MediaCommand::SetMediaDirection { direction })
+            .await
     }
 
     /// shut down the connection
@@ -352,7 +385,9 @@ impl Drop for MediaChannel {
 fn is_critical_event(event: &MediaEvent) -> bool {
     matches!(
         event,
-        MediaEvent::MediaStart { .. } | MediaEvent::MediaBufferingCompleted { .. }
+        MediaEvent::MediaStart { .. }
+            | MediaEvent::MediaBufferingCompleted { .. }
+            | MediaEvent::Error { .. }
     )
 }
 

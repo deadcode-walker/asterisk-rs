@@ -22,6 +22,13 @@ unknown ARI events must retain their type and raw payload so applications remain
 Changing a route, model, or media command requires updating implementation, external behavior tests,
 the manifest, and this reference in one slice.
 
+The manifest also records every JSON media event and command field. The offline checker derives the
+Rust field maps and compares them exactly; the online verifier binds those maps to the pinned
+`chan_websocket.c` digest. Events include their upstream `channel_id`, status queue watermarks/full
+state, bulk-media state, correlation IDs, and `ERROR` payloads. Commands include correlated marks and
+the three `SET_MEDIA_DIRECTION` values. Fields that the pinned driver does not consume, such as a
+JSON `HANGUP` cause, are not emitted.
+
 The upstream media driver defaults to plaintext control messages. JSON control is selected through
 the external-media `transport_data=f(json)` contract. JSON-only commands and correlated events must
 therefore never be exposed as though they worked on an unspecified/default connection.

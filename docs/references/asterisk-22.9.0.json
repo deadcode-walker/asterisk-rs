@@ -27,11 +27,36 @@
     ],
     "media_commands": [
       "ANSWER", "CONTINUE_MEDIA", "FLUSH_MEDIA", "GET_STATUS", "HANGUP", "MARK_MEDIA",
-      "PAUSE_MEDIA", "REPORT_QUEUE_DRAINED", "START_MEDIA_BUFFERING", "STOP_MEDIA_BUFFERING"
+      "PAUSE_MEDIA", "REPORT_QUEUE_DRAINED", "SET_MEDIA_DIRECTION", "START_MEDIA_BUFFERING",
+      "STOP_MEDIA_BUFFERING"
     ],
     "media_events": [
-      "DTMF_END", "MEDIA_BUFFERING_COMPLETED", "MEDIA_MARK_PROCESSED", "MEDIA_START", "MEDIA_XOFF",
-      "MEDIA_XON", "QUEUE_DRAINED", "STATUS"
-    ]
+      "DTMF_END", "ERROR", "MEDIA_BUFFERING_COMPLETED", "MEDIA_MARK_PROCESSED", "MEDIA_START",
+      "MEDIA_XOFF", "MEDIA_XON", "QUEUE_DRAINED", "STATUS"
+    ],
+    "media_command_fields": {
+      "ANSWER": [],
+      "CONTINUE_MEDIA": [],
+      "FLUSH_MEDIA": [],
+      "GET_STATUS": [],
+      "HANGUP": [],
+      "MARK_MEDIA": ["correlation_id"],
+      "PAUSE_MEDIA": [],
+      "REPORT_QUEUE_DRAINED": [],
+      "SET_MEDIA_DIRECTION": ["direction"],
+      "START_MEDIA_BUFFERING": [],
+      "STOP_MEDIA_BUFFERING": ["correlation_id"]
+    },
+    "media_event_fields": {
+      "DTMF_END": ["channel_id", "digit"],
+      "ERROR": ["channel_id", "error_text"],
+      "MEDIA_BUFFERING_COMPLETED": ["channel_id", "correlation_id"],
+      "MEDIA_MARK_PROCESSED": ["channel_id", "correlation_id"],
+      "MEDIA_START": ["channel", "channel_id", "channel_variables", "connection_id", "format", "optimal_frame_size", "ptime"],
+      "MEDIA_XOFF": ["channel_id"],
+      "MEDIA_XON": ["channel_id"],
+      "QUEUE_DRAINED": ["channel_id"],
+      "STATUS": ["bulk_media", "channel_id", "media_paused", "queue_full", "queue_length", "xoff_level", "xon_level"]
+    }
   }
 }
