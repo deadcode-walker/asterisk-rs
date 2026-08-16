@@ -1,5 +1,9 @@
 # Repository harness and modernization
 
+Governing execution contract: [`docs/PLANS.md`](../../PLANS.md). Before resuming this plan, reload
+the active instruction chain and governing contract, verify the current tree and assumptions, then
+continue from the recorded evidence.
+
 ## Purpose and non-goals
 
 Replace stale repository guidance and unsafe automation, correct the protocol and lifecycle defects
@@ -70,7 +74,10 @@ is either a green local harness commit or a concrete authority/external-state bl
   without delegates or reviewers. `just ci` passed with 949 unit tests and 252 mock tests, plus
   formatting, strict Clippy, feature, supply-chain, documentation, harness, and workflow gates. Live
   Asterisk was not rerun because no Rust, protocol, fixture, or runtime behavior changed. The local
-  commit enclosing this item is the recoverable checkpoint.
+  commit enclosing this item is the recoverable checkpoint. The exact candidate was revalidated on
+  resume with `just ci`: 949 unit tests and 252 mock tests passed together with formatting, strict
+  Clippy, workspace/feature gates, supply-chain, generated documentation, harness, workflows, and
+  typo checks.
 
 ## Surprises and discoveries
 

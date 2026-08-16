@@ -20,6 +20,20 @@ verify the tree and external assumptions, and continue from evidence.
 Use a persistent product Goal only when the user or controlling workflow explicitly requests one.
 The checked-in plan remains the portable repository recovery authority.
 
+Before creating or resuming a checked-in ExecPlan, invoke
+`$harness-engineering:load-harness-context` when available, then read this contract and the selected
+active plan before the first implementation mutation. If unavailable, the same local read order is
+mandatory.
+
+### Execution capability selection
+
+At each context boundary, consider the execution surfaces available in the current environment and
+choose the smallest one that preserves context, exclusive ownership, and acceptance evidence. Use
+`codex exec` only for an intentionally fresh, bounded non-interactive worker or review; inspect
+`codex exec --help` first and declare its working root, sandbox/approval boundary, result contract,
+budget, and exclusive write ownership. Do not nest it merely to continue the same coherent task,
+bypass repository authority, or overlap another worker's writes.
+
 ## Required living sections
 
 Every active plan uses these exact H2 sections:

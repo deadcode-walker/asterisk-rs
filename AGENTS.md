@@ -1,7 +1,9 @@
 # Repository guidelines
 
-This is the routing and execution contract for asterisk-rs. Keep durable detail in its canonical
-owner.
+This is asterisk-rs's routing contract; durable detail belongs in its canonical owner. This
+repository declares Harness Engineering. Before nontrivial work, invoke
+`$harness-engineering:load-harness-context`. Do not mutate until it selects context, execution
+surface, and authority; if unavailable, use the local routes below.
 
 ## Start here
 
@@ -10,25 +12,23 @@ owner.
 2. Read [ARCHITECTURE.md](ARCHITECTURE.md) for useful paths, ownership, dependency direction,
    toolchain authority, and deliberate absences.
 3. Use [docs/README.md](docs/README.md) to find other canonical knowledge.
-4. For complex, risky, discovery-heavy, or multi-session work, follow
-   [docs/PLANS.md](docs/PLANS.md) and maintain the single applicable active plan.
+4. Before creating or resuming a checked-in ExecPlan, read [docs/PLANS.md](docs/PLANS.md) and the
+   selected active plan before mutation.
 
-Run `just --list` for the command facade. Use `just test <filter>` for focused evidence, `just check`
-while iterating, `just ci` on a frozen candidate, `just msrv` for Rust 1.86 compatibility,
-`just semver` for public API changes, `just docs` for generated/public documentation, and `just live`
-only against an explicitly selected isolated Asterisk instance.
+Run `just --list` for the command map. Use `just test <filter>` for focused evidence, `just check`
+while iterating, `just ci` when frozen, `just msrv` for Rust 1.86, `just semver` for public API
+changes, `just docs` for documentation, and `just live` only against an explicitly selected isolated
+Asterisk instance.
 
 ## Execute to the outcome
 
-Inspect Git state and preserve unrelated work. Establish the baseline, trace one complete useful
-path, change the smallest causal owner, and delete the replaced path. Run the cheapest representative
-proof while iterating; then freeze one candidate, inspect its exact diff, run the applicable complete
-gate, and obtain fresh read-only review unless the user explicitly changes that requirement.
+Inspect Git and preserve unrelated work. Establish the baseline, trace one useful path, change the
+smallest causal owner, and delete the replaced path. Iterate with the cheapest proof; then freeze one
+candidate, inspect its diff, run the complete gate, and obtain fresh read-only review unless waived.
 
-Continue through ordinary diagnosis, re-planning, repair, and review response while authority holds.
-When evidence stops improving, exit the tactic, record the contradicted assumption, preserve the best
-candidate, choose a materially different action, and resume. Time, token, retry, tool, and concurrency
-ceilings end one work cycle, not the objective.
+Continue diagnosis, re-planning, repair, and review response while authority holds. When evidence
+stagnates, exit the tactic, record the contradicted assumption, preserve the best candidate, choose
+a materially different action, and resume. Budgets end one work cycle, not the objective.
 
 Before compaction, handoff, a fresh session, or delegation, persist the outcome, exact tree,
 decisions, evidence, risks, authority, and next action in the active plan or repository.
