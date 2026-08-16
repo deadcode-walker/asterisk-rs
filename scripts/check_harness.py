@@ -46,17 +46,41 @@ EXPECTED_INDEX_TARGETS = {
     "SECURITY.md",
     "crates/*/CHANGELOG.md",
 }
-PLAN_HEADINGS = {
-    "Purpose and scope",
+PLAN_HEADINGS = (
+    "Purpose and non-goals",
+    "Authority and side effects",
     "Progress",
     "Surprises and discoveries",
     "Decision log",
     "Context and orientation",
-    "Plan of work",
+    "Milestones",
     "Concrete steps",
     "Validation and acceptance",
     "Idempotence and recovery",
+    "Interfaces and dependencies",
     "Outcomes and retrospective",
+)
+REQUIRED_H2_HEADINGS = {
+    "AGENTS.md": ("Start here", "Execute to the outcome", "Boundaries"),
+    "ARCHITECTURE.md": (
+        "System and useful path",
+        "Code map and ownership",
+        "Dependency and cross-cutting boundaries",
+        "Toolchain and evidence authority",
+        "Deliberate absences and freshness",
+    ),
+    "docs/PLANS.md": (
+        "Context and state contract",
+        "Required living sections",
+        "Required execution sections",
+        "Execution policy",
+    ),
+    "docs/README.md": (
+        "Current documents",
+        "Create a category with its first fact",
+        "Documentation and changelog workflow",
+        "Maintenance",
+    ),
 }
 DEPENDENCY_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
 REFERENCE_DEFINITION = re.compile(
@@ -238,9 +262,9 @@ def normalized_repository_target(source: Path, target: str) -> str | None:
 def canonical_index_targets(text: str, errors: list[str]) -> set[str]:
     source = ROOT / "docs/README.md"
     targets: set[str] = set()
-    section = markdown_h2_section(text, "Canonical owners")
+    section = markdown_h2_section(text, "Current documents")
     if not section:
-        errors.append("docs/README.md is missing exact H2 section: Canonical owners")
+        errors.append("docs/README.md is missing exact H2 section: Current documents")
         return targets
     section_start = text.find(section)
     first_line = text.count("\n", 0, section_start) + 1
@@ -249,7 +273,7 @@ def canonical_index_targets(text: str, errors: list[str]) -> set[str]:
         if not line.startswith("|") or line.startswith("|---"):
             continue
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if cells[0] == "Location":
+        if cells[0] in {"Location", "Document"}:
             continue
         if len(cells) != 5 or any(not cell for cell in cells):
             errors.append(
@@ -321,12 +345,12 @@ def indexed_markdown_files(targets: set[str]) -> set[str]:
     return files
 
 
-def second_level_headings(text: str) -> set[str]:
-    return {
+def second_level_headings(text: str) -> list[str]:
+    return [
         match.group(1).strip()
         for line in without_fenced_code(text).splitlines()
         if (match := re.match(r"^##\s+(.+?)\s*$", line))
-    }
+    ]
 
 
 def iter_dependency_tables(manifest: dict) -> Iterator[tuple[str, dict]]:
@@ -612,6 +636,17 @@ def main() -> int:
                 f"AGENTS.md has {agents_words} words; keep the root routing map between 200 and 400"
             )
 
+    for relative, expected_headings in REQUIRED_H2_HEADINGS.items():
+        text = texts.get(relative)
+        if text is None:
+            continue
+        headings = second_level_headings(text)
+        if headings != list(expected_headings):
+            errors.append(
+                f"{relative} H2 sections must be exactly {list(expected_headings)!r}; "
+                f"found {headings!r}"
+            )
+
     guides: list[Path] = []
     for directory, child_directories, files in os.walk(ROOT):
         child_directories[:] = [
@@ -651,8 +686,11 @@ def main() -> int:
                 f"active ExecPlan is not indexed exactly in docs/README.md: {active_relative}"
             )
         headings = second_level_headings(active_plans[0].read_text(encoding="utf-8"))
-        for heading in sorted(PLAN_HEADINGS - headings):
-            errors.append(f"{active_relative} is missing exact H2 section: {heading}")
+        if headings != list(PLAN_HEADINGS):
+            errors.append(
+                f"{active_relative} H2 sections must be exactly {list(PLAN_HEADINGS)!r}; "
+                f"found {headings!r}"
+            )
 
     for relative in sorted(indexed_markdown_files(index_targets)):
         errors.extend(local_link_errors(relative))

@@ -1,30 +1,57 @@
 # Execution plans
 
-Use a checked-in ExecPlan for work that is complex, risky, multi-session, or depends on discoveries.
-Small work uses an in-session plan. Keep one applicable plan under `exec-plans/active/`; move it to
-`completed/` only after its outcome is proved.
+Use a checked-in ExecPlan only when work is complex, risky, discovery-heavy, or likely to cross
+contexts. Small changes use an in-session plan. Keep one applicable plan under `exec-plans/active/`;
+move it to `exec-plans/completed/` only after observable acceptance is proved.
 
-Before work begins, record the outcome, non-goals, granted authority, baseline, material assumptions,
-side effects, and acceptance-to-evidence map. Every plan remains self-contained for a newcomer with
-only the current tree and uses these maintained sections:
+An ExecPlan is a self-contained living document for a capable agent that has the current tree but no
+private chat history. It defines repository-specific terms, names exact owners and commands, and ends
+in demonstrably working behavior rather than source shape or activity counts.
 
-- Purpose and scope
-- Progress with timestamps and exact tree identities at checkpoints
-- Surprises and discoveries
-- Decision log, including rejected alternatives
-- Context and orientation
-- Plan of work
-- Concrete steps
-- Validation and acceptance
-- Idempotence and recovery
-- Outcomes and retrospective
+## Context and state contract
 
-At every material stopping point, persist the current objective, authority, exact tree, decisions,
-evidence, risks, and next action. A process exit, elapsed time, changed-line count, subcheck green, or
-review request is not completion. Freeze the best candidate, run the applicable complete gate once,
-and bind fresh review to that exact tree. Later changes receive proportionate fresh proof.
+Durable state and visible model context are different. A compacted thread continues but may lose
+detail; a new session, worker, or subagent receives only its supplied instructions and explicitly
+loaded artifacts. Before compaction, delegation, controller restart, deliberate fresh context, or a
+material stopping point, update the plan with the objective, exact candidate, decisions, evidence,
+risks, authority, blocker status, and next action. On resume, reload the instruction chain and plan,
+verify the tree and external assumptions, and continue from evidence.
 
-If evidence stagnates, an assumption fails, scope grows, or the verifier cannot prove acceptance,
-stop that tactic, identify the first contradicted assumption, update the plan, and continue with a
-materially different action. Ask the user only for new authority, unavailable external state, or an
-unresolved choice that materially changes the outcome.
+Use a persistent product Goal only when the user or controlling workflow explicitly requests one.
+The checked-in plan remains the portable repository recovery authority.
+
+## Required living sections
+
+Every active plan uses these exact H2 sections:
+
+- **Purpose and non-goals:** what becomes possible, for whom, and what remains outside scope.
+- **Authority and side effects:** permitted writes/effects, explicit prohibitions, approvals, and rollback.
+- **Progress:** timestamped results, exact tree identities, evidence, partial state, and next action.
+- **Surprises and discoveries:** unexpected facts with concise evidence.
+- **Decision log:** each consequential choice, rationale, date, and owner.
+- **Outcomes and retrospective:** achieved acceptance, remaining gaps, and reusable lessons.
+
+## Required execution sections
+
+- **Context and orientation:** architecture, affected owners, baseline, terms, and assumptions.
+- **Milestones:** coherent slices that each end in an independently observable result.
+- **Concrete steps:** exact commands, working directories, and short expected evidence.
+- **Validation and acceptance:** criteria mapped to focused checks, complete gates, or runtime
+  journeys; say why a proof is not applicable instead of inventing it.
+- **Idempotence and recovery:** safe retry, best candidate, partial-failure cleanup, and rollback.
+- **Interfaces and dependencies:** required public contracts and why each dependency exists.
+
+## Execution policy
+
+Work one smallest coherent outcome at a time: prove the baseline, change one causal owner, run the
+cheapest representative evidence, inspect the diff, and update the plan. Continue without asking for
+routine next steps while the next action remains authorized.
+
+Exit the tactic when a failure recurs without new evidence, an assumption is contradicted, scope
+grows, the verifier cannot prove acceptance, or the candidate regresses. Record the first
+unrecoverable step, choose a materially different action, preserve the best candidate, and continue.
+
+Each unattended cycle records external wall-clock, tool, retry, and concurrency ceilings plus an
+explicit terminal reason. These bounds stop one cycle, not the objective. Complete only when
+acceptance is proved. Report blocked only when progress requires new authority, unavailable external
+state, or an unresolved outcome-changing decision.

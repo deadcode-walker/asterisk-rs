@@ -1,7 +1,7 @@
 # asterisk-rs harness decision brief
 
-Status: approved by repository owner direction and refreshed against the repository plus Harness
-Engineering policy on 2026-08-16.
+Status: approved by repository owner direction and refreshed against the repository plus the complete
+owner-supplied Harness Engineering source set on 2026-08-17.
 
 ## Outcome
 
@@ -109,6 +109,11 @@ exchange, and ARI REST/WebSocket resource lifecycle.
 13. Keep documentation public and repository-local. Public behavior is owned by code, rustdoc, and
     the mdBook; generated references have one checked generator. release-plz owns package changelogs
     and the umbrella release body, while ordinary changes own same-slice guides and migration notes.
+14. Adopt the Harness Engineering assets as semantic structures populated with verified repository
+    facts: a short routing guide, useful-path architecture map, canonical knowledge index, and
+    recoverable execution-plan contract. Complex cycles persist exact state and explicit resource
+    ceilings. Optional browser, plugin, telemetry, evaluator, orchestration, or controller surfaces
+    are added only after the corresponding application boundary or observed failure exists.
 
 ## Alternatives rejected
 

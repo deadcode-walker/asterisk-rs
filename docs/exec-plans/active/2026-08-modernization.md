@@ -1,6 +1,6 @@
 # Repository harness and modernization
 
-## Purpose and scope
+## Purpose and non-goals
 
 Replace stale repository guidance and unsafe automation, correct the protocol and lifecycle defects
 found by the ground-up review, establish an intentional 0.8 compatibility boundary, and leave
@@ -12,12 +12,23 @@ is silently dropped because it was low severity or duplicated another report.
 
 The non-goals are replacing Cargo with Bazel, adding infrastructure without a measured gap, claiming
 mock proof as Asterisk proof, or treating local completion as authority to mutate GitHub or publish.
-The repository owner authorized local implementation, verification, review response, and coherent
-commits. Push, issue/PR closure, repository settings, merge, and release remain explicit later gates.
-The current recoverable baseline is commit `8b3c31a`, four commits ahead of `origin/main`; later
-checkpoint identities are recorded below. Material assumptions are that Cargo remains the published
-graph, Asterisk 22 remains the owned live fixture, and the external GitHub state must be re-read before
-it is changed.
+The current recoverable baseline for this correction is commit
+`ea8875b298c89bd8b6fb7ae6f54f6572f41616c6`; later checkpoint identities are recorded below.
+Material assumptions are that Cargo remains the published graph, Asterisk 22 remains the owned live
+fixture, and the external GitHub state must be re-read before it is changed.
+
+## Authority and side effects
+
+The repository owner authorized local implementation, verification, documentation updates, and a
+coherent local commit. Push, issue/PR closure, repository settings, merge, release, deployment, and
+live-system mutation remain explicit later gates. For the 2026-08-17 harness correction, the owner
+explicitly waived delegates and fresh reviewers; the main agent owns the source comparison,
+mechanical gates, exact-diff inspection, and commit.
+
+This interactive correction cycle has one implementation owner, no delegate concurrency, no blind
+retry loop, and one complete-gate attempt after focused proof. A failed gate ends the tactic: record
+the first causal failure, repair it if it remains within authority, and refreeze. The terminal reason
+is either a green local harness commit or a concrete authority/external-state blocker.
 
 ## Progress
 
@@ -53,6 +64,13 @@ it is changed.
   Live Asterisk was not rerun because this slice changes only repository knowledge and enforcement.
   No GitHub state changed. When the owner resumes work, the selected next scope is the remaining
   Slice 1 compatibility and pinned-protocol contracts; it stays stopped until that instruction.
+- [x] 2026-08-17: corrected the migration against every owner-supplied harness asset and reference,
+  replaced the four semantic owners with repository-specific forms of the source contract, updated
+  the active-plan schema and checker, ran the applicable complete gate, and inspected the exact diff
+  without delegates or reviewers. `just ci` passed with 949 unit tests and 252 mock tests, plus
+  formatting, strict Clippy, feature, supply-chain, documentation, harness, and workflow gates. Live
+  Asterisk was not rerun because no Rust, protocol, fixture, or runtime behavior changed. The local
+  commit enclosing this item is the recoverable checkpoint.
 
 ## Surprises and discoveries
 
@@ -71,6 +89,12 @@ known advisory remained in the graph, but the candidate was blocked by these fin
 - CI that can merge failed security, reports coverage without running the external behavior suite,
   and can publish an unverified manually selected branch with long-lived secrets.
 - public API changes that require a deliberate 0.8 release rather than an accidental 0.7 patch.
+
+The 2026-08-17 correction found a separate harness-process defect: the earlier migration followed
+selective progressive disclosure even though the owner's acceptance boundary explicitly named every
+asset and reference. The cache was current; the first causal error was incomplete source loading,
+followed by a checker that still accepted the former ten-section plan contract. The correction uses
+all named sources while retaining only verified repository facts and applicable optional machinery.
 
 ## Decision log
 
@@ -108,6 +132,11 @@ known advisory remained in the graph, but the candidate was blocked by these fin
 - The refreshed harness skill does not justify a new scaffold: the required semantic owners already
   exist. Migrate them in place, remove the empty generic `docs/generated/` placeholder, and keep
   release-plz as the sole changelog owner.
+- The owner-supplied assets define the semantic structure for the four existing owners; they are not
+  copied as generic template prose. Repository evidence supplies every fact. Optional plugin,
+  browser, telemetry, evaluator, and controller surfaces remain absent without a real trigger.
+- This correction is performed by the main agent alone. The explicit no-review instruction overrides
+  the normal fresh-review step for this slice only; later modernization slices retain it.
 
 ## Context and orientation
 
@@ -118,7 +147,7 @@ decisions and recovery state live under `docs/`. External tests are in the `test
 as the default boundary and the Compose-managed Asterisk instance as live proof. Start each slice from
 the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest representative test.
 
-## Plan of work
+## Milestones
 
 ### Slice 0: normalize and restore the proof baseline
 
@@ -299,9 +328,10 @@ For each remaining slice, inspect `git status`, record its outcome and non-goals
 complete path from `ARCHITECTURE.md`, and iterate with `just test <filter>` followed by `just check`.
 When the candidate is frozen, record `git rev-parse HEAD` plus the working-tree diff identity, run
 `just ci`, run `just live` when the repository owns the required service, inspect the exact diff, and
-request fresh read-only review. Address valid findings and rerun affected proof. Commit a coherent
-green slice only after the review is clean. Re-read external GitHub state immediately before any
-later authorized push, settings change, closure, merge, or release action.
+request fresh read-only review unless the owner explicitly overrides it. Address valid findings and
+rerun affected proof. Commit a coherent green slice after its required evidence is clean. Re-read
+external GitHub state immediately before any later authorized push, settings change, closure, merge,
+or release action.
 
 ## Validation and acceptance
 
@@ -311,7 +341,8 @@ No slice is complete because code exists. A slice is complete only when:
 2. formatting and strict Clippy pass on the changed targets;
 3. exact Rust 1.86 compilation still passes;
 4. the integrated deterministic suite remains green;
-5. the exact diff receives a fresh independent review and all valid findings are resolved;
+5. the exact diff receives a fresh independent review and all valid findings are resolved, unless
+   the owner explicitly waives review for that slice;
 6. public/API changes have semver and downstream-fixture evidence;
 7. protocol changes have pinned-fixture proof and live proof where the repository owns the service.
 
@@ -326,6 +357,15 @@ failure, and cancellation. Commits remain small enough to diagnose and fix forwa
 change only after the replacement workflow is green so branch protection never points at a nonexistent
 check. No issue, PR, package, tag, or release is deleted merely to make the dashboard appear clean.
 
+## Interfaces and dependencies
+
+This harness correction changes repository guidance and `scripts/check_harness.py`; it does not
+change Rust source, public APIs, Cargo manifests, Cargo.lock, runtime behavior, or the supported
+platform matrix. `AGENTS.md` routes execution, `ARCHITECTURE.md` owns useful paths and dependency
+authority, `docs/README.md` indexes canonical knowledge, `docs/PLANS.md` owns recovery semantics,
+the active plan owns current state, and `just harness` is the mechanical boundary. Cargo remains the
+build/dependency owner and just remains its thin command facade.
+
 ## Outcomes and retrospective
 
 The bounded checkpoint contains Slice 0 and the foundational Slice 1/2 work only. Final local proof
@@ -338,6 +378,12 @@ Accepted bounded tradeoff: AMI outbound frames are prevalidated before actor adm
 validated and encoded again at the socket boundary. The duplicate work is bounded by the 64 KiB
 frame limit. Keep it for this candidate; an encode-once validated-frame design is deferred to later
 simplification because changing the command API and actor ownership now would expand regression risk.
+
+The 2026-08-17 harness correction read and applied the complete owner-supplied source set, rewrote
+the four semantic owners around repository facts, upgraded the active-plan recovery contract, and
+made their exact H2 structures mechanical. The main agent inspected the exact diff and `just ci`
+passed; the owner explicitly waived delegates and reviewers for this correction. This documentation
+and checker change did not require new live-Asterisk evidence and made no external change.
 
 Complete the retrospective only after the pushed candidate and external records are settled. Record
 reviewer yields, late defects, duplicated work, and harness changes here, then move this file to
