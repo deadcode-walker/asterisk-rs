@@ -217,7 +217,6 @@ fn extract_unique_id(event: &AmiEvent) -> Option<&str> {
         | AmiEvent::DtmfEnd { unique_id, .. }
         | AmiEvent::BridgeEnter { unique_id, .. }
         | AmiEvent::BridgeLeave { unique_id, .. }
-        | AmiEvent::VarSet { unique_id, .. }
         | AmiEvent::Hold { unique_id, .. }
         | AmiEvent::Unhold { unique_id, .. }
         | AmiEvent::HangupRequest { unique_id, .. }
@@ -307,7 +306,9 @@ fn extract_unique_id(event: &AmiEvent) -> Option<&str> {
         } => Some(transferer_unique_id.as_str()),
 
         // unique_id is Option<String>
-        AmiEvent::UserEvent { unique_id, .. } => unique_id.as_deref(),
+        AmiEvent::VarSet { unique_id, .. } | AmiEvent::UserEvent { unique_id, .. } => {
+            unique_id.as_deref()
+        }
         AmiEvent::DAHDIChannel { unique_id, .. } => unique_id.as_deref(),
 
         // variants without unique_id
@@ -400,6 +401,7 @@ fn extract_unique_id(event: &AmiEvent) -> Option<&str> {
         | AmiEvent::FAXStats { .. }
         | AmiEvent::DNDState { .. }
         | AmiEvent::DeadlockStart
+        | AmiEvent::Malformed { .. }
         | AmiEvent::Unknown { .. } => None,
     }
 }

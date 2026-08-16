@@ -421,6 +421,27 @@ fn parse_var_set() {
 }
 
 #[test]
+fn parse_global_var_set_without_channel_snapshot() {
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "VarSet"),
+        ("Variable", "GLOBAL_SETTING"),
+        ("Value", "enabled"),
+    ]))
+    .expect("global VarSet should parse");
+
+    assert!(matches!(
+        event,
+        AmiEvent::VarSet {
+            channel: None,
+            unique_id: None,
+            ..
+        }
+    ));
+    assert_eq!(event.channel(), None);
+    assert_eq!(event.unique_id(), None);
+}
+
+#[test]
 fn parse_hold() {
     let msg = raw(&[
         ("Event", "Hold"),
@@ -638,8 +659,12 @@ fn parse_originate_response() {
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     match event {
         AmiEvent::OriginateResponse {
-            response, reason, ..
+            action_id,
+            response,
+            reason,
+            ..
         } => {
+            assert_eq!(action_id, None);
             assert_eq!(response, "Success");
             assert_eq!(reason, "4");
         }
@@ -3804,6 +3829,123 @@ fn parse_unknown_event() {
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     assert!(matches!(event, AmiEvent::Unknown { .. }));
     assert_eq!(event.event_name(), "SomeWeirdEvent");
+}
+
+#[test]
+fn known_event_with_missing_required_field_is_malformed() {
+    let msg = raw(&[
+        ("Event", "Hangup"),
+        ("Uniqueid", "u1"),
+        ("Cause", "16"),
+        ("Cause-txt", "Normal Clearing"),
+    ]);
+    let event = AmiEvent::from_raw(&msg).expect("event should be classified");
+
+    match event {
+        AmiEvent::Malformed {
+            event_name,
+            field,
+            value,
+            headers,
+        } => {
+            assert_eq!(event_name, "Hangup");
+            assert_eq!(field, "Channel");
+            assert_eq!(value, None);
+            assert_eq!(headers["Uniqueid"], "u1");
+        }
+        other => panic!("expected malformed Hangup, got {other:?}"),
+    }
+}
+
+#[test]
+fn known_event_with_invalid_numeric_field_is_malformed() {
+    let msg = raw(&[
+        ("Event", "Hangup"),
+        ("Channel", "PJSIP/100-0001"),
+        ("Uniqueid", "u1"),
+        ("Cause", "not-a-number"),
+        ("Cause-txt", "Normal Clearing"),
+    ]);
+    let event = AmiEvent::from_raw(&msg).expect("event should be classified");
+
+    assert!(matches!(
+        event,
+        AmiEvent::Malformed {
+            ref event_name,
+            ref field,
+            value: Some(ref value),
+            ..
+        } if event_name == "Hangup" && field == "Cause" && value == "not-a-number"
+    ));
+    assert_eq!(event.event_name(), "Hangup");
+    assert_eq!(event.channel(), None);
+    assert_eq!(event.unique_id(), None);
+}
+
+#[test]
+fn malformed_event_redacts_sensitive_headers() {
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "AuthDetail"),
+        ("Username", "alice"),
+        ("Password", "password-value"),
+        ("Secret", "secret-value"),
+        ("MD5Cred", "md5-value"),
+        ("AccessToken", "token-value"),
+        ("Authorization", "authorization-value"),
+        ("Api-Key", "api-key-value"),
+        ("PrivateKey", "private-key-value"),
+        ("Access_Key", "access-key-value"),
+        ("Credential", "credential-value"),
+        ("Cookie", "cookie-value"),
+    ]))
+    .expect("event should be classified");
+
+    let AmiEvent::Malformed { headers, .. } = event else {
+        panic!("expected malformed AuthDetail");
+    };
+    assert_eq!(headers["Username"], "alice");
+    for key in [
+        "Password",
+        "Secret",
+        "MD5Cred",
+        "AccessToken",
+        "Authorization",
+        "Api-Key",
+        "PrivateKey",
+        "Access_Key",
+        "Credential",
+        "Cookie",
+    ] {
+        assert_eq!(headers[key], "[REDACTED]");
+    }
+    let rendered = format!("{headers:?}");
+    for secret in [
+        "password-value",
+        "secret-value",
+        "md5-value",
+        "token-value",
+        "authorization-value",
+        "api-key-value",
+        "private-key-value",
+        "access-key-value",
+        "credential-value",
+        "cookie-value",
+    ] {
+        assert!(!rendered.contains(secret));
+    }
+}
+
+#[test]
+fn malformed_event_list_complete_header_is_case_insensitive() {
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "StatusComplete"),
+        ("ListItems", "invalid"),
+        ("eventlist", "Complete"),
+    ]))
+    .expect("event should be classified");
+
+    assert!(matches!(event, AmiEvent::Malformed { .. }));
+    assert!(event.is_event_list_complete());
 }
 
 #[test]

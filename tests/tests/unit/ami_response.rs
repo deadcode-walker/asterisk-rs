@@ -485,6 +485,37 @@ fn user_event_named_complete_does_not_close_event_list() {
 }
 
 #[test]
+fn malformed_event_list_markers_remain_terminal() {
+    let mut pending = PendingActions::new();
+    let (complete_tx, mut complete_rx) = tokio::sync::oneshot::channel();
+    pending.register_event_list("complete".into(), complete_tx);
+    let complete = AmiEvent::Malformed {
+        event_name: "QueueStatusComplete".into(),
+        field: "Items".into(),
+        value: None,
+        headers: HashMap::from([("EventList".into(), "Complete".into())]),
+    };
+    assert!(pending.deliver_event_list_event("complete", complete));
+    assert!(!pending.contains_event_list("complete"));
+    assert!(complete_rx.try_recv().is_ok());
+
+    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
+    pending.register_event_list("cancel".into(), cancel_tx);
+    let cancelled = AmiEvent::Malformed {
+        event_name: "QueueStatusComplete".into(),
+        field: "Items".into(),
+        value: Some("invalid".into()),
+        headers: HashMap::from([("EventList".into(), "Cancelled".into())]),
+    };
+    assert!(pending.deliver_event_list_event("cancel", cancelled));
+    assert!(!pending.contains_event_list("cancel"));
+    assert!(matches!(
+        cancel_rx.try_recv(),
+        Err(tokio::sync::oneshot::error::TryRecvError::Closed)
+    ));
+}
+
+#[test]
 fn event_list_cap_drops_after_max_events() {
     use asterisk_rs_ami::response::MAX_EVENT_LIST_EVENTS;
 

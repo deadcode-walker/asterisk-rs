@@ -106,10 +106,10 @@ pub enum AmiEvent {
     // ── core call flow ──
     /// channel variable set
     VarSet {
-        channel: String,
+        channel: Option<String>,
         variable: String,
         value: String,
-        unique_id: String,
+        unique_id: Option<String>,
     },
 
     /// channel placed on hold
@@ -181,7 +181,7 @@ pub enum AmiEvent {
 
     /// originate result
     OriginateResponse {
-        action_id: String,
+        action_id: Option<String>,
         channel: String,
         unique_id: String,
         response: String,
@@ -1293,6 +1293,14 @@ pub enum AmiEvent {
         caller_id_name: String,
     },
 
+    /// recognized event whose required field is missing or invalid
+    Malformed {
+        event_name: String,
+        field: String,
+        value: Option<String>,
+        headers: HashMap<String, String>,
+    },
+
     /// unrecognized event — carries all raw headers
     Unknown {
         event_name: String,
@@ -1307,1196 +1315,1081 @@ impl AmiEvent {
     pub fn from_raw(raw: &RawAmiMessage) -> Option<Self> {
         let event_name = raw.get("Event")?;
 
+        macro_rules! malformed {
+            ($field:expr) => {
+                return Some(Self::Malformed {
+                    event_name: event_name.to_string(),
+                    field: $field.to_string(),
+                    value: raw
+                        .get($field)
+                        .map(|value| redact_header_value($field, value)),
+                    headers: redacted_headers(raw),
+                })
+            };
+        }
+        macro_rules! required_string {
+            ($field:expr) => {
+                match raw.get($field) {
+                    Some(value) => value.to_string(),
+                    None => malformed!($field),
+                }
+            };
+        }
+        macro_rules! required_parse {
+            ($field:expr) => {
+                match raw.get($field).and_then(|value| value.parse().ok()) {
+                    Some(value) => value,
+                    None => malformed!($field),
+                }
+            };
+        }
+
         let event = match event_name {
             "Newchannel" => Self::NewChannel {
-                channel: get(raw, "Channel"),
-                channel_state: get(raw, "ChannelState"),
-                channel_state_desc: get(raw, "ChannelStateDesc"),
-                caller_id_num: get(raw, "CallerIDNum"),
-                caller_id_name: get(raw, "CallerIDName"),
-                unique_id: get(raw, "Uniqueid"),
-                linked_id: get(raw, "Linkedid"),
+                channel: required_string!("Channel"),
+                channel_state: required_string!("ChannelState"),
+                channel_state_desc: required_string!("ChannelStateDesc"),
+                caller_id_num: required_string!("CallerIDNum"),
+                caller_id_name: required_string!("CallerIDName"),
+                unique_id: required_string!("Uniqueid"),
+                linked_id: required_string!("Linkedid"),
             },
             "Hangup" => Self::Hangup {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                cause: raw.get("Cause").and_then(|s| s.parse().ok()).unwrap_or(0),
-                cause_txt: get(raw, "Cause-txt"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                cause: required_parse!("Cause"),
+                cause_txt: required_string!("Cause-txt"),
             },
             "Newstate" => Self::Newstate {
-                channel: get(raw, "Channel"),
-                channel_state: get(raw, "ChannelState"),
-                channel_state_desc: get(raw, "ChannelStateDesc"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                channel_state: required_string!("ChannelState"),
+                channel_state_desc: required_string!("ChannelStateDesc"),
+                unique_id: required_string!("Uniqueid"),
             },
             "DialBegin" => Self::DialBegin {
-                channel: get(raw, "Channel"),
-                destination: get(raw, "DestChannel"),
-                dial_string: get(raw, "DialString"),
-                unique_id: get(raw, "Uniqueid"),
-                dest_unique_id: get(raw, "DestUniqueid"),
+                channel: required_string!("Channel"),
+                destination: required_string!("DestChannel"),
+                dial_string: required_string!("DialString"),
+                unique_id: required_string!("Uniqueid"),
+                dest_unique_id: required_string!("DestUniqueid"),
             },
             "DialEnd" => Self::DialEnd {
-                channel: get(raw, "Channel"),
-                destination: get(raw, "DestChannel"),
-                dial_status: get(raw, "DialStatus"),
-                unique_id: get(raw, "Uniqueid"),
-                dest_unique_id: get(raw, "DestUniqueid"),
+                channel: required_string!("Channel"),
+                destination: required_string!("DestChannel"),
+                dial_status: required_string!("DialStatus"),
+                unique_id: required_string!("Uniqueid"),
+                dest_unique_id: required_string!("DestUniqueid"),
             },
             "DTMFBegin" => Self::DtmfBegin {
-                channel: get(raw, "Channel"),
-                digit: get(raw, "Digit"),
-                direction: get(raw, "Direction"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                digit: required_string!("Digit"),
+                direction: required_string!("Direction"),
+                unique_id: required_string!("Uniqueid"),
             },
             "DTMFEnd" => Self::DtmfEnd {
-                channel: get(raw, "Channel"),
-                digit: get(raw, "Digit"),
-                duration_ms: raw
-                    .get("DurationMs")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                direction: get(raw, "Direction"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                digit: required_string!("Digit"),
+                duration_ms: required_parse!("DurationMs"),
+                direction: required_string!("Direction"),
+                unique_id: required_string!("Uniqueid"),
             },
             "FullyBooted" => Self::FullyBooted {
-                status: get(raw, "Status"),
+                status: required_string!("Status"),
             },
             "PeerStatus" => Self::PeerStatus {
-                channel_type: get(raw, "ChannelType"),
-                peer: get(raw, "Peer"),
-                peer_status: get(raw, "PeerStatus"),
+                channel_type: required_string!("ChannelType"),
+                peer: required_string!("Peer"),
+                peer_status: required_string!("PeerStatus"),
             },
             "BridgeCreate" => Self::BridgeCreate {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                bridge_type: get(raw, "BridgeType"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                bridge_type: required_string!("BridgeType"),
             },
             "BridgeDestroy" => Self::BridgeDestroy {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
             },
             "BridgeEnter" => Self::BridgeEnter {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "BridgeLeave" => Self::BridgeLeave {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
 
             // core call flow
             "VarSet" => Self::VarSet {
-                channel: get(raw, "Channel"),
-                variable: get(raw, "Variable"),
-                value: get(raw, "Value"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: raw.get("Channel").map(str::to_string),
+                variable: required_string!("Variable"),
+                value: required_string!("Value"),
+                unique_id: raw.get("Uniqueid").map(str::to_string),
             },
             "Hold" => Self::Hold {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
                 music_class: raw.get("MusicClass").map(|s| s.to_string()),
             },
             "Unhold" => Self::Unhold {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "HangupRequest" => Self::HangupRequest {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                cause: raw.get("Cause").and_then(|s| s.parse().ok()).unwrap_or(0),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                cause: required_parse!("Cause"),
             },
             "SoftHangupRequest" => Self::SoftHangupRequest {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                cause: raw.get("Cause").and_then(|s| s.parse().ok()).unwrap_or(0),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                cause: required_parse!("Cause"),
             },
             "NewExten" => Self::NewExten {
-                channel: get(raw, "Channel"),
-                context: get(raw, "Context"),
-                extension: get(raw, "Extension"),
-                priority: raw
-                    .get("Priority")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                application: get(raw, "Application"),
-                app_data: get(raw, "AppData"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                context: required_string!("Context"),
+                extension: required_string!("Extension"),
+                priority: required_parse!("Priority"),
+                application: required_string!("Application"),
+                app_data: required_string!("AppData"),
+                unique_id: required_string!("Uniqueid"),
             },
             "NewCallerid" => Self::NewCallerid {
-                channel: get(raw, "Channel"),
-                caller_id_num: get(raw, "CallerIDNum"),
-                caller_id_name: get(raw, "CallerIDName"),
-                unique_id: get(raw, "Uniqueid"),
-                cid_calling_pres: get(raw, "CID-CallingPres"),
+                channel: required_string!("Channel"),
+                caller_id_num: required_string!("CallerIDNum"),
+                caller_id_name: required_string!("CallerIDName"),
+                unique_id: required_string!("Uniqueid"),
+                cid_calling_pres: required_string!("CID-CallingPres"),
             },
             "NewConnectedLine" => Self::NewConnectedLine {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                connected_line_num: get(raw, "ConnectedLineNum"),
-                connected_line_name: get(raw, "ConnectedLineName"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                connected_line_num: required_string!("ConnectedLineNum"),
+                connected_line_name: required_string!("ConnectedLineName"),
             },
             "NewAccountCode" => Self::NewAccountCode {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                account_code: get(raw, "AccountCode"),
-                old_account_code: get(raw, "OldAccountCode"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                account_code: required_string!("AccountCode"),
+                old_account_code: required_string!("OldAccountCode"),
             },
             "Rename" => Self::Rename {
-                channel: get(raw, "Channel"),
-                new_name: get(raw, "Newname"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                new_name: required_string!("Newname"),
+                unique_id: required_string!("Uniqueid"),
             },
             "OriginateResponse" => Self::OriginateResponse {
-                action_id: raw.get("ActionID").unwrap_or("").to_string(),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                response: get(raw, "Response"),
-                reason: get(raw, "Reason"),
+                action_id: raw.get("ActionID").map(str::to_string),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                response: required_string!("Response"),
+                reason: required_string!("Reason"),
             },
             "DialState" => Self::DialState {
-                channel: get(raw, "Channel"),
-                destination: get(raw, "DestChannel"),
-                dial_status: get(raw, "DialStatus"),
-                unique_id: get(raw, "Uniqueid"),
-                dest_unique_id: get(raw, "DestUniqueid"),
+                channel: required_string!("Channel"),
+                destination: required_string!("DestChannel"),
+                dial_status: required_string!("DialStatus"),
+                unique_id: required_string!("Uniqueid"),
+                dest_unique_id: required_string!("DestUniqueid"),
             },
             "Flash" => Self::Flash {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "Wink" => Self::Wink {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "UserEvent" => Self::UserEvent {
                 channel: raw.get("Channel").map(|s| s.to_string()),
                 unique_id: raw.get("Uniqueid").map(|s| s.to_string()),
-                user_event: get(raw, "UserEvent"),
+                user_event: required_string!("UserEvent"),
                 headers: raw.to_map(),
             },
 
             // transfer
             "AttendedTransfer" => Self::AttendedTransfer {
-                result: get(raw, "Result"),
-                transferer_channel: get(raw, "TransfererChannel"),
-                transferer_unique_id: get(raw, "TransfererUniqueid"),
-                transferee_channel: get(raw, "TransfereeChannel"),
-                transferee_unique_id: get(raw, "TransfereeUniqueid"),
+                result: required_string!("Result"),
+                transferer_channel: required_string!("TransfererChannel"),
+                transferer_unique_id: required_string!("TransfererUniqueid"),
+                transferee_channel: required_string!("TransfereeChannel"),
+                transferee_unique_id: required_string!("TransfereeUniqueid"),
             },
             "BlindTransfer" => Self::BlindTransfer {
-                result: get(raw, "Result"),
-                transferer_channel: get(raw, "TransfererChannel"),
-                transferer_unique_id: get(raw, "TransfererUniqueid"),
-                extension: get(raw, "Extension"),
-                context: get(raw, "Context"),
+                result: required_string!("Result"),
+                transferer_channel: required_string!("TransfererChannel"),
+                transferer_unique_id: required_string!("TransfererUniqueid"),
+                extension: required_string!("Extension"),
+                context: required_string!("Context"),
             },
 
             // bridge extended
             "BridgeMerge" => Self::BridgeMerge {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                bridge_type: get(raw, "BridgeType"),
-                to_bridge_unique_id: get(raw, "ToBridgeUniqueid"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                bridge_type: required_string!("BridgeType"),
+                to_bridge_unique_id: required_string!("ToBridgeUniqueid"),
             },
             "BridgeInfoChannel" => Self::BridgeInfoChannel {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "BridgeInfoComplete" => Self::BridgeInfoComplete {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
             },
             "BridgeVideoSourceUpdate" => Self::BridgeVideoSourceUpdate {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                bridge_video_source_unique_id: get(raw, "BridgeVideoSourceUniqueid"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                bridge_video_source_unique_id: required_string!("BridgeVideoSourceUniqueid"),
             },
 
             // local channel
             "LocalBridge" => Self::LocalBridge {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                context: get(raw, "Context"),
-                exten: get(raw, "Exten"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                context: required_string!("Context"),
+                exten: required_string!("Exten"),
             },
             "LocalOptimizationBegin" => Self::LocalOptimizationBegin {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                source_unique_id: get(raw, "SourceUniqueid"),
-                dest_unique_id: get(raw, "DestUniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                source_unique_id: required_string!("SourceUniqueid"),
+                dest_unique_id: required_string!("DestUniqueid"),
             },
             "LocalOptimizationEnd" => Self::LocalOptimizationEnd {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
 
             // cdr / cel
             "Cdr" => Self::Cdr {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                destination: get(raw, "Destination"),
-                disposition: get(raw, "Disposition"),
-                duration: raw
-                    .get("Duration")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                billable_seconds: raw
-                    .get("BillableSeconds")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                account_code: get(raw, "AccountCode"),
-                source: get(raw, "Source"),
-                destination_context: get(raw, "DestinationContext"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                destination: required_string!("Destination"),
+                disposition: required_string!("Disposition"),
+                duration: required_parse!("Duration"),
+                billable_seconds: required_parse!("BillableSeconds"),
+                account_code: required_string!("AccountCode"),
+                source: required_string!("Source"),
+                destination_context: required_string!("DestinationContext"),
             },
             "CEL" => Self::Cel {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                event_name_cel: get(raw, "EventName"),
-                account_code: get(raw, "AccountCode"),
-                application_name: get(raw, "ApplicationName"),
-                application_data: get(raw, "ApplicationData"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                event_name_cel: required_string!("EventName"),
+                account_code: required_string!("AccountCode"),
+                application_name: required_string!("ApplicationName"),
+                application_data: required_string!("ApplicationData"),
             },
 
             // queue
             "QueueCallerAbandon" => Self::QueueCallerAbandon {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                queue: get(raw, "Queue"),
-                position: raw
-                    .get("Position")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                original_position: raw
-                    .get("OriginalPosition")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                hold_time: raw
-                    .get("HoldTime")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                queue: required_string!("Queue"),
+                position: required_parse!("Position"),
+                original_position: required_parse!("OriginalPosition"),
+                hold_time: required_parse!("HoldTime"),
             },
             "QueueCallerJoin" => Self::QueueCallerJoin {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                queue: get(raw, "Queue"),
-                position: raw
-                    .get("Position")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                count: raw.get("Count").and_then(|s| s.parse().ok()).unwrap_or(0),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                queue: required_string!("Queue"),
+                position: required_parse!("Position"),
+                count: required_parse!("Count"),
             },
             "QueueCallerLeave" => Self::QueueCallerLeave {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                queue: get(raw, "Queue"),
-                position: raw
-                    .get("Position")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                count: raw.get("Count").and_then(|s| s.parse().ok()).unwrap_or(0),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                queue: required_string!("Queue"),
+                position: required_parse!("Position"),
+                count: required_parse!("Count"),
             },
             "QueueMemberAdded" => Self::QueueMemberAdded {
-                queue: get(raw, "Queue"),
-                member_name: get(raw, "MemberName"),
-                interface: get(raw, "Interface"),
-                state_interface: get(raw, "StateInterface"),
-                membership: get(raw, "Membership"),
-                penalty: raw.get("Penalty").and_then(|s| s.parse().ok()).unwrap_or(0),
-                paused: get(raw, "Paused"),
+                queue: required_string!("Queue"),
+                member_name: required_string!("MemberName"),
+                interface: required_string!("Interface"),
+                state_interface: required_string!("StateInterface"),
+                membership: required_string!("Membership"),
+                penalty: required_parse!("Penalty"),
+                paused: required_string!("Paused"),
             },
             "QueueMemberRemoved" => Self::QueueMemberRemoved {
-                queue: get(raw, "Queue"),
-                member_name: get(raw, "MemberName"),
-                interface: get(raw, "Interface"),
+                queue: required_string!("Queue"),
+                member_name: required_string!("MemberName"),
+                interface: required_string!("Interface"),
             },
             "QueueMemberPause" => Self::QueueMemberPause {
-                queue: get(raw, "Queue"),
-                member_name: get(raw, "MemberName"),
-                interface: get(raw, "Interface"),
-                paused: get(raw, "Paused"),
-                reason: get(raw, "Reason"),
+                queue: required_string!("Queue"),
+                member_name: required_string!("MemberName"),
+                interface: required_string!("Interface"),
+                paused: required_string!("Paused"),
+                reason: required_string!("Reason"),
             },
             "QueueMemberStatus" => Self::QueueMemberStatus {
-                queue: get(raw, "Queue"),
-                member_name: get(raw, "MemberName"),
-                interface: get(raw, "Interface"),
-                status: raw.get("Status").and_then(|s| s.parse().ok()).unwrap_or(0),
-                paused: get(raw, "Paused"),
-                calls_taken: raw
-                    .get("CallsTaken")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                queue: required_string!("Queue"),
+                member_name: required_string!("MemberName"),
+                interface: required_string!("Interface"),
+                status: required_parse!("Status"),
+                paused: required_string!("Paused"),
+                calls_taken: required_parse!("CallsTaken"),
             },
             "QueueMemberPenalty" => Self::QueueMemberPenalty {
-                queue: get(raw, "Queue"),
-                member_name: get(raw, "MemberName"),
-                interface: get(raw, "Interface"),
-                penalty: raw.get("Penalty").and_then(|s| s.parse().ok()).unwrap_or(0),
+                queue: required_string!("Queue"),
+                member_name: required_string!("MemberName"),
+                interface: required_string!("Interface"),
+                penalty: required_parse!("Penalty"),
             },
             "QueueMemberRinginuse" => Self::QueueMemberRinginuse {
-                queue: get(raw, "Queue"),
-                member_name: get(raw, "MemberName"),
-                interface: get(raw, "Interface"),
-                ringinuse: get(raw, "Ringinuse"),
+                queue: required_string!("Queue"),
+                member_name: required_string!("MemberName"),
+                interface: required_string!("Interface"),
+                ringinuse: required_string!("Ringinuse"),
             },
             "QueueParams" => Self::QueueParams {
-                queue: get(raw, "Queue"),
-                max: raw.get("Max").and_then(|s| s.parse().ok()).unwrap_or(0),
-                strategy: get(raw, "Strategy"),
-                calls: raw.get("Calls").and_then(|s| s.parse().ok()).unwrap_or(0),
-                holdtime: raw
-                    .get("Holdtime")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                talktime: raw
-                    .get("Talktime")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                completed: raw
-                    .get("Completed")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                abandoned: raw
-                    .get("Abandoned")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                queue: required_string!("Queue"),
+                max: required_parse!("Max"),
+                strategy: required_string!("Strategy"),
+                calls: required_parse!("Calls"),
+                holdtime: required_parse!("Holdtime"),
+                talktime: required_parse!("Talktime"),
+                completed: required_parse!("Completed"),
+                abandoned: required_parse!("Abandoned"),
             },
             "QueueEntry" => Self::QueueEntry {
-                queue: get(raw, "Queue"),
-                position: raw
-                    .get("Position")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                caller_id_num: get(raw, "CallerIDNum"),
-                caller_id_name: get(raw, "CallerIDName"),
-                wait: raw.get("Wait").and_then(|s| s.parse().ok()).unwrap_or(0),
+                queue: required_string!("Queue"),
+                position: required_parse!("Position"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                caller_id_num: required_string!("CallerIDNum"),
+                caller_id_name: required_string!("CallerIDName"),
+                wait: required_parse!("Wait"),
             },
 
             // agent
             "AgentCalled" => Self::AgentCalled {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                queue: get(raw, "Queue"),
-                agent: get(raw, "Agent"),
-                destination_channel: get(raw, "DestinationChannel"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                queue: required_string!("Queue"),
+                agent: required_string!("Agent"),
+                destination_channel: required_string!("DestinationChannel"),
             },
             "AgentConnect" => Self::AgentConnect {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                queue: get(raw, "Queue"),
-                agent: get(raw, "Agent"),
-                hold_time: raw
-                    .get("HoldTime")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                queue: required_string!("Queue"),
+                agent: required_string!("Agent"),
+                hold_time: required_parse!("HoldTime"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
             },
             "AgentComplete" => Self::AgentComplete {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                queue: get(raw, "Queue"),
-                agent: get(raw, "Agent"),
-                hold_time: raw
-                    .get("HoldTime")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                talk_time: raw
-                    .get("TalkTime")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                reason: get(raw, "Reason"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                queue: required_string!("Queue"),
+                agent: required_string!("Agent"),
+                hold_time: required_parse!("HoldTime"),
+                talk_time: required_parse!("TalkTime"),
+                reason: required_string!("Reason"),
             },
             "AgentDump" => Self::AgentDump {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                queue: get(raw, "Queue"),
-                agent: get(raw, "Agent"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                queue: required_string!("Queue"),
+                agent: required_string!("Agent"),
             },
             "AgentLogin" => Self::AgentLogin {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                agent: get(raw, "Agent"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                agent: required_string!("Agent"),
             },
             "AgentLogoff" => Self::AgentLogoff {
-                agent: get(raw, "Agent"),
-                logintime: raw
-                    .get("Logintime")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                agent: required_string!("Agent"),
+                logintime: required_parse!("Logintime"),
             },
             "AgentRingNoAnswer" => Self::AgentRingNoAnswer {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                queue: get(raw, "Queue"),
-                agent: get(raw, "Agent"),
-                ring_time: raw
-                    .get("RingTime")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                queue: required_string!("Queue"),
+                agent: required_string!("Agent"),
+                ring_time: required_parse!("RingTime"),
             },
             "Agents" => Self::Agents {
-                agent: get(raw, "Agent"),
-                name: get(raw, "Name"),
-                status: get(raw, "Status"),
+                agent: required_string!("Agent"),
+                name: required_string!("Name"),
+                status: required_string!("Status"),
                 channel: raw.get("Channel").map(|s| s.to_string()),
             },
             "AgentsComplete" => Self::AgentsComplete,
 
             // conference
             "ConfbridgeStart" => Self::ConfbridgeStart {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                conference: get(raw, "Conference"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                conference: required_string!("Conference"),
             },
             "ConfbridgeEnd" => Self::ConfbridgeEnd {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                conference: get(raw, "Conference"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                conference: required_string!("Conference"),
             },
             "ConfbridgeJoin" => Self::ConfbridgeJoin {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                conference: get(raw, "Conference"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                admin: get(raw, "Admin"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                conference: required_string!("Conference"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                admin: required_string!("Admin"),
             },
             "ConfbridgeLeave" => Self::ConfbridgeLeave {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                conference: get(raw, "Conference"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                conference: required_string!("Conference"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "ConfbridgeList" => Self::ConfbridgeList {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                conference: get(raw, "Conference"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                admin: get(raw, "Admin"),
-                muted: get(raw, "Muted"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                conference: required_string!("Conference"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                admin: required_string!("Admin"),
+                muted: required_string!("Muted"),
             },
             "ConfbridgeMute" => Self::ConfbridgeMute {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                conference: get(raw, "Conference"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                conference: required_string!("Conference"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "ConfbridgeUnmute" => Self::ConfbridgeUnmute {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                conference: get(raw, "Conference"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                conference: required_string!("Conference"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "ConfbridgeTalking" => Self::ConfbridgeTalking {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                conference: get(raw, "Conference"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                talking_status: get(raw, "TalkingStatus"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                conference: required_string!("Conference"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                talking_status: required_string!("TalkingStatus"),
             },
             "ConfbridgeRecord" => Self::ConfbridgeRecord {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                conference: get(raw, "Conference"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                conference: required_string!("Conference"),
             },
             "ConfbridgeStopRecord" => Self::ConfbridgeStopRecord {
-                bridge_unique_id: get(raw, "BridgeUniqueid"),
-                conference: get(raw, "Conference"),
+                bridge_unique_id: required_string!("BridgeUniqueid"),
+                conference: required_string!("Conference"),
             },
             "ConfbridgeListRooms" => Self::ConfbridgeListRooms {
-                conference: get(raw, "Conference"),
-                parties: raw.get("Parties").and_then(|s| s.parse().ok()).unwrap_or(0),
-                marked: raw.get("Marked").and_then(|s| s.parse().ok()).unwrap_or(0),
-                locked: get(raw, "Locked"),
+                conference: required_string!("Conference"),
+                parties: required_parse!("Parties"),
+                marked: required_parse!("Marked"),
+                locked: required_string!("Locked"),
             },
 
             // mixmonitor
             "MixMonitorStart" => Self::MixMonitorStart {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "MixMonitorStop" => Self::MixMonitorStop {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "MixMonitorMute" => Self::MixMonitorMute {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                direction: get(raw, "Direction"),
-                state: get(raw, "State"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                direction: required_string!("Direction"),
+                state: required_string!("State"),
             },
 
             // music on hold
             "MusicOnHoldStart" => Self::MusicOnHoldStart {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                class: get(raw, "Class"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                class: required_string!("Class"),
             },
             "MusicOnHoldStop" => Self::MusicOnHoldStop {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
 
             // parking
             "ParkedCall" => Self::ParkedCall {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                parking_lot: get(raw, "ParkingLot"),
-                parking_space: raw
-                    .get("ParkingSpace")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                parker_dial_string: get(raw, "ParkerDialString"),
-                timeout: raw.get("Timeout").and_then(|s| s.parse().ok()).unwrap_or(0),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                parking_lot: required_string!("ParkingLot"),
+                parking_space: required_parse!("ParkingSpace"),
+                parker_dial_string: required_string!("ParkerDialString"),
+                timeout: required_parse!("Timeout"),
             },
             "ParkedCallGiveUp" => Self::ParkedCallGiveUp {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                parking_lot: get(raw, "ParkingLot"),
-                parking_space: raw
-                    .get("ParkingSpace")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                parking_lot: required_string!("ParkingLot"),
+                parking_space: required_parse!("ParkingSpace"),
             },
             "ParkedCallTimeOut" => Self::ParkedCallTimeOut {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                parking_lot: get(raw, "ParkingLot"),
-                parking_space: raw
-                    .get("ParkingSpace")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                parking_lot: required_string!("ParkingLot"),
+                parking_space: required_parse!("ParkingSpace"),
             },
             "ParkedCallSwap" => Self::ParkedCallSwap {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                parking_lot: get(raw, "ParkingLot"),
-                parking_space: raw
-                    .get("ParkingSpace")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                parker_channel: get(raw, "ParkerChannel"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                parking_lot: required_string!("ParkingLot"),
+                parking_space: required_parse!("ParkingSpace"),
+                parker_channel: required_string!("ParkerChannel"),
             },
             "UnParkedCall" => Self::UnParkedCall {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                parking_lot: get(raw, "ParkingLot"),
-                parking_space: raw
-                    .get("ParkingSpace")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                retriever_channel: get(raw, "RetrieverChannel"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                parking_lot: required_string!("ParkingLot"),
+                parking_space: required_parse!("ParkingSpace"),
+                retriever_channel: required_string!("RetrieverChannel"),
             },
 
             // pickup / spy
             "Pickup" => Self::Pickup {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                target_channel: get(raw, "TargetChannel"),
-                target_unique_id: get(raw, "TargetUniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                target_channel: required_string!("TargetChannel"),
+                target_unique_id: required_string!("TargetUniqueid"),
             },
             "ChanSpyStart" => Self::ChanSpyStart {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                spy_channel: get(raw, "SpyeeChannel"),
-                spy_unique_id: get(raw, "SpyeeUniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                spy_channel: required_string!("SpyeeChannel"),
+                spy_unique_id: required_string!("SpyeeUniqueid"),
             },
             "ChanSpyStop" => Self::ChanSpyStop {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                spy_channel: get(raw, "SpyeeChannel"),
-                spy_unique_id: get(raw, "SpyeeUniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                spy_channel: required_string!("SpyeeChannel"),
+                spy_unique_id: required_string!("SpyeeUniqueid"),
             },
 
             // channel talking
             "ChannelTalkingStart" => Self::ChannelTalkingStart {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "ChannelTalkingStop" => Self::ChannelTalkingStop {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                duration: raw
-                    .get("Duration")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                duration: required_parse!("Duration"),
             },
 
             // device / presence / extension state
             "DeviceStateChange" => Self::DeviceStateChange {
-                device: get(raw, "Device"),
-                state: get(raw, "State"),
+                device: required_string!("Device"),
+                state: required_string!("State"),
             },
             "ExtensionStatus" => Self::ExtensionStatus {
-                exten: get(raw, "Exten"),
-                context: get(raw, "Context"),
-                hint: get(raw, "Hint"),
-                status: raw.get("Status").and_then(|s| s.parse().ok()).unwrap_or(0),
-                status_text: get(raw, "StatusText"),
+                exten: required_string!("Exten"),
+                context: required_string!("Context"),
+                hint: required_string!("Hint"),
+                status: required_parse!("Status"),
+                status_text: required_string!("StatusText"),
             },
             "PresenceStateChange" => Self::PresenceStateChange {
-                presentity: get(raw, "Presentity"),
-                status: get(raw, "Status"),
-                subtype: get(raw, "Subtype"),
-                message: get(raw, "Message"),
+                presentity: required_string!("Presentity"),
+                status: required_string!("Status"),
+                subtype: required_string!("Subtype"),
+                message: required_string!("Message"),
             },
             "PresenceStatus" => Self::PresenceStatus {
-                presentity: get(raw, "Presentity"),
-                status: get(raw, "Status"),
-                subtype: get(raw, "Subtype"),
-                message: get(raw, "Message"),
+                presentity: required_string!("Presentity"),
+                status: required_string!("Status"),
+                subtype: required_string!("Subtype"),
+                message: required_string!("Message"),
             },
 
             // pjsip / registration
             "ContactStatus" => Self::ContactStatus {
-                uri: get(raw, "URI"),
-                contact_status: get(raw, "ContactStatus"),
-                aor: get(raw, "AOR"),
-                endpoint_name: get(raw, "EndpointName"),
+                uri: required_string!("URI"),
+                contact_status: required_string!("ContactStatus"),
+                aor: required_string!("AOR"),
+                endpoint_name: required_string!("EndpointName"),
             },
             "Registry" => Self::Registry {
-                channel_type: get(raw, "ChannelType"),
-                domain: get(raw, "Domain"),
-                username: get(raw, "Username"),
-                status: get(raw, "Status"),
-                cause: get(raw, "Cause"),
+                channel_type: required_string!("ChannelType"),
+                domain: required_string!("Domain"),
+                username: required_string!("Username"),
+                status: required_string!("Status"),
+                cause: required_string!("Cause"),
             },
 
             // message / voicemail
             "MessageWaiting" => Self::MessageWaiting {
-                mailbox: get(raw, "Mailbox"),
-                waiting: get(raw, "Waiting"),
-                new_messages: raw.get("New").and_then(|s| s.parse().ok()).unwrap_or(0),
-                old_messages: raw.get("Old").and_then(|s| s.parse().ok()).unwrap_or(0),
+                mailbox: required_string!("Mailbox"),
+                waiting: required_string!("Waiting"),
+                new_messages: required_parse!("New"),
+                old_messages: required_parse!("Old"),
             },
             "VoicemailPasswordChange" => Self::VoicemailPasswordChange {
-                context: get(raw, "Context"),
-                mailbox: get(raw, "Mailbox"),
-                new_password: get(raw, "NewPassword"),
+                context: required_string!("Context"),
+                mailbox: required_string!("Mailbox"),
+                new_password: required_string!("NewPassword"),
             },
 
             // rtcp
             "RTCPReceived" => Self::RTCPReceived {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                ssrc: get(raw, "SSRC"),
-                pt: get(raw, "PT"),
-                from: get(raw, "From"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                ssrc: required_string!("SSRC"),
+                pt: required_string!("PT"),
+                from: required_string!("From"),
             },
             "RTCPSent" => Self::RTCPSent {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                ssrc: get(raw, "SSRC"),
-                pt: get(raw, "PT"),
-                to: get(raw, "To"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                ssrc: required_string!("SSRC"),
+                pt: required_string!("PT"),
+                to: required_string!("To"),
             },
 
             // security
             "FailedACL" => Self::FailedACL {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "InvalidAccountID" => Self::InvalidAccountID {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "InvalidPassword" => Self::InvalidPassword {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "ChallengeResponseFailed" => Self::ChallengeResponseFailed {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "ChallengeSent" => Self::ChallengeSent {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "SuccessfulAuth" => Self::SuccessfulAuth {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "SessionLimit" => Self::SessionLimit {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "UnexpectedAddress" => Self::UnexpectedAddress {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "RequestBadFormat" => Self::RequestBadFormat {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "RequestNotAllowed" => Self::RequestNotAllowed {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "RequestNotSupported" => Self::RequestNotSupported {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "InvalidTransport" => Self::InvalidTransport {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
             "AuthMethodNotAllowed" => Self::AuthMethodNotAllowed {
-                severity: get(raw, "Severity"),
-                service: get(raw, "Service"),
-                account_id: get(raw, "AccountID"),
-                remote_address: get(raw, "RemoteAddress"),
+                severity: required_string!("Severity"),
+                service: required_string!("Service"),
+                account_id: required_string!("AccountID"),
+                remote_address: required_string!("RemoteAddress"),
             },
 
             // system
             "Shutdown" => Self::Shutdown {
-                shutdown_status: get(raw, "Shutdown"),
-                restart: get(raw, "Restart"),
+                shutdown_status: required_string!("Shutdown"),
+                restart: required_string!("Restart"),
             },
             "Reload" => Self::Reload {
-                module: get(raw, "Module"),
-                status: get(raw, "Status"),
+                module: required_string!("Module"),
+                status: required_string!("Status"),
             },
             "Load" => Self::Load {
-                module: get(raw, "Module"),
-                status: get(raw, "Status"),
+                module: required_string!("Module"),
+                status: required_string!("Status"),
             },
             "Unload" => Self::Unload {
-                module: get(raw, "Module"),
-                status: get(raw, "Status"),
+                module: required_string!("Module"),
+                status: required_string!("Status"),
             },
             "LogChannel" => Self::LogChannel {
-                channel_log: get(raw, "Channel"),
-                enabled: get(raw, "Enabled"),
+                channel_log: required_string!("Channel"),
+                enabled: required_string!("Enabled"),
             },
             "LoadAverageLimit" => Self::LoadAverageLimit,
             "MemoryLimit" => Self::MemoryLimit,
 
             // async agi
             "AsyncAGIStart" => Self::AsyncAGIStart {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                env: get(raw, "Env"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                env: required_string!("Env"),
             },
             "AsyncAGIExec" => Self::AsyncAGIExec {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                command_id: get(raw, "CommandID"),
-                result: get(raw, "Result"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                command_id: required_string!("CommandID"),
+                result: required_string!("Result"),
             },
             "AsyncAGIEnd" => Self::AsyncAGIEnd {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "AGIExecStart" => Self::AGIExecStart {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                command: get(raw, "Command"),
-                command_id: get(raw, "CommandId"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                command: required_string!("Command"),
+                command_id: required_string!("CommandId"),
             },
             "AGIExecEnd" => Self::AGIExecEnd {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                command: get(raw, "Command"),
-                command_id: get(raw, "CommandId"),
-                result_code: get(raw, "ResultCode"),
-                result: get(raw, "Result"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                command: required_string!("Command"),
+                command_id: required_string!("CommandId"),
+                result_code: required_string!("ResultCode"),
+                result: required_string!("Result"),
             },
 
             // hangup handlers
             "HangupHandlerPush" => Self::HangupHandlerPush {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                handler: get(raw, "Handler"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                handler: required_string!("Handler"),
             },
             "HangupHandlerPop" => Self::HangupHandlerPop {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                handler: get(raw, "Handler"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                handler: required_string!("Handler"),
             },
             "HangupHandlerRun" => Self::HangupHandlerRun {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                handler: get(raw, "Handler"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                handler: required_string!("Handler"),
             },
 
             // core show / status
             "Status" => Self::Status {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                channel_state: get(raw, "ChannelState"),
-                caller_id_num: get(raw, "CallerIDNum"),
-                caller_id_name: get(raw, "CallerIDName"),
-                account_code: get(raw, "AccountCode"),
-                context: get(raw, "Context"),
-                exten: get(raw, "Exten"),
-                priority: raw
-                    .get("Priority")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                seconds: raw.get("Seconds").and_then(|s| s.parse().ok()).unwrap_or(0),
-                bridge_id: get(raw, "BridgeID"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                channel_state: required_string!("ChannelState"),
+                caller_id_num: required_string!("CallerIDNum"),
+                caller_id_name: required_string!("CallerIDName"),
+                account_code: required_string!("AccountCode"),
+                context: required_string!("Context"),
+                exten: required_string!("Exten"),
+                priority: required_parse!("Priority"),
+                seconds: required_parse!("Seconds"),
+                bridge_id: required_string!("BridgeID"),
                 channel_variables: raw.channel_variables.clone(),
             },
             "StatusComplete" => Self::StatusComplete {
-                items: raw.get("Items").and_then(|s| s.parse().ok()).unwrap_or(0),
+                items: required_parse!("Items"),
             },
             "CoreShowChannel" => Self::CoreShowChannel {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                channel_state: get(raw, "ChannelState"),
-                caller_id_num: get(raw, "CallerIDNum"),
-                caller_id_name: get(raw, "CallerIDName"),
-                application: get(raw, "Application"),
-                application_data: get(raw, "ApplicationData"),
-                duration: get(raw, "Duration"),
-                bridge_id: get(raw, "BridgeID"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                channel_state: required_string!("ChannelState"),
+                caller_id_num: required_string!("CallerIDNum"),
+                caller_id_name: required_string!("CallerIDName"),
+                application: required_string!("Application"),
+                application_data: required_string!("ApplicationData"),
+                duration: required_string!("Duration"),
+                bridge_id: required_string!("BridgeID"),
                 channel_variables: raw.channel_variables.clone(),
             },
             "CoreShowChannelsComplete" => Self::CoreShowChannelsComplete {
-                listed_channels: raw
-                    .get("ListItems")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                listed_channels: required_parse!("ListItems"),
             },
             "CoreShowChannelMapComplete" => Self::CoreShowChannelMapComplete,
 
             // dahdi
             "DAHDIChannel" => Self::DAHDIChannel {
-                dahdi_channel: get(raw, "DAHDIChannel"),
+                dahdi_channel: required_string!("DAHDIChannel"),
                 channel: raw.get("Channel").map(|s| s.to_string()),
                 unique_id: raw.get("Uniqueid").map(|s| s.to_string()),
             },
             "Alarm" => Self::Alarm {
-                alarm: get(raw, "Alarm"),
-                channel_dahdi: get(raw, "Channel"),
+                alarm: required_string!("Alarm"),
+                channel_dahdi: required_string!("Channel"),
             },
             "AlarmClear" => Self::AlarmClear {
-                channel_dahdi: get(raw, "Channel"),
+                channel_dahdi: required_string!("Channel"),
             },
             "SpanAlarm" => Self::SpanAlarm {
-                span: raw.get("Span").and_then(|s| s.parse().ok()).unwrap_or(0),
-                alarm: get(raw, "Alarm"),
+                span: required_parse!("Span"),
+                alarm: required_string!("Alarm"),
             },
             "SpanAlarmClear" => Self::SpanAlarmClear {
-                span: raw.get("Span").and_then(|s| s.parse().ok()).unwrap_or(0),
+                span: required_parse!("Span"),
             },
 
             // aoc
             "AOC-D" => Self::AocD {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                charge_type: get(raw, "ChargeType"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                charge_type: required_string!("ChargeType"),
             },
             "AOC-E" => Self::AocE {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                charge_type: get(raw, "ChargeType"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                charge_type: required_string!("ChargeType"),
             },
             "AOC-S" => Self::AocS {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
 
             // fax
             "FAXStatus" => Self::FAXStatus {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                operation: get(raw, "Operation"),
-                status: get(raw, "Status"),
-                local_station_id: get(raw, "LocalStationID"),
-                filename: get(raw, "FileName"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                operation: required_string!("Operation"),
+                status: required_string!("Status"),
+                local_station_id: required_string!("LocalStationID"),
+                filename: required_string!("FileName"),
             },
             "ReceiveFAX" => Self::ReceiveFAX {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                local_station_id: get(raw, "LocalStationID"),
-                remote_station_id: get(raw, "RemoteStationID"),
-                pages_transferred: raw
-                    .get("PagesTransferred")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                resolution: get(raw, "Resolution"),
-                filename: get(raw, "FileName"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                local_station_id: required_string!("LocalStationID"),
+                remote_station_id: required_string!("RemoteStationID"),
+                pages_transferred: required_parse!("PagesTransferred"),
+                resolution: required_string!("Resolution"),
+                filename: required_string!("FileName"),
             },
             "SendFAX" => Self::SendFAX {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                local_station_id: get(raw, "LocalStationID"),
-                remote_station_id: get(raw, "RemoteStationID"),
-                pages_transferred: raw
-                    .get("PagesTransferred")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                resolution: get(raw, "Resolution"),
-                filename: get(raw, "FileName"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                local_station_id: required_string!("LocalStationID"),
+                remote_station_id: required_string!("RemoteStationID"),
+                pages_transferred: required_parse!("PagesTransferred"),
+                resolution: required_string!("Resolution"),
+                filename: required_string!("FileName"),
             },
 
             // meetme
             "MeetmeJoin" => Self::MeetmeJoin {
-                meetme: get(raw, "Meetme"),
-                user_num: get(raw, "Usernum"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
+                meetme: required_string!("Meetme"),
+                user_num: required_string!("Usernum"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
             },
             "MeetmeLeave" => Self::MeetmeLeave {
-                meetme: get(raw, "Meetme"),
-                user_num: get(raw, "Usernum"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                duration: raw
-                    .get("Duration")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                meetme: required_string!("Meetme"),
+                user_num: required_string!("Usernum"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                duration: required_parse!("Duration"),
             },
             "MeetmeEnd" => Self::MeetmeEnd {
-                meetme: get(raw, "Meetme"),
+                meetme: required_string!("Meetme"),
             },
             "MeetmeMute" => Self::MeetmeMute {
-                meetme: get(raw, "Meetme"),
-                user_num: get(raw, "Usernum"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                status: get(raw, "Status"),
+                meetme: required_string!("Meetme"),
+                user_num: required_string!("Usernum"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                status: required_string!("Status"),
             },
             "MeetmeTalking" => Self::MeetmeTalking {
-                meetme: get(raw, "Meetme"),
-                user_num: get(raw, "Usernum"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                status: get(raw, "Status"),
+                meetme: required_string!("Meetme"),
+                user_num: required_string!("Usernum"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                status: required_string!("Status"),
             },
             "MeetmeTalkRequest" => Self::MeetmeTalkRequest {
-                meetme: get(raw, "Meetme"),
-                user_num: get(raw, "Usernum"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                status: get(raw, "Status"),
+                meetme: required_string!("Meetme"),
+                user_num: required_string!("Usernum"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                status: required_string!("Status"),
             },
             "MeetmeList" => Self::MeetmeList {
-                meetme: get(raw, "Meetme"),
-                user_num: get(raw, "Usernum"),
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                admin: get(raw, "Admin"),
-                muted: get(raw, "Muted"),
-                talking: get(raw, "Talking"),
+                meetme: required_string!("Meetme"),
+                user_num: required_string!("Usernum"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                admin: required_string!("Admin"),
+                muted: required_string!("Muted"),
+                talking: required_string!("Talking"),
             },
             "MeetmeListRooms" => Self::MeetmeListRooms {
-                conference: get(raw, "Conference"),
-                parties: raw.get("Parties").and_then(|s| s.parse().ok()).unwrap_or(0),
-                marked: raw.get("Marked").and_then(|s| s.parse().ok()).unwrap_or(0),
-                locked: get(raw, "Locked"),
+                conference: required_string!("Conference"),
+                parties: required_parse!("Parties"),
+                marked: required_parse!("Marked"),
+                locked: required_string!("Locked"),
             },
 
             // list complete markers
             "DeviceStateListComplete" => Self::DeviceStateListComplete {
-                items: raw
-                    .get("ListItems")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                items: required_parse!("ListItems"),
             },
             "ExtensionStateListComplete" => Self::ExtensionStateListComplete {
-                items: raw
-                    .get("ListItems")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                items: required_parse!("ListItems"),
             },
             "PresenceStateListComplete" => Self::PresenceStateListComplete {
-                items: raw
-                    .get("ListItems")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                items: required_parse!("ListItems"),
             },
 
             // pjsip detail/list
             "AorDetail" => Self::AorDetail {
-                object_name: get(raw, "ObjectName"),
-                contacts: get(raw, "Contacts"),
+                object_name: required_string!("ObjectName"),
+                contacts: required_string!("Contacts"),
             },
             "AorList" => Self::AorList {
-                object_name: get(raw, "ObjectName"),
+                object_name: required_string!("ObjectName"),
             },
             "AorListComplete" => Self::AorListComplete {
-                items: raw
-                    .get("ListItems")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                items: required_parse!("ListItems"),
             },
             "AuthDetail" => Self::AuthDetail {
-                object_name: get(raw, "ObjectName"),
-                username: get(raw, "Username"),
+                object_name: required_string!("ObjectName"),
+                username: required_string!("Username"),
             },
             "AuthList" => Self::AuthList {
-                object_name: get(raw, "ObjectName"),
+                object_name: required_string!("ObjectName"),
             },
             "AuthListComplete" => Self::AuthListComplete {
-                items: raw
-                    .get("ListItems")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                items: required_parse!("ListItems"),
             },
             "ContactList" => Self::ContactList {
-                uri: get(raw, "URI"),
-                contact_status: get(raw, "ContactStatus"),
-                aor: get(raw, "AOR"),
+                uri: required_string!("URI"),
+                contact_status: required_string!("ContactStatus"),
+                aor: required_string!("AOR"),
             },
             "ContactListComplete" => Self::ContactListComplete {
-                items: raw
-                    .get("ListItems")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                items: required_parse!("ListItems"),
             },
             "ContactStatusDetail" => Self::ContactStatusDetail {
-                uri: get(raw, "URI"),
-                contact_status: get(raw, "ContactStatus"),
-                aor: get(raw, "AOR"),
+                uri: required_string!("URI"),
+                contact_status: required_string!("ContactStatus"),
+                aor: required_string!("AOR"),
             },
             "EndpointDetail" => Self::EndpointDetail {
-                object_name: get(raw, "ObjectName"),
-                device_state: get(raw, "DeviceState"),
-                active_channels: get(raw, "ActiveChannels"),
+                object_name: required_string!("ObjectName"),
+                device_state: required_string!("DeviceState"),
+                active_channels: required_string!("ActiveChannels"),
             },
             "EndpointDetailComplete" => Self::EndpointDetailComplete {
-                items: raw
-                    .get("ListItems")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                items: required_parse!("ListItems"),
             },
             "EndpointList" => Self::EndpointList {
-                object_name: get(raw, "ObjectName"),
-                transport: get(raw, "Transport"),
-                aor: get(raw, "Aor"),
+                object_name: required_string!("ObjectName"),
+                transport: required_string!("Transport"),
+                aor: required_string!("Aor"),
             },
             "EndpointListComplete" => Self::EndpointListComplete {
-                items: raw
-                    .get("ListItems")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                items: required_parse!("ListItems"),
             },
             "IdentifyDetail" => Self::IdentifyDetail {
-                object_name: get(raw, "ObjectName"),
-                endpoint: get(raw, "Endpoint"),
+                object_name: required_string!("ObjectName"),
+                endpoint: required_string!("Endpoint"),
             },
             "TransportDetail" => Self::TransportDetail {
-                object_name: get(raw, "ObjectName"),
-                protocol: get(raw, "Protocol"),
+                object_name: required_string!("ObjectName"),
+                protocol: required_string!("Protocol"),
             },
             "ResourceListDetail" => Self::ResourceListDetail {
-                object_name: get(raw, "ObjectName"),
+                object_name: required_string!("ObjectName"),
             },
             "InboundRegistrationDetail" => Self::InboundRegistrationDetail {
-                object_name: get(raw, "ObjectName"),
-                contacts: get(raw, "Contacts"),
+                object_name: required_string!("ObjectName"),
+                contacts: required_string!("Contacts"),
             },
             "OutboundRegistrationDetail" => Self::OutboundRegistrationDetail {
-                object_name: get(raw, "ObjectName"),
-                server_uri: get(raw, "ServerUri"),
+                object_name: required_string!("ObjectName"),
+                server_uri: required_string!("ServerUri"),
             },
             "InboundSubscriptionDetail" => Self::InboundSubscriptionDetail {
-                object_name: get(raw, "ObjectName"),
+                object_name: required_string!("ObjectName"),
             },
             "OutboundSubscriptionDetail" => Self::OutboundSubscriptionDetail {
-                object_name: get(raw, "ObjectName"),
+                object_name: required_string!("ObjectName"),
             },
 
             // mwi
             "MWIGet" => Self::MWIGet {
-                mailbox: get(raw, "Mailbox"),
-                old_messages: raw
-                    .get("OldMessages")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                new_messages: raw
-                    .get("NewMessages")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                mailbox: required_string!("Mailbox"),
+                old_messages: required_parse!("OldMessages"),
+                new_messages: required_parse!("NewMessages"),
             },
             "MWIGetComplete" => Self::MWIGetComplete {
-                items: raw
-                    .get("ListItems")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                items: required_parse!("ListItems"),
             },
 
             // misc
             "MiniVoiceMail" => Self::MiniVoiceMail {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                mailbox: get(raw, "Mailbox"),
-                counter: get(raw, "Counter"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                mailbox: required_string!("Mailbox"),
+                counter: required_string!("Counter"),
             },
             "FAXSession" => Self::FAXSession {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                session_number: get(raw, "SessionNumber"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                session_number: required_string!("SessionNumber"),
             },
             "FAXSessionsEntry" => Self::FAXSessionsEntry {
-                channel: get(raw, "Channel"),
-                session_number: get(raw, "SessionNumber"),
-                technology: get(raw, "Technology"),
-                state: get(raw, "State"),
-                files: get(raw, "Files"),
+                channel: required_string!("Channel"),
+                session_number: required_string!("SessionNumber"),
+                technology: required_string!("Technology"),
+                state: required_string!("State"),
+                files: required_string!("Files"),
             },
             "FAXSessionsComplete" => Self::FAXSessionsComplete {
-                total: raw.get("Total").and_then(|s| s.parse().ok()).unwrap_or(0),
+                total: required_parse!("Total"),
             },
             "FAXStats" => Self::FAXStats {
-                current_sessions: raw
-                    .get("CurrentSessions")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                reserved_sessions: raw
-                    .get("ReservedSessions")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                transmit_attempts: raw
-                    .get("TransmitAttempts")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                receive_attempts: raw
-                    .get("ReceiveAttempts")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                completed_faxes: raw
-                    .get("CompletedFAXes")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
-                failed_faxes: raw
-                    .get("FailedFAXes")
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0),
+                current_sessions: required_parse!("CurrentSessions"),
+                reserved_sessions: required_parse!("ReservedSessions"),
+                transmit_attempts: required_parse!("TransmitAttempts"),
+                receive_attempts: required_parse!("ReceiveAttempts"),
+                completed_faxes: required_parse!("CompletedFAXes"),
+                failed_faxes: required_parse!("FailedFAXes"),
             },
             "DNDState" => Self::DNDState {
-                channel: get(raw, "Channel"),
-                status: get(raw, "Status"),
+                channel: required_string!("Channel"),
+                status: required_string!("Status"),
             },
             "DeadlockStart" => Self::DeadlockStart,
             "MCID" => Self::MCID {
-                channel: get(raw, "Channel"),
-                unique_id: get(raw, "Uniqueid"),
-                caller_id_num: get(raw, "CallerIDNum"),
-                caller_id_name: get(raw, "CallerIDName"),
+                channel: required_string!("Channel"),
+                unique_id: required_string!("Uniqueid"),
+                caller_id_num: required_string!("CallerIDNum"),
+                caller_id_name: required_string!("CallerIDName"),
             },
 
             _ => Self::Unknown {
@@ -2691,6 +2584,7 @@ impl AmiEvent {
             Self::DNDState { .. } => "DNDState",
             Self::DeadlockStart => "DeadlockStart",
             Self::MCID { .. } => "MCID",
+            Self::Malformed { event_name, .. } => event_name,
             Self::Unknown { event_name, .. } => event_name,
         }
     }
@@ -2718,10 +2612,11 @@ impl AmiEvent {
             | Self::EndpointListComplete { .. }
             | Self::MWIGetComplete { .. }
             | Self::FAXSessionsComplete { .. } => true,
-            Self::Unknown { headers, .. } => headers
-                .get("EventList")
-                .map(|v| v.eq_ignore_ascii_case("complete"))
-                .unwrap_or(false),
+            Self::Malformed { headers, .. } | Self::Unknown { headers, .. } => {
+                headers.iter().any(|(key, value)| {
+                    key.eq_ignore_ascii_case("EventList") && value.eq_ignore_ascii_case("complete")
+                })
+            }
             _ => false,
         }
     }
@@ -2738,7 +2633,6 @@ impl AmiEvent {
             | Self::DtmfEnd { channel, .. }
             | Self::BridgeEnter { channel, .. }
             | Self::BridgeLeave { channel, .. }
-            | Self::VarSet { channel, .. }
             | Self::Hold { channel, .. }
             | Self::Unhold { channel, .. }
             | Self::HangupRequest { channel, .. }
@@ -2819,7 +2713,8 @@ impl AmiEvent {
             | Self::DNDState { channel, .. }
             | Self::MCID { channel, .. } => Some(channel),
             // optional channel fields — extract from inner Option
-            Self::UserEvent { channel, .. }
+            Self::VarSet { channel, .. }
+            | Self::UserEvent { channel, .. }
             | Self::Agents { channel, .. }
             | Self::DAHDIChannel { channel, .. } => channel.as_deref(),
             _ => None,
@@ -2838,7 +2733,6 @@ impl AmiEvent {
             | Self::DtmfEnd { unique_id, .. }
             | Self::BridgeEnter { unique_id, .. }
             | Self::BridgeLeave { unique_id, .. }
-            | Self::VarSet { unique_id, .. }
             | Self::Hold { unique_id, .. }
             | Self::Unhold { unique_id, .. }
             | Self::HangupRequest { unique_id, .. }
@@ -2917,9 +2811,9 @@ impl AmiEvent {
             | Self::FAXSession { unique_id, .. }
             | Self::MCID { unique_id, .. } => Some(unique_id),
             // optional unique_id fields
-            Self::UserEvent { unique_id, .. } | Self::DAHDIChannel { unique_id, .. } => {
-                unique_id.as_deref()
-            }
+            Self::VarSet { unique_id, .. }
+            | Self::UserEvent { unique_id, .. }
+            | Self::DAHDIChannel { unique_id, .. } => unique_id.as_deref(),
             _ => None,
         }
     }
@@ -2928,7 +2822,35 @@ impl AmiEvent {
 // AmiEvent works with the core EventBus
 impl asterisk_rs_core::event::Event for AmiEvent {}
 
-/// extract a header value or return empty string
-fn get(raw: &RawAmiMessage, key: &str) -> String {
-    raw.get(key).unwrap_or("").to_string()
+const REDACTED_HEADER_VALUE: &str = "[REDACTED]";
+
+fn redacted_headers(raw: &RawAmiMessage) -> HashMap<String, String> {
+    raw.headers
+        .iter()
+        .map(|(key, value)| (key.clone(), redact_header_value(key, value)))
+        .collect()
+}
+
+fn redact_header_value(key: &str, value: &str) -> String {
+    let normalized: String = key
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    if normalized.contains("password")
+        || normalized.contains("passwd")
+        || normalized.contains("secret")
+        || normalized == "md5cred"
+        || normalized.contains("credential")
+        || normalized.contains("token")
+        || normalized.contains("authorization")
+        || normalized.contains("apikey")
+        || normalized.contains("privatekey")
+        || normalized.contains("accesskey")
+        || normalized.contains("cookie")
+    {
+        REDACTED_HEADER_VALUE.to_owned()
+    } else {
+        value.to_owned()
+    }
 }

@@ -91,9 +91,19 @@ is either a green local harness commit or a concrete authority/external-state bl
   no actionable defect. Frozen proof passed `just ci`, `just msrv`, `just semver`, 956 current and
   MSRV unit tests, and 252 current and MSRV mock tests. Live Asterisk was not rerun because this batch
   changes deserialization/serialization and offline contract enforcement without issuing PBX calls.
-- [ ] 2026-08-17: continue Slice 1 by classifying malformed known AMI events without synthesizing
-  empty/zero fields, completing the media JSON contract against the pin, and reconciling the remaining
-  model/API compatibility items against existing source and tests.
+- [x] 2026-08-17: classified malformed known AMI events without synthesizing empty strings or zeroes.
+  `AmiEvent::Malformed` retains the event name, failing field, safe value, and credential-redacted
+  headers; unknown events remain distinct. Global `VarSet` channel snapshots and asynchronous
+  `OriginateResponse` ActionIDs remain optional where Asterisk legitimately omits them, and malformed
+  event-list terminal markers still complete or cancel their collectors case-insensitively. Four fresh
+  review rounds found optional-field, terminal-state, case-folding, and credential-redaction gaps; all
+  were repaired, and the final review found no actionable defect. Frozen proof passed `just ci`,
+  `just msrv`, `just semver`, 962 current/MSRV unit tests, and 252 current/MSRV mock tests. Live
+  Asterisk was not rerun because this slice changes malformed-wire classification without issuing a
+  PBX operation; the final plan-wide live gate remains required. The same frozen gate exposed and
+  repaired the user-authorized harness routing/checker drift, committed separately as `7189c67`.
+- [ ] 2026-08-17: continue Slice 1 by completing the media JSON contract against the pin and
+  reconciling the remaining model/API compatibility items against existing source and tests.
 
 ## Surprises and discoveries
 
@@ -195,7 +205,7 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
   `callerId` and `appArgs`; implement redirect's required endpoint contract.
 - [x] Make ARI HTTP, unified WebSocket, and outbound-session success semantics consistently 2xx and
   preserve response/status/body-read sources.
-- [ ] Replace malformed AMI event defaults (`""`/zero) with required-field parsing that distinguishes
+- [x] Replace malformed AMI event defaults (`""`/zero) with required-field parsing that distinguishes
   malformed, unknown, and valid events. Preserve unknown ARI event type and raw payload.
 - [ ] Complete ARI models from pinned fixtures and make future-facing models non-exhaustive or
   builder-based so fields can evolve without repeated breaks.

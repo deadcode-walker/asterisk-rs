@@ -639,7 +639,9 @@ fn event_list_terminal(event: &crate::event::AmiEvent) -> EventListTerminal {
     if event.is_event_list_complete() {
         return EventListTerminal::Complete;
     }
-    if let crate::event::AmiEvent::Unknown { headers, .. } = event {
+    if let crate::event::AmiEvent::Malformed { headers, .. }
+    | crate::event::AmiEvent::Unknown { headers, .. } = event
+    {
         if headers.iter().any(|(key, value)| {
             key.eq_ignore_ascii_case("EventList") && value.eq_ignore_ascii_case("Cancelled")
         }) {

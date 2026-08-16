@@ -222,7 +222,7 @@ impl Pbx {
                     ..
                 } = event
                 {
-                    if action_id == expected_action_id {
+                    if action_id.as_deref() == Some(expected_action_id.as_str()) {
                         return Ok((channel, unique_id, response));
                     }
                 }
