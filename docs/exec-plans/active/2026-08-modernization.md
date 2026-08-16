@@ -1,6 +1,6 @@
 # Repository harness and modernization
 
-## Purpose
+## Purpose and scope
 
 Replace stale repository guidance and unsafe automation, correct the protocol and lifecycle defects
 found by the ground-up review, establish an intentional 0.8 compatibility boundary, and leave
@@ -9,6 +9,15 @@ found by the ground-up review, establish an intentional 0.8 compatibility bounda
 This plan is the decision register for the full run. A reviewer finding may be implemented directly,
 merged into a broader invariant, sequenced behind a prerequisite, or rejected with evidence. Nothing
 is silently dropped because it was low severity or duplicated another report.
+
+The non-goals are replacing Cargo with Bazel, adding infrastructure without a measured gap, claiming
+mock proof as Asterisk proof, or treating local completion as authority to mutate GitHub or publish.
+The repository owner authorized local implementation, verification, review response, and coherent
+commits. Push, issue/PR closure, repository settings, merge, and release remain explicit later gates.
+The current recoverable baseline is commit `8b3c31a`, four commits ahead of `origin/main`; later
+checkpoint identities are recorded below. Material assumptions are that Cargo remains the published
+graph, Asterisk 22 remains the owned live fixture, and the external GitHub state must be re-read before
+it is changed.
 
 ## Progress
 
@@ -34,8 +43,18 @@ is silently dropped because it was low severity or duplicated another report.
 - [x] 2026-08-16: committed the bounded foundation checkpoint locally as `b0aae21`; push, monitor,
   and close external records only on later explicit instruction and only when pushed evidence
   supports closure.
+- [x] 2026-08-16: migrate the repository harness to the refreshed Harness Engineering contract,
+  preserve the incumbent toolchain, prove an intentional structural failure, run the frozen-candidate
+  gate, and obtain fresh read-only review before recording the next exact checkpoint.
+  The first frozen candidate was `git diff --binary` SHA-256 `d9dc2e57e1b4888b1bcff23a413949f1704c8596376aab4abbfad54fb47163eb`;
+  `just ci`, `just semver`, 949 unit tests, and 252 mock tests passed. Two fresh reviewers found
+  checker failure-path and parsing defects, which were corrected before the final gate and review.
+  The enclosing local commit is the final exact checkpoint, avoiding a self-referential diff hash.
+  Live Asterisk was not rerun because this slice changes only repository knowledge and enforcement.
+  No GitHub state changed. When the owner resumes work, the selected next scope is the remaining
+  Slice 1 compatibility and pinned-protocol contracts; it stays stopped until that instruction.
 
-## Historical consolidated verdict
+## Surprises and discoveries
 
 This was the pre-implementation review verdict and is retained as history, not as a description of
 the current candidate. At that checkpoint no unsafe Rust, leaked repository credential, or active
@@ -53,7 +72,7 @@ known advisory remained in the graph, but the candidate was blocked by these fin
   and can publish an unverified manually selected branch with long-lived secrets.
 - public API changes that require a deliberate 0.8 release rather than an accidental 0.7 patch.
 
-## Decisions
+## Decision log
 
 ### Accepted foundations
 
@@ -86,7 +105,20 @@ known advisory remained in the graph, but the candidate was blocked by these fin
   it would deadlock maintenance. Conversation resolution and an exact aggregate CI check remain
   required.
 
-## Executable work register
+- The refreshed harness skill does not justify a new scaffold: the required semantic owners already
+  exist. Migrate them in place, remove the empty generic `docs/generated/` placeholder, and keep
+  release-plz as the sole changelog owner.
+
+## Context and orientation
+
+The workspace root owns Cargo, the exact toolchain selector, the just facade, workflows, and the root
+instruction map. `ARCHITECTURE.md` routes shared, protocol, and composition changes into one of five
+publishable crates. Public guidance and generated reference pages live under `docs/src/`; engineering
+decisions and recovery state live under `docs/`. External tests are in the `tests` package, with mocks
+as the default boundary and the Compose-managed Asterisk instance as live proof. Start each slice from
+the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest representative test.
+
+## Plan of work
 
 ### Slice 0: normalize and restore the proof baseline
 
@@ -260,6 +292,16 @@ known advisory remained in the graph, but the candidate was blocked by these fin
 - [ ] Close issue 60 only with its pushed wire-format proof; close issue 57 only with patched lock and
   security evidence; close PRs 55 and 59 only after commenting that the pushed modernization supersedes
   them. Close any additional issue/PR only with equivalent evidence.
+
+## Concrete steps
+
+For each remaining slice, inspect `git status`, record its outcome and non-goals here, trace one
+complete path from `ARCHITECTURE.md`, and iterate with `just test <filter>` followed by `just check`.
+When the candidate is frozen, record `git rev-parse HEAD` plus the working-tree diff identity, run
+`just ci`, run `just live` when the repository owns the required service, inspect the exact diff, and
+request fresh read-only review. Address valid findings and rerun affected proof. Commit a coherent
+green slice only after the review is clean. Re-read external GitHub state immediately before any
+later authorized push, settings change, closure, merge, or release action.
 
 ## Validation and acceptance
 

@@ -28,6 +28,20 @@ tests  --->  all publishable crates
 Protocol crates must not depend on one another. Shared protocol-neutral facts move downward to
 core; cross-protocol orchestration moves upward to the umbrella crate or an application.
 
+## Useful paths
+
+| Outcome | Trace from | Through | Observable boundary |
+|---|---|---|---|
+| AMI connect, action, and event correlation | `asterisk-rs-ami/src/client.rs` | `connection.rs`, `codec.rs`, `response.rs` | AMI mock server or live port 5038 |
+| FastAGI session and command exchange | `asterisk-rs-agi/src/server.rs` | `request.rs`, `handler.rs`, `channel.rs`, `response.rs` | mock AGI peer or live FastAGI session |
+| ARI REST and event lifecycle | `asterisk-rs-ari/src/client.rs` | `transport.rs`, `websocket.rs`, `resources/` | ARI HTTP/WS mock or live port 8088 |
+| Unified/outbound ARI request correlation | `asterisk-rs-ari/src/ws_transport.rs` | `ws_proto.rs`, `server.rs` | typed WebSocket request/response IDs |
+| Media WebSocket control and audio | `asterisk-rs-ari/src/media.rs` | explicit TLS connector and bounded socket actor | chan_websocket fixture or live Asterisk |
+| Cross-protocol PBX convenience | `asterisk-rs/src/pbx.rs` | protocol crate public APIs only | external behavior tests in `tests/` |
+
+Start with the named entry point and follow one complete path to its mock or live boundary before
+changing a shared type, retry policy, lifecycle rule, or public API.
+
 ## Runtime flows
 
 AMI uses a background connection manager. Client commands travel over `mpsc`, action results return

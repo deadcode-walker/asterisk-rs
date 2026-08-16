@@ -120,13 +120,13 @@ jobs:
           rustup default 1.97.1
       - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
         with:
-          tool: cargo-semver-checks
+          tool: just,cargo-semver-checks
           fallback: none
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.event_name == 'push' }}
           shared-key: semver-1.97.1
-      - run: cargo semver-checks --workspace --exclude asterisk-rs-tests
+      - run: just semver
 
   coverage:
     name: Coverage

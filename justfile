@@ -56,6 +56,10 @@ supply-chain:
     cargo deny check
     cargo shear --deny-warnings
 
+# check public API compatibility against the latest published releases
+semver:
+    cargo semver-checks --workspace --exclude asterisk-rs-tests
+
 # regenerate and reject stale generated documentation
 docs-check:
     python3 docs/generate.py
