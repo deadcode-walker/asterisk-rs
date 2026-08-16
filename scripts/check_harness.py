@@ -70,6 +70,7 @@ REQUIRED_H2_HEADINGS = {
         "Deliberate absences and freshness",
     ),
     "docs/PLANS.md": (
+        "Artifact and action semantics",
         "Context and state contract",
         "Required living sections",
         "Required execution sections",

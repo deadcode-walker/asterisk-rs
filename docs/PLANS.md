@@ -8,6 +8,19 @@ An ExecPlan is a self-contained living document for a capable agent that has the
 private chat history. It defines repository-specific terms, names exact owners and commands, and ends
 in demonstrably working behavior rather than source shape or activity counts.
 
+## Artifact and action semantics
+
+A request to “create,” “make,” “write,” “record,” “save,” or “check in” a plan authorizes creation
+or update of the durable plan artifact when this contract applies. Use
+`$harness-engineering:write-exec-plan` when available. Do not return only plan prose unless the user
+explicitly requested an outline, chat-only response, or no writes, or the active product mode
+forbids mutation. Plan-file authority does not authorize implementation or external effects.
+
+A request to “resume,” “execute,” “continue,” or “finish” a plan means read the selected active plan
+and perform its authorized work through `$harness-engineering:execute-repository-work`; do not merely
+summarize or replace it. Fresh plan or candidate review uses
+`$harness-engineering:review-repository-work` against a pinned target and stays read-only.
+
 ## Context and state contract
 
 Durable state and visible model context are different. A compacted thread continues but may lose
@@ -28,11 +41,13 @@ mandatory.
 ### Execution capability selection
 
 At each context boundary, consider the execution surfaces available in the current environment and
-choose the smallest one that preserves context, exclusive ownership, and acceptance evidence. Use
-`codex exec` only for an intentionally fresh, bounded non-interactive worker or review; inspect
-`codex exec --help` first and declare its working root, sandbox/approval boundary, result contract,
-budget, and exclusive write ownership. Do not nest it merely to continue the same coherent task,
-bypass repository authority, or overlap another worker's writes.
+keep the current context as integration owner and default sole writer. Use `codex exec` as the
+default isolation surface for a bounded read-only plan or candidate review; run
+`codex exec --help` before relying on flags and declare its root, sandbox/approval boundary, result
+contract, budget, and ownership. Before handing off a checked-in plan or claiming a material
+candidate complete, run one such fresh review when honest isolation is available. Record a concrete
+fallback otherwise. Do not continue coherent work in nested Codex, launch duplicate reviewers,
+bypass authority, or overlap writers.
 
 ## Required living sections
 

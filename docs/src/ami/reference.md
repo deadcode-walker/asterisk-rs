@@ -3,7 +3,7 @@
 # AMI Reference
 
 
-## Events (181 typed variants)
+## Events (182 typed variants)
 
 | Variant | Description |
 |---------|-------------|
@@ -187,6 +187,7 @@
 | `DNDState` | do not disturb state changed |
 | `DeadlockStart` | deadlock detected |
 | `MCID` | malicious call id |
+| `Malformed` | recognized event whose required field is missing or invalid |
 | `Unknown` | unrecognized event — carries all raw headers |
 
 ## Actions (150 typed structs)
