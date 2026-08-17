@@ -197,10 +197,10 @@ async fn test_tracker_processes_call_lifecycle() {
         cause_txt: "Normal Clearing".into(),
     });
 
-    // give the background task time to process
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let call = rx.recv().await.expect("should receive completed call");
+    let call = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("tracker completion timed out")
+        .expect("should receive completed call");
     assert_eq!(call.unique_id, "1234.1");
     assert_eq!(call.channel, "SIP/100-00000001");
     assert_eq!(call.linked_id, "1234.1");
@@ -255,15 +255,13 @@ async fn test_tracker_multiple_simultaneous_calls() {
         cause_txt: "User Busy".into(),
     });
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    let call1 = rx
-        .recv()
+    let call1 = tokio::time::timeout(Duration::from_secs(1), rx.recv())
         .await
+        .expect("first tracker completion timed out")
         .expect("should receive first completed call");
-    let call2 = rx
-        .recv()
+    let call2 = tokio::time::timeout(Duration::from_secs(1), rx.recv())
         .await
+        .expect("second tracker completion timed out")
         .expect("should receive second completed call");
 
     let mut uids = vec![call1.unique_id.clone(), call2.unique_id.clone()];
@@ -287,11 +285,11 @@ async fn test_tracker_hangup_unknown_call_ignored() {
         cause_txt: "Normal Clearing".into(),
     });
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    // channel should be empty — no CompletedCall produced
+    // No completion may become observable for an unknown call.
     assert!(
-        rx.try_recv().is_err(),
+        tokio::time::timeout(Duration::from_millis(100), rx.recv())
+            .await
+            .is_err(),
         "hangup for unknown call should not produce a CompletedCall"
     );
 
@@ -330,9 +328,10 @@ async fn test_tracker_events_collected_in_order() {
         cause_txt: "Normal Clearing".into(),
     });
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    let call = rx.recv().await.expect("should receive completed call");
+    let call = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("tracker completion timed out")
+        .expect("should receive completed call");
     assert_eq!(
         call.events.len(),
         5,
@@ -367,8 +366,6 @@ async fn test_tracker_shutdown_stops_processing() {
     let stats = tracker.stats();
     assert!(!stats.valid, "shutdown tracker state must be invalid");
     assert_eq!(stats.active_calls, 0, "shutdown must clear active state");
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
     // publish events after shutdown
     bus.publish(AmiEvent::NewChannel {
         channel: "SIP/400-00000004".into(),
@@ -387,11 +384,12 @@ async fn test_tracker_shutdown_stops_processing() {
         cause_txt: "Normal Clearing".into(),
     });
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
     assert!(
-        rx.try_recv().is_err(),
-        "no CompletedCall should be produced after shutdown"
+        matches!(
+            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await,
+            Ok(None)
+        ),
+        "shutdown must close completed-call delivery without producing a call"
     );
 }
 

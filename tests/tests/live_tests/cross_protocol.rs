@@ -20,7 +20,7 @@ async fn connect_ami() -> AmiClient {
     AmiClient::builder()
         .host(ami_host())
         .port(ami_port())
-        .credentials("testadmin", "testsecret")
+        .credentials(ami_username(), ami_secret())
         .reconnect(ReconnectPolicy::none())
         .timeout(Duration::from_secs(10))
         .build()
@@ -30,11 +30,11 @@ async fn connect_ami() -> AmiClient {
 
 /// build an ARI client connected to the test Asterisk instance
 async fn connect_ari() -> AriClient {
-    let config = AriConfigBuilder::new("test-app")
+    let config = AriConfigBuilder::new(ari_app())
         .host(ari_host())
         .port(ari_port())
-        .username("testuser")
-        .password("testpass")
+        .username(ari_username())
+        .password(ari_password())
         .reconnect(ReconnectPolicy::exponential(
             Duration::from_millis(500),
             Duration::from_secs(5),
@@ -90,7 +90,7 @@ async fn ami_originate_ari_stasis_lifecycle() {
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some("lifecycle-test <300>".to_string()),
         account: None,
@@ -281,7 +281,7 @@ async fn ami_events_during_ari_channel_operations() {
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some("cross-var <500>".to_string()),
         account: None,
@@ -347,7 +347,7 @@ async fn ari_bridge_with_two_channels() {
             exten: None,
             priority: None,
             application: Some("Stasis".to_string()),
-            data: Some("test-app".to_string()),
+            data: Some(ari_app().to_string()),
             timeout: Some(10000),
             caller_id: Some(format!("bridge-cross-{i} <600>")),
             account: None,
@@ -468,7 +468,7 @@ async fn ami_monitors_ari_activity() {
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some("monitor-test <700>".to_string()),
         account: None,

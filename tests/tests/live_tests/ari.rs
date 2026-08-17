@@ -14,11 +14,11 @@ use asterisk_rs_tests::helpers::*;
 
 /// build an ARI client connected to the test Asterisk instance
 async fn connect_ari() -> AriClient {
-    let config = AriConfigBuilder::new("test-app")
+    let config = AriConfigBuilder::new(ari_app())
         .host(ari_host())
         .port(ari_port())
-        .username("testuser")
-        .password("testpass")
+        .username(ari_username())
+        .password(ari_password())
         .reconnect(ReconnectPolicy::exponential(
             Duration::from_millis(500),
             Duration::from_secs(5),
@@ -36,7 +36,7 @@ async fn connect_ami() -> AmiClient {
     AmiClient::builder()
         .host(ami_host())
         .port(ami_port())
-        .credentials("testadmin", "testsecret")
+        .credentials(ami_username(), ami_secret())
         .reconnect(ReconnectPolicy::none())
         .timeout(Duration::from_secs(10))
         .build()
@@ -125,7 +125,7 @@ async fn stasis_event_from_originate() {
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some("ari-stasis-test <555>".to_string()),
         account: None,
@@ -189,7 +189,7 @@ async fn channel_answer_and_hangup_via_ari() {
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some("ari-answer-test <556>".to_string()),
         account: None,
@@ -270,7 +270,7 @@ async fn bridge_create_add_channels_destroy() {
             exten: None,
             priority: None,
             application: Some("Stasis".to_string()),
-            data: Some("test-app".to_string()),
+            data: Some(ari_app().to_string()),
             timeout: Some(10000),
             caller_id: Some(format!("bridge-test-{i} <200>")),
             account: None,
@@ -364,7 +364,7 @@ async fn channel_dtmf_via_ari() {
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some("dtmf-test <100>".to_string()),
         account: None,
@@ -437,7 +437,7 @@ async fn channel_variable_via_ari() {
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some("var-test <777>".to_string()),
         account: None,
@@ -509,7 +509,7 @@ async fn originate_into_stasis(
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some(caller_id.to_string()),
         account: None,
@@ -585,18 +585,28 @@ async fn asterisk_global_variable_set_get() {
 
     let client = connect_ari().await;
     tokio::time::sleep(Duration::from_millis(500)).await;
+    let variable = live_config()
+        .resource_name("global")
+        .replace('-', "_")
+        .to_uppercase();
+    let path = format!("asterisk/variable?variable={variable}&value=ari_global_value");
 
     // set global variable
     client
-        .post_empty("asterisk/variable?variable=GLOBAL_TEST_VAR&value=ari_global_value")
+        .post_empty(&path)
         .await
         .expect("set global variable failed");
 
     // get it back
-    let var: serde_json::Value = client
-        .get("asterisk/variable?variable=GLOBAL_TEST_VAR")
+    let var = client
+        .get::<serde_json::Value>(&format!("asterisk/variable?variable={variable}"))
+        .await;
+
+    client
+        .post_empty(&format!("asterisk/variable?variable={variable}&value="))
         .await
-        .expect("get global variable failed");
+        .expect("global variable cleanup failed");
+    let var = var.expect("get global variable failed");
 
     assert_eq!(
         var["value"].as_str(),
@@ -624,22 +634,13 @@ async fn channel_moh_start_stop() {
         .await
         .expect("answer failed");
 
-    // start moh — may return 409 if no moh class configured, accept that
-    let moh_start = ari.post_empty(&format!("channels/{channel_id}/moh")).await;
-    match &moh_start {
-        Ok(()) => tracing::info!("moh started"),
-        Err(AriError::Api { status: 409, .. }) => {
-            tracing::warn!("moh not available (409), skipping stop");
-        }
-        Err(e) => panic!("unexpected moh start error: {e}"),
-    }
-
-    if moh_start.is_ok() {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        ari.delete(&format!("channels/{channel_id}/moh"))
-            .await
-            .expect("stop moh failed");
-    }
+    ari.post_empty(&format!("channels/{channel_id}/moh"))
+        .await
+        .expect("owned fixture must provide a working default MOH class");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    ari.delete(&format!("channels/{channel_id}/moh"))
+        .await
+        .expect("stop moh failed");
 
     let _ = ari.delete(&format!("channels/{channel_id}")).await;
     ami.disconnect().await.expect("ami disconnect failed");
@@ -730,7 +731,7 @@ async fn channel_ring_start_stop() {
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some("ring-test <100>".to_string()),
         account: None,
@@ -908,7 +909,7 @@ async fn stasis_start_with_args() {
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some("args-test <100>".to_string()),
         account: None,
@@ -958,21 +959,13 @@ async fn bridge_moh_start_stop() {
         .expect("bridge should have id")
         .to_string();
 
-    // start moh on bridge — may 409 if no moh class
-    let moh_result = ari.post_empty(&format!("bridges/{bridge_id}/moh")).await;
-    match &moh_result {
-        Ok(()) => {
-            tracing::info!("bridge moh started");
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            ari.delete(&format!("bridges/{bridge_id}/moh"))
-                .await
-                .expect("stop bridge moh failed");
-        }
-        Err(AriError::Api { status: 409, .. }) => {
-            tracing::warn!("bridge moh not available (409)");
-        }
-        Err(e) => panic!("unexpected bridge moh error: {e}"),
-    }
+    ari.post_empty(&format!("bridges/{bridge_id}/moh"))
+        .await
+        .expect("owned fixture must provide bridge MOH");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    ari.delete(&format!("bridges/{bridge_id}/moh"))
+        .await
+        .expect("stop bridge moh failed");
 
     ari.delete(&format!("bridges/{bridge_id}"))
         .await
@@ -1036,7 +1029,7 @@ async fn multiple_stasis_subscribers() {
         exten: None,
         priority: None,
         application: Some("Stasis".to_string()),
-        data: Some("test-app".to_string()),
+        data: Some(ari_app().to_string()),
         timeout: Some(10000),
         caller_id: Some("multi-sub-test <100>".to_string()),
         account: None,
@@ -1124,50 +1117,34 @@ async fn originate_with_custom_channel_id() {
     let mut sub = ari.subscribe();
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let custom_id = "test-chan-custom-123";
+    let custom_id = live_config().resource_name("channel");
     let params = OriginateParams::new("Local/999@default")
-        .app("test-app")
-        .channel_id(custom_id)
+        .app(ari_app())
+        .channel_id(&custom_id)
         .timeout(10)
         .caller_id("originate-chanid-test <557>");
 
     // originate via ARI REST — the request should be accepted even if the
     // endpoint never answers.
-    let result = asterisk_rs_ari::resources::channel::originate(&ari, &params).await;
-
-    match result {
-        Ok(channel) => {
-            // Asterisk honoured our custom channel ID
-            assert_eq!(
-                channel.id, custom_id,
-                "channel id should match the custom id we requested"
-            );
-            tracing::info!(channel_id = %channel.id, "originate accepted with custom channel_id");
-
-            // wait briefly for StasisStart so we can clean up
-            let _ = tokio::time::timeout(Duration::from_secs(5), async {
-                loop {
-                    let msg = sub.recv_lossy().await.expect("event bus closed");
-                    if let AriEvent::StasisStart { channel, .. } = &msg.event {
-                        if channel.id == custom_id {
-                            return;
-                        }
-                    }
+    let channel = asterisk_rs_ari::resources::channel::originate(&ari, &params)
+        .await
+        .expect("owned fixture must accept originate with an isolated channel ID");
+    assert_eq!(channel.id, custom_id);
+    let stasis_result = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let msg = sub.recv_lossy().await.expect("event bus closed");
+            if let AriEvent::StasisStart { channel, .. } = &msg.event {
+                if channel.id == custom_id {
+                    return;
                 }
-            })
-            .await;
-
-            let _ = ari.delete(&format!("channels/{custom_id}")).await;
+            }
         }
-        Err(e) => {
-            // Even a 409 (channel id already in use) or 404 (bad endpoint) is acceptable —
-            // it proves Asterisk parsed the request including channel_id without
-            // rejecting it as malformed.
-            tracing::info!(error = %e, "originate rejected (expected for bad endpoint)");
-            let is_server_error = matches!(&e, AriError::Api { status, .. } if *status >= 500);
-            assert!(!is_server_error, "should not get a server error, got: {e}");
-        }
-    }
+    })
+    .await;
+    ari.delete(&format!("channels/{custom_id}"))
+        .await
+        .expect("custom channel cleanup failed");
+    stasis_result.expect("custom channel never entered Stasis");
 
     ari.disconnect();
 }
@@ -1180,33 +1157,19 @@ async fn external_media_params_accepted() {
     let ari = connect_ari().await;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let params = ExternalMediaParams::new("test-app", "127.0.0.1:19999", "ulaw")
+    let params = ExternalMediaParams::new(ari_app(), "127.0.0.1:19999", "ulaw")
         .encapsulation("rtp")
         .transport("udp")
         .connection_type("client")
         .direction("both");
 
-    let result = asterisk_rs_ari::resources::channel::external_media(&ari, &params).await;
-
-    match result {
-        Ok(channel) => {
-            tracing::info!(channel_id = %channel.id, "external media channel created");
-            // clean up — hangup the external media channel
-            let _ = ari.delete(&format!("channels/{}", channel.id)).await;
-        }
-        Err(e) => {
-            // External media may fail if Asterisk has no media support or the target
-            // is unreachable, but it should not fail with a 400 (bad request) due to
-            // missing or malformed fields — that would indicate a serialization bug.
-            tracing::info!(error = %e, "external_media returned error (may be expected)");
-            if let AriError::Api { status, message } = &e {
-                assert!(
-                    *status != 400,
-                    "400 Bad Request indicates serialization issue: {message}"
-                );
-            }
-        }
-    }
+    let channel = asterisk_rs_ari::resources::channel::external_media(&ari, &params)
+        .await
+        .expect("owned fixture must create the external-media channel");
+    tracing::info!(channel_id = %channel.id, "external media channel created");
+    ari.delete(&format!("channels/{}", channel.id))
+        .await
+        .expect("external-media cleanup failed");
 
     ari.disconnect();
 }
@@ -1217,11 +1180,11 @@ async fn transport_mode_http_default_works() {
     init_tracing();
 
     // explicitly set HTTP transport mode to validate the default path
-    let config = AriConfigBuilder::new("test-app")
+    let config = AriConfigBuilder::new(ari_app())
         .host(ari_host())
         .port(ari_port())
-        .username("testuser")
-        .password("testpass")
+        .username(ari_username())
+        .password(ari_password())
         .transport(TransportMode::Http)
         .reconnect(ReconnectPolicy::exponential(
             Duration::from_millis(500),

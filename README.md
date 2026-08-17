@@ -85,7 +85,8 @@ Available features: `ami`, `agi`, `ari`. The `pbx` abstraction requires `ami`.
 
 ## Capabilities
 
-- Typed actions, events, and commands for the full Asterisk protocol surface
+- Typed actions, events, and commands for the modeled protocol surface; Asterisk 22 is the
+  repository's live-proven boundary
 - Filtered event subscriptions -- receive only what you need
 - Event-collecting actions -- `send_collecting()` gathers multi-event responses (Status, QueueStatus, etc.)
 - Automatic reconnection with exponential backoff, jitter, and re-authentication
@@ -264,6 +265,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 ## Documentation
+
+Representative builder, domain-type, and command signatures from these guides are compiled by
+`just docs-snippets`. Exhaustive public API inventories belong to rustdoc.
 
 - [API Reference (docs.rs)](https://docs.rs/asterisk-rs)
 - [AMI crate docs](https://docs.rs/asterisk-rs-ami)

@@ -62,9 +62,9 @@ network, firewall allowlist, or authenticated TLS proxy.
 | Method | Description |
 |---|---|
 | `stream_file(file, escape_digits)` | Play a file; returns digit pressed or empty |
-| `control_stream_file(file, escape, fwd_ms, rew_key, pause_key)` | Play with skip/pause controls |
+| `control_stream_file(file, escape, skip_ms, ff_key, rew_key, pause_key)` | Play with skip/pause controls |
 | `get_option(file, escape_digits, timeout_ms)` | Play and wait for a single DTMF digit |
-| `record_file(file, format, escape, timeout_ms, beep, silence, max_duration)` | Record audio |
+| `record_file(file, format, escape, timeout_ms, beep, silence)` | Record audio |
 | `set_music(on, class)` | Enable or disable music-on-hold |
 
 ### DTMF and speech
@@ -134,3 +134,6 @@ network, firewall allowlist, or authenticated TLS proxy.
 - [User Guide](https://deadcode-walker.github.io/asterisk-rs/)
 
 Part of [asterisk-rs](https://github.com/deadcode-walker/asterisk-rs). MSRV 1.86. MIT/Apache-2.0.
+
+The representative command signatures in this README are compiled by
+`just docs-snippets`; exhaustive method signatures belong to rustdoc.

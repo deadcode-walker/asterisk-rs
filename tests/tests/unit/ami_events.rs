@@ -1,10 +1,14 @@
 #![allow(clippy::unwrap_used)]
 
+use asterisk_rs_ami::codec::AmiCodec;
 use asterisk_rs_ami::codec::RawAmiMessage;
 use asterisk_rs_ami::event::AmiEvent;
+use asterisk_rs_core::types::{DeviceState, ExtensionState, HangupCause};
+use bytes::BytesMut;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
+use tokio_util::codec::Decoder;
 
 struct SharedLogWriter(Arc<Mutex<Vec<u8>>>);
 
@@ -22,16 +26,20 @@ impl Write for SharedLogWriter {
     }
 }
 
-/// build a raw message from header pairs
+/// Decode a wire-format fixture through the production codec before event parsing.
 fn raw(headers: &[(&str, &str)]) -> RawAmiMessage {
-    RawAmiMessage {
-        headers: headers
-            .iter()
-            .map(|(k, v)| ((*k).into(), (*v).into()))
-            .collect(),
-        output: vec![],
-        channel_variables: HashMap::new(),
+    let mut wire = String::from("Asterisk Call Manager/6.0.0\r\n");
+    for (name, value) in headers {
+        wire.push_str(name);
+        wire.push_str(": ");
+        wire.push_str(value);
+        wire.push_str("\r\n");
     }
+    wire.push_str("\r\n");
+    AmiCodec::new()
+        .decode(&mut BytesMut::from(wire.as_bytes()))
+        .expect("fixture should pass codec validation")
+        .expect("fixture should contain one complete AMI frame")
 }
 
 // ── channel lifecycle ──
@@ -80,6 +88,7 @@ fn parse_hangup() {
         ("Cause-txt", "Normal Clearing"),
     ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
+    assert_eq!(event.hangup_cause(), Some(HangupCause::NormalClearing));
     match event {
         AmiEvent::Hangup {
             channel,
@@ -1942,6 +1951,7 @@ fn parse_device_state_change() {
         ("State", "NOT_INUSE"),
     ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
+    assert_eq!(event.device_state(), Some(DeviceState::NotInUse));
     match event {
         AmiEvent::DeviceStateChange { device, state, .. } => {
             assert_eq!(device, "PJSIP/100");
@@ -1962,6 +1972,7 @@ fn parse_extension_status() {
         ("StatusText", "Idle"),
     ]);
     let event = AmiEvent::from_raw(&msg).expect("should parse");
+    assert_eq!(event.extension_state(), Some(ExtensionState::NotInUse));
     match event {
         AmiEvent::ExtensionStatus {
             exten,
@@ -4043,7 +4054,13 @@ fn from_raw_returns_none_for_non_event() {
 
 #[test]
 fn from_raw_returns_none_for_empty_message() {
-    let msg = raw(&[]);
+    // An empty message cannot exist at the codec boundary; construct it only
+    // to isolate AmiEvent's defensive parser behavior.
+    let msg = RawAmiMessage {
+        headers: Vec::new(),
+        output: Vec::new(),
+        channel_variables: HashMap::new(),
+    };
     assert!(AmiEvent::from_raw(&msg).is_none());
 }
 

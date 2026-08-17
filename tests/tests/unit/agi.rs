@@ -561,7 +561,7 @@ async fn channel_command_timeout_poisons_stream() {
             .read_line(&mut command)
             .await
             .expect("read command");
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        std::future::pending::<()>().await;
     });
 
     let error = channel.answer().await.expect_err("command must time out");
@@ -571,6 +571,12 @@ async fn channel_command_timeout_poisons_stream() {
         Err(AgiError::ChannelPoisoned)
     ));
     server.abort();
+    assert!(
+        server
+            .await
+            .expect_err("aborted server task must not complete")
+            .is_cancelled()
+    );
 }
 
 #[tokio::test]

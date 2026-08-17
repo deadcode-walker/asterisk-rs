@@ -315,10 +315,10 @@ async fn max_connections_enforced() {
     // because the semaphore permit is held by client1
     let mut client2 = MockAgiClient::connect(addr, &env).await;
 
-    // give a moment and confirm second handler hasn't entered
-    tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(
-        ready_rx.try_recv().is_err(),
+        tokio::time::timeout(Duration::from_millis(100), ready_rx.recv())
+            .await
+            .is_err(),
         "second handler should not have entered while first holds the permit"
     );
 
@@ -1563,9 +1563,6 @@ async fn handler_error_does_not_crash_server() {
     let eof = client1.read_command().await;
     assert!(eof.is_none(), "connection should close after handler error");
 
-    // small sleep for the server to process the error
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
     // second connection — server should still be alive and accept it
     let mut client2 = MockAgiClient::connect(addr, &env).await;
     let eof = client2.read_command().await;
@@ -2053,9 +2050,6 @@ async fn client_disconnect_before_env_complete() {
         // drop without sending the blank line that terminates env
     }
 
-    // small delay so the server processes the disconnect
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
     shutdown.shutdown();
     let result = handle.await.expect("task should not panic");
     result.expect("server should exit cleanly after partial env disconnect");
@@ -2075,8 +2069,6 @@ async fn client_disconnect_mid_command() {
 
     // drop without responding — handler should get an io/hangup error
     drop(client);
-
-    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // server should still be alive — verify by clean shutdown
     shutdown.shutdown();
@@ -2107,12 +2099,12 @@ async fn handler_command_failed_error_does_not_crash_server() {
     let env = standard_env();
 
     // first client — handler immediately errors
-    let _client1 = MockAgiClient::connect(addr, &env).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let client1 = MockAgiClient::connect(addr, &env).await;
+    drop(client1);
 
     // second client — server should still accept connections
-    let _client2 = MockAgiClient::connect(addr, &env).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    let client2 = MockAgiClient::connect(addr, &env).await;
+    drop(client2);
 
     shutdown.shutdown();
     let result = handle.await.expect("task should not panic");
@@ -2142,9 +2134,10 @@ async fn max_connections_enforced_blocking() {
 
     // second client — TCP connects but handler dispatch is blocked by semaphore
     let mut client2 = MockAgiClient::connect(addr, &env).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(
-        ready_rx.try_recv().is_err(),
+        tokio::time::timeout(Duration::from_millis(200), ready_rx.recv())
+            .await
+            .is_err(),
         "second handler must not enter while first holds the permit"
     );
 

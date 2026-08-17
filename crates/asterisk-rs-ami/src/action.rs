@@ -6,6 +6,9 @@ use crate::codec::RawAmiMessage;
 use std::sync::atomic::{AtomicU64, Ordering};
 use zeroize::Zeroizing;
 
+mod fax;
+pub use fax::*;
+
 // relaxed is sufficient: fetch_add is an atomic RMW — it cannot return
 // the same value to two threads. no other memory operations need
 // ordering relative to this counter
@@ -692,13 +695,13 @@ impl AmiAction for SendTextAction {
 }
 
 /// play a DTMF digit on a channel
-pub struct PlayDTMFAction {
+pub struct PlayDtmfAction {
     pub channel: String,
     pub digit: String,
     pub duration: Option<u32>,
 }
 
-impl AmiAction for PlayDTMFAction {
+impl AmiAction for PlayDtmfAction {
     fn action_name(&self) -> &str {
         "PlayDTMF"
     }
@@ -715,14 +718,17 @@ impl AmiAction for PlayDTMFAction {
     }
 }
 
+#[deprecated(since = "0.8.0", note = "use PlayDtmfAction")]
+pub type PlayDTMFAction = PlayDtmfAction;
+
 /// execute an AGI command on a channel
-pub struct AGIAction {
+pub struct AgiAction {
     pub channel: String,
     pub command: String,
     pub command_id: Option<String>,
 }
 
-impl AmiAction for AGIAction {
+impl AmiAction for AgiAction {
     fn action_name(&self) -> &str {
         "AGI"
     }
@@ -738,6 +744,9 @@ impl AmiAction for AGIAction {
         h
     }
 }
+
+#[deprecated(since = "0.8.0", note = "use AgiAction")]
+pub type AGIAction = AgiAction;
 
 // ---------------------------------------------------------------------------
 // database
@@ -2353,51 +2362,6 @@ pub struct AgentsAction;
 impl AmiAction for AgentsAction {
     fn action_name(&self) -> &str {
         "Agents"
-    }
-
-    fn to_headers(&self) -> Vec<(String, String)> {
-        vec![]
-    }
-}
-
-// ---------------------------------------------------------------------------
-// fax
-// ---------------------------------------------------------------------------
-
-/// get info about a fax session
-pub struct FAXSessionAction {
-    pub session_number: String,
-}
-
-impl AmiAction for FAXSessionAction {
-    fn action_name(&self) -> &str {
-        "FAXSession"
-    }
-
-    fn to_headers(&self) -> Vec<(String, String)> {
-        vec![("SessionNumber".into(), self.session_number.clone())]
-    }
-}
-
-/// list active fax sessions
-pub struct FAXSessionsAction;
-
-impl AmiAction for FAXSessionsAction {
-    fn action_name(&self) -> &str {
-        "FAXSessions"
-    }
-
-    fn to_headers(&self) -> Vec<(String, String)> {
-        vec![]
-    }
-}
-
-/// get fax statistics
-pub struct FAXStatsAction;
-
-impl AmiAction for FAXStatsAction {
-    fn action_name(&self) -> &str {
-        "FAXStats"
     }
 
     fn to_headers(&self) -> Vec<(String, String)> {

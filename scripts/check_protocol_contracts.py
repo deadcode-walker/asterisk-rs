@@ -251,6 +251,10 @@ def extract_local_routes(upstream_routes: list[dict[str, str]]) -> list[dict[str
         if path.stem == "mod":
             continue
         for function, body in rust_function_bodies(path.read_text(encoding="utf-8")):
+            # Lifecycle-handle conveniences delegate to the adjacent wire method and
+            # intentionally do not own a second protocol route.
+            if function.endswith("_handle"):
+                continue
             methods = {
                 method_names[name]
                 for name in re.findall(
@@ -344,6 +348,12 @@ def main() -> None:
             f"{path.stem}::{name}"
             for name in re.findall(r"^pub (?:struct|enum) ([A-Za-z0-9_]+)", text, re.MULTILINE)
         )
+        model_symbols.update(
+            f"{path.stem}::{name}"
+            for name in re.findall(
+                r"^pub use crate::event::([A-Za-z0-9_]+);", text, re.MULTILINE
+            )
+        )
     event_source = (ROOT / "crates/asterisk-rs-ari/src/event.rs").read_text(encoding="utf-8")
     model_symbols.update(
         f"event::{name}"
@@ -372,7 +382,13 @@ def main() -> None:
     )
     for symbol, upstream_name in local["local_model_contracts"].items():
         module, name = symbol.split("::", 1)
-        actual_fields = rust_struct_fields(model_paths[module], name)
+        model_path = model_paths[module]
+        source_text = model_path.read_text(encoding="utf-8")
+        if re.search(
+            rf"^pub use crate::event::{re.escape(name)};", source_text, re.MULTILINE
+        ):
+            model_path = model_paths["event"]
+        actual_fields = rust_struct_fields(model_path, name)
         expected_fields = model_fields[upstream_name]
         if actual_fields != expected_fields:
             raise SystemExit(

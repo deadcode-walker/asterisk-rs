@@ -21,19 +21,26 @@
 
 Connection state is observable through watch channels. Background tasks receive explicit shutdown,
 cancel pending work with typed errors, and must not keep user resources alive indefinitely.
-Reconnect behavior is development-proved with mocks; Asterisk-backed behavior is proved by
-`just live`.
+Reconnect behavior is development-proved with mocks. `just live-full` additionally cuts a
+caller-owned TCP relay in front of the real AMI endpoint and requires the client to recover against
+the same Asterisk instance.
 
 ## Evidence
 
 - `just test` exercises pure and mock failure paths.
 - Live tests are marked ignored, so generic workspace and all-features test commands compile them
   without contacting a PBX.
-- `just live` opts into every ignored live test and exercises the real PBX boundary serially. When
-  the repository's `tests/docker-compose.yml` Asterisk service is running, the recipe selects its
-  loopback AMI/ARI ports and mutation opt-in. For any other isolated test PBX, callers must set
-  `ASTERISK_TEST_ALLOW_MUTATION=1`, `ASTERISK_AMI_HOST`, `ASTERISK_AMI_PORT`, `ASTERISK_ARI_HOST`,
-  and `ASTERISK_ARI_PORT` explicitly.
+- `just live-smoke` proves the owned-instance marker, AMI authentication/ping, ARI HTTP and unified
+  WebSocket GET, isolated device/mailbox PUT round trips, and exact chan_websocket plaintext/JSON
+  `MEDIA_START` schemas. `just live-full` runs the exhaustive ignored suite serially; `just live`
+  remains its compatibility name.
+- `just live-smoke-ci` and `just live-full-ci` own the repository Compose lifecycle. Attach-mode
+  commands reuse a running repository fixture or require explicit mutation opt-in, expected branch,
+  durable instance marker, run ID, AMI/ARI endpoints and credentials, and ARI application. The
+  preflight reads the marker and Asterisk version before test mutation.
+- Mutable smoke resources use the run ID in their Asterisk names. Exhaustive live tests remain
+  serial, use the same typed configuration, and must clean up resources rather than turn missing
+  fixture capabilities into warning-based passes.
 - `just msrv` compiles every target and feature, including live-test code, on Rust 1.86.0, then runs
   the unit and mock suites without requiring Asterisk.
 - `just ci` checks all features, minimal features, rustdoc, generated docs, policy, and harness

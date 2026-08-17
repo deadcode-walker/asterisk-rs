@@ -8,7 +8,7 @@
 //! `events.recv()` surfaces any lag before buffered delivery resumes.
 //!
 //! Flow:
-//!   1. `client.channel()` — allocates a pre-generated channel ID, installs a
+//!   1. `client.pending_channel()` — allocates a pre-generated channel ID, installs a
 //!      filtered subscription keyed on that ID (synchronous, no I/O).
 //!   2. `pending.originate(params).await?` — sets `channel_id` on the params,
 //!      sends the REST request, and returns `(ChannelHandle, FilteredSubscription)`.
@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // step 1: allocate the pending channel — this installs the event filter
     // synchronously before any network traffic goes out
-    let pending = client.channel();
+    let pending = client.pending_channel();
     let channel_id = pending.id().to_owned();
     tracing::info!(%channel_id, "pending channel created, event filter active");
 

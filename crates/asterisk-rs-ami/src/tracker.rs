@@ -13,13 +13,21 @@ use crate::event::AmiEvent;
 /// A fully resolved call with its bounded event history.
 #[derive(Debug, Clone)]
 pub struct CompletedCall {
+    /// Last observed channel name.
     pub channel: String,
+    /// Asterisk unique identifier for the call leg.
     pub unique_id: String,
+    /// Identifier correlating related call legs.
     pub linked_id: String,
+    /// Local instant when tracking began.
     pub start_time: Instant,
+    /// Local instant when the call completed.
     pub end_time: Instant,
+    /// Elapsed tracked lifetime.
     pub duration: Duration,
+    /// Numeric Asterisk hangup cause.
     pub cause: u32,
+    /// Text supplied with the hangup cause.
     pub cause_txt: String,
     /// Retained events, in arrival order.
     pub events: Vec<AmiEvent>,
@@ -30,10 +38,15 @@ pub struct CompletedCall {
 /// Resource limits for a [`CallTracker`].
 #[derive(Debug, Clone)]
 pub struct CallTrackerConfig {
+    /// Maximum idle lifetime of an active call.
     pub call_ttl: Duration,
+    /// Interval between time-driven eviction sweeps.
     pub eviction_interval: Duration,
+    /// Maximum calls retained concurrently.
     pub max_active_calls: usize,
+    /// Maximum events retained for one call.
     pub max_events_per_call: usize,
+    /// Capacity of completed-call delivery.
     pub completed_capacity: usize,
 }
 
@@ -62,10 +75,15 @@ impl CallTrackerConfig {
 /// Snapshot of tracker health and bounded-loss counters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CallTrackerStats {
+    /// Calls currently retained.
     pub active_calls: usize,
+    /// Source events missed because the subscription lagged.
     pub lagged_events: u64,
+    /// Per-call history events omitted at the configured bound.
     pub truncated_events: u64,
+    /// Active calls evicted to preserve the configured bound.
     pub active_calls_evicted: u64,
+    /// Completed calls dropped because delivery was full.
     pub completed_calls_lost: u64,
     /// False after source lag or source closure makes tracked state incomplete.
     pub valid: bool,
@@ -155,6 +173,7 @@ impl CallTracker {
         self.stats().completed_calls_lost
     }
 
+    /// Stop tracking immediately and invalidate current state.
     pub fn shutdown(&self) {
         self.metrics.valid.store(false, Ordering::Relaxed);
         self.metrics.active_calls.store(0, Ordering::Relaxed);

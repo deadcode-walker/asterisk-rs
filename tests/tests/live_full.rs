@@ -1,6 +1,6 @@
-// integration tests requiring a running Asterisk instance
+// exhaustive integration tests requiring an owned Asterisk instance
 // every test is ignored so generic workspace/all-features commands cannot contact a PBX
-// run with: cargo test-live
+// run with: just live-full
 
 mod live_tests {
     mod agi;

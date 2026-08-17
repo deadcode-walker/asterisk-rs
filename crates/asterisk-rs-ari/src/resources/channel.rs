@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use crate::client::{AriClient, url_encode};
 use crate::error::Result;
 use crate::event::{Channel, LiveRecording, Playback};
+use crate::resources::playback::PlaybackHandle;
+use crate::resources::recording::RecordingHandle;
 
 /// parameters for originating a new channel
 #[derive(Debug, Clone, serde::Serialize)]
@@ -287,6 +289,12 @@ impl ChannelHandle {
             .await
     }
 
+    /// Play media and return the lifecycle handle for the created playback.
+    pub async fn play_handle(&self, media: &str) -> Result<PlaybackHandle> {
+        let playback = self.play(media).await?;
+        Ok(PlaybackHandle::new(playback.id, self.client.clone()))
+    }
+
     /// start recording on the channel
     pub async fn record(&self, name: &str, format: &str) -> Result<LiveRecording> {
         self.client
@@ -295,6 +303,12 @@ impl ChannelHandle {
                 &serde_json::json!({"name": name, "format": format}),
             )
             .await
+    }
+
+    /// Start recording and return the lifecycle handle for the created recording.
+    pub async fn record_handle(&self, name: &str, format: &str) -> Result<RecordingHandle> {
+        let recording = self.record(name, format).await?;
+        Ok(RecordingHandle::new(recording.name, self.client.clone()))
     }
 
     /// mute the channel, optionally specifying direction (both, in, out)
@@ -419,6 +433,17 @@ impl ChannelHandle {
             .await
     }
 
+    /// Create a snoop channel and return its lifecycle handle.
+    pub async fn snoop_handle(
+        &self,
+        spy: Option<&str>,
+        whisper: Option<&str>,
+        app: &str,
+    ) -> Result<ChannelHandle> {
+        let channel = self.snoop(spy, whisper, app).await?;
+        Ok(ChannelHandle::new(channel.id, self.client.clone()))
+    }
+
     /// redirect the channel to a new endpoint
     pub async fn redirect(&self, endpoint: &str) -> Result<()> {
         self.client
@@ -472,6 +497,16 @@ impl ChannelHandle {
             .await
     }
 
+    /// Play media with a caller-selected ID and return its lifecycle handle.
+    pub async fn play_with_id_handle(
+        &self,
+        playback_id: &str,
+        media: &str,
+    ) -> Result<PlaybackHandle> {
+        self.play_with_id(playback_id, media).await?;
+        Ok(PlaybackHandle::new(playback_id, self.client.clone()))
+    }
+
     /// dial a created channel
     pub async fn dial(&self, caller: Option<&str>, timeout: Option<i32>) -> Result<()> {
         let mut params = Vec::new();
@@ -505,6 +540,15 @@ impl ChannelHandle {
     pub async fn external_media(&self, params: &ExternalMediaParams) -> Result<Channel> {
         self.client.post("/channels/externalMedia", params).await
     }
+
+    /// Start external media and return its lifecycle handle.
+    pub async fn external_media_handle(
+        &self,
+        params: &ExternalMediaParams,
+    ) -> Result<ChannelHandle> {
+        let channel = self.external_media(params).await?;
+        Ok(ChannelHandle::new(channel.id, self.client.clone()))
+    }
 }
 /// list all active channels
 pub async fn list(client: &AriClient) -> Result<Vec<Channel>> {
@@ -523,6 +567,15 @@ pub async fn originate(client: &AriClient, params: &OriginateParams) -> Result<C
     client.post("/channels", params).await
 }
 
+/// Originate a channel and return its lifecycle handle.
+pub async fn originate_handle(
+    client: &AriClient,
+    params: &OriginateParams,
+) -> Result<ChannelHandle> {
+    let channel = originate(client, params).await?;
+    Ok(ChannelHandle::new(channel.id, client.clone()))
+}
+
 /// create a channel without dialing it
 pub async fn create(client: &AriClient, endpoint: &str, app: &str) -> Result<Channel> {
     client
@@ -536,7 +589,22 @@ pub async fn create(client: &AriClient, endpoint: &str, app: &str) -> Result<Cha
         .await
 }
 
+/// Create an undialed channel and return its lifecycle handle.
+pub async fn create_handle(client: &AriClient, endpoint: &str, app: &str) -> Result<ChannelHandle> {
+    let channel = create(client, endpoint, app).await?;
+    Ok(ChannelHandle::new(channel.id, client.clone()))
+}
+
 /// start an external media session
 pub async fn external_media(client: &AriClient, params: &ExternalMediaParams) -> Result<Channel> {
     client.post("/channels/externalMedia", params).await
+}
+
+/// Start external media and return its lifecycle handle.
+pub async fn external_media_handle(
+    client: &AriClient,
+    params: &ExternalMediaParams,
+) -> Result<ChannelHandle> {
+    let channel = external_media(client, params).await?;
+    Ok(ChannelHandle::new(channel.id, client.clone()))
 }

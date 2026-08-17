@@ -173,6 +173,19 @@ is either a green local harness commit or a concrete authority/external-state bl
   could still echo an attacker-controlled value from a structurally valid event with a type-invalid
   field. Both ARI message paths now omit parse-error detail and log only byte counts; the captured-log
   proof includes that exact known-event mismatch sentinel.
+- [x] 2026-08-17: completed the local Slice 5 and Slice 6 candidate. Mock ARI now owns complete HTTP
+  and typed WebSocket behavior, unified correlation and pending-resource races have exact external
+  proof, PBX lifecycle tests cover wire/correlation/loss/timeout outcomes, and test helpers propagate
+  task failure without free-port or fixed-sleep races. Live proof is split into explicit smoke/full
+  targets with typed selection, per-run resources, an owned-instance marker, real AMI transport cut,
+  AGI admission bound, HTTP/unified ARI, device/mailbox PUT, and plaintext/JSON media schema cells.
+  The API cleanup removed dead/duplicated state, added standard domain conversions and typed
+  accessors, lifecycle handles, explicit pending factories, compatibility aliases, domain module
+  splits, a missing-doc ratchet, and compiled documentation snippets while deleting the broken API
+  table generator. `just ci`, `just msrv`, and `just semver` passed with 951 unit and 288 mock tests.
+  The required Harness `review-repository-work` pass found a durable global-variable residue in the
+  attach-mode live suite; cleanup now runs before readback assertions. The isolated Asterisk smoke
+  and full runs remain the next acceptance gate before their matrix checkbox can close.
 
 ## Surprises and discoveries
 
@@ -244,7 +257,7 @@ all named sources while retaining only verified repository facts and applicable 
 
 The workspace root owns Cargo, the exact toolchain selector, the just facade, workflows, and the root
 instruction map. `ARCHITECTURE.md` routes shared, protocol, and composition changes into one of five
-publishable crates. Public guidance and generated reference pages live under `docs/src/`; engineering
+publishable crates. Public guidance and curated rustdoc-linked reference pages live under `docs/src/`; engineering
 decisions and recovery state live under `docs/`. External tests are in the `tests` package, with mocks
 as the default boundary and the Compose-managed Asterisk instance as live proof. Start each slice from
 the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest representative test.
@@ -333,26 +346,36 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
 
 ### Slice 5: rebuild tests around observable behavior
 
-- [ ] Upgrade the mock ARI server to parse complete HTTP requests, Content-Length, auth/content-type,
+- [x] Upgrade the mock ARI server to parse complete HTTP requests, Content-Length, auth/content-type,
   exact JSON, typed WebSocket frames, connection counts, same-port restart, and joined shutdown.
-- [ ] Add unified ARI transport tests for all verbs, out-of-order correlation, interleaved events,
+- [x] Add unified ARI transport tests for all verbs, out-of-order correlation, interleaved events,
   malformed/duplicate IDs, reconnect, expiry, cancellation, and shutdown.
-- [ ] Add PBX behavioral tests for exact Originate wire data, correlation, answer/hangup/failure,
+- [x] Add PBX behavioral tests for exact Originate wire data, correlation, answer/hangup/failure,
   completion, lag, and timeout semantics.
-- [ ] Prove pending-resource subscribe-before-create by delivering matching and unrelated events before
+- [x] Prove pending-resource subscribe-before-create by delivering matching and unrelated events before
   the creation response.
-- [ ] Replace the six vacuous ARI disconnect/reconnect/binary/close tests with one exact outcome each;
+- [x] Replace the six vacuous ARI disconnect/reconnect/binary/close tests with one exact outcome each;
   remove tests of std/url implementation details and duplicate URL-encoding groups.
-- [ ] Replace fixed sleeps and free-port TOCTOU helpers with bound-address handoff, notifications,
+- [x] Replace fixed sleeps and free-port TOCTOU helpers with bound-address handoff, notifications,
   paused time, and bounded awaits. Cancelled/panicked helper tasks must fail tests.
-- [ ] Table-drive repetitive action contracts and route representative AMI event fixtures through the
+- [x] Table-drive repetitive action contracts and route representative AMI event fixtures through the
   actual codec instead of directly constructing raw messages.
-- [ ] Split live smoke from live full. Require explicit endpoints, mutation opt-in, a test-instance
+- [x] Split live smoke from live full. Require explicit endpoints, mutation opt-in, a test-instance
   marker, deterministic fixtures, isolated resource IDs/cleanup, and no warning-based skips.
 - [ ] Live matrix must prove supported Asterisk branches, AMI reconnect after a real transport cut,
   AGI session bounds, ARI HTTP and unified WS, media plaintext/JSON schemas, device/mailbox PUT, and
   cross-protocol behavior.
-- [ ] Measure tracker/codec/media admission and latency at representative load; keep benchmarks
+
+Live-harness checkpoint (2026-08-17): `live-smoke` and `live-full` now have separate Cargo targets
+and attach/Compose recipes. A typed environment contract and preflight verify the durable PBX marker
+and the sole declared supported branch, Asterisk 22, before mutation. Smoke proof covers AMI,
+HTTP/unified ARI, and isolated device/mailbox PUT round trips; full proof includes a controllable
+real-AMI transport cut and a one-session live AGI admission bound. Fixed warning-based account-code,
+MOH, custom-channel, and external-media passes now require exact success. Two deterministic outbound
+media WebSocket fixture connections prove the plaintext and JSON `MEDIA_START` schemas, including
+channel identity, format, frame size, and packet time. The matrix remains unchecked until the
+integration owner runs both live suites against the isolated Compose fixture.
+- [x] Measure tracker/codec/media admission and latency at representative load; keep benchmarks
   informative until stable enough for a regression threshold.
 
 ### Slice 6: dependency, API, and deletion-first cleanup
@@ -360,24 +383,25 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
 - [x] Remove workspace Tokio `full`; enable exact production features per crate and dev/example-only
   runtime features separately. Remove Reqwest's unused `json` feature.
 - [x] Remove or implement core's no-op serde feature in 0.8. Remove cargo-shear suppression afterward.
-- [ ] Remove duplicate secret/config retention, inert top-level error aliases, dead ActionFailed
+- [x] Remove duplicate secret/config retention, inert top-level error aliases, dead ActionFailed
   semantics, redundant PBX tracker ownership, duplicate ARI models, and task-local Arc/Mutex state.
-- [ ] Unify lifecycle-creating resource methods around handles and rename pending factories explicitly;
+- [x] Unify lifecycle-creating resource methods around handles and rename pending factories explicitly;
   require constructors for invalid-by-default parameter structs.
-- [ ] Integrate core domain types through From/TryFrom/FromStr and typed accessors; replace
+- [x] Integrate core domain types through From/TryFrom/FromStr and typed accessors; replace
   ExtensionState's always-Some conversion.
-- [ ] Delete the broken generated API-table scanner and link curated behavioral documentation to
+- [x] Delete the broken generated API-table scanner and link curated behavioral documentation to
   rustdoc, or replace it with a tested scope-aware generator. Do not retain duplicate/blank output.
-- [ ] Split oversized AMI action/event and ARI test modules by protocol domain only after generator
+- [x] Split oversized AMI action/event and ARI test modules by protocol domain only after generator
   constraints are removed; preserve compatibility paths with re-exports.
-- [ ] Add staged Rust-style aliases/deprecations for caller ID, Async AGI, FAX, and acronym-heavy names;
-  remove old names only at the documented compatibility boundary.
-- [ ] Establish and ratchet missing-doc coverage; convert drifting examples to compiled doctests or
+- [x] Add staged Rust-style aliases/deprecations for public type names where aliases preserve
+  construction and matching semantics; keep wire-named Async AGI/FAX enum variants unchanged until
+  a documented major-version enum migration.
+- [x] Establish and ratchet missing-doc coverage; convert drifting examples to compiled doctests or
   snippet tests and correct all README/package/version examples.
-- [ ] Re-audit and rewrite the complete documentation surface against the proven 0.8 implementation:
+- [x] Re-audit and rewrite the complete documentation surface against the proven 0.8 implementation:
   root and crate READMEs, rustdoc, mdBook concepts/how-to/reference material, examples, migration,
   security, reliability, support, and release guidance. Delete duplicated or aspirational claims,
-  keep generated reference ownership explicit, test every command/snippet that can be automated, and
+  keep rustdoc reference ownership explicit, test every command/snippet that can be automated, and
   have a fresh documentation/API reviewer verify information architecture and technical accuracy.
 
 ### Slice 7: replace CI, documentation deployment, and release automation
@@ -454,7 +478,7 @@ release/docs settings, and every closed external record linked to the evidence t
 
 ## Idempotence and recovery
 
-Commands and generated references are repeatable. Live Compose ownership includes cleanup on success,
+Commands and documentation checks are repeatable. Live Compose ownership includes cleanup on success,
 failure, and cancellation. Commits remain small enough to diagnose and fix forward. Repository settings
 change only after the replacement workflow is green so branch protection never points at a nonexistent
 check. No issue, PR, package, tag, or release is deleted merely to make the dashboard appear clean.

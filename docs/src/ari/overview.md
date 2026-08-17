@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Capabilities
 
-- REST client and WebSocket listener covering the full Asterisk 23 ARI surface
+- REST/WebSocket clients for the modeled ARI surface, with Asterisk 22 as the live-proven boundary
 - Typed events with metadata (application, timestamp, asterisk_id)
 - Filtered subscriptions -- receive only events you care about
 - Resource handles for channels, bridges, playbacks, recordings
@@ -45,4 +45,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 See [Stasis Applications](./stasis.md) for the event model,
 [Resources](./resources.md) for the handle pattern, and
-[Reference](./reference.md) for complete endpoint lists.
+[API reference](./reference.md) for links to the canonical rustdoc inventory.

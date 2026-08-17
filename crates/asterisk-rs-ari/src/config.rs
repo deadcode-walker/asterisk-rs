@@ -70,8 +70,6 @@ pub struct AriConfig {
     pub(crate) credentials: Credentials,
     /// stasis application name
     pub(crate) app_name: String,
-    /// websocket url for event subscription
-    pub(crate) ws_url: Url,
     /// policy controlling reconnect behavior
     pub(crate) reconnect_policy: ReconnectPolicy,
     /// transport mode for rest communication
@@ -91,7 +89,6 @@ impl std::fmt::Debug for AriConfig {
             .field("base_url", &self.base_url)
             .field("credentials", &self.credentials)
             .field("app_name", &self.app_name)
-            .field("ws_url", &"[redacted]")
             .field("reconnect_policy", &self.reconnect_policy)
             .field("transport_mode", &self.transport_mode)
             .field("request_timeout", &self.request_timeout)
@@ -121,8 +118,22 @@ impl AriConfig {
     }
 
     /// websocket url for event subscription (internal only — contains credentials)
-    pub(crate) fn ws_url(&self) -> &Url {
-        &self.ws_url
+    pub(crate) fn ws_url(&self) -> Zeroizing<String> {
+        let mut url = self.base_url.clone();
+        let scheme = if url.scheme() == "https" { "wss" } else { "ws" };
+        url.set_scheme(scheme)
+            .expect("http and ws schemes are valid");
+        url.set_path("/ari/events");
+        url.set_query(None);
+        let api_key = Zeroizing::new(format!(
+            "{}:{}",
+            self.credentials.username(),
+            self.credentials.secret()
+        ));
+        url.query_pairs_mut()
+            .append_pair("app", &self.app_name)
+            .append_pair("api_key", &api_key);
+        Zeroizing::new(url.into())
     }
 
     /// policy controlling reconnect behavior
@@ -355,7 +366,6 @@ impl AriConfigBuilder {
             .unwrap_or_default();
 
         let http_scheme = if self.secure { "https" } else { "http" };
-        let ws_scheme = if self.secure { "wss" } else { "ws" };
         let url_host = if self.host.parse::<std::net::Ipv6Addr>().is_ok() {
             format!("[{}]", self.host)
         } else {
@@ -366,30 +376,12 @@ impl AriConfigBuilder {
         let base_url =
             Url::parse(&base_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
 
-        // ws url includes api_key for authentication — percent-encode
-        // query values so special chars (&, =, #, spaces) don't break the url
-        let api_key = Zeroizing::new(format!("{}:{}", self.username, self.password.as_str()));
-        let query = Zeroizing::new(
-            url::form_urlencoded::Serializer::new(String::new())
-                .append_pair("app", &self.app_name)
-                .append_pair("api_key", &api_key)
-                .finish(),
-        );
-        let ws_url_str = Zeroizing::new(format!(
-            "{ws_scheme}://{}:{}/ari/events?{}",
-            url_host,
-            self.port,
-            query.as_str()
-        ));
-        let ws_url = Url::parse(&ws_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
-
         let credentials = Credentials::new(self.username, &*self.password);
 
         Ok(AriConfig {
             base_url,
             credentials,
             app_name: self.app_name,
-            ws_url,
             reconnect_policy: self.reconnect_policy,
             transport_mode: self.transport_mode,
             request_timeout: self.request_timeout,

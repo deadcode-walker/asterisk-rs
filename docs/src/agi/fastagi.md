@@ -34,7 +34,7 @@ channel name, caller ID, called extension, context, language, etc.
 
 `AgiChannel` provides typed async methods for every AGI command: `answer`, `hangup`,
 `stream_file`, `get_data`, `say_digits`, `record_file`, `database_get`,
-`speech_create`, and more. See [Reference](./reference.md).
+`speech_create`, and more. See [API reference](./reference.md) for canonical rustdoc links.
 
 Command round trips have no deadline by default because `WAIT FOR DIGIT -1`, dial applications,
 recording, and speech operations can wait indefinitely. Applications that need a bound can call

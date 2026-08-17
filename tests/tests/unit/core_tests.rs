@@ -17,60 +17,10 @@ fn assert_send_sync<T: Send + Sync>() {}
 
 #[test]
 fn all_errors_are_send_and_sync() {
-    assert_send_sync::<Error>();
     assert_send_sync::<ConnectionError>();
     assert_send_sync::<AuthError>();
     assert_send_sync::<TimeoutError>();
     assert_send_sync::<ProtocolError>();
-}
-
-// --- Error (top-level) Display ---
-
-#[test]
-fn error_display_connection() {
-    let err = Error::Connection(ConnectionError::Closed);
-    assert_eq!(
-        err.to_string(),
-        "connection failed: connection closed unexpectedly"
-    );
-}
-
-#[test]
-fn error_display_auth() {
-    let err = Error::Auth(AuthError::InvalidCredentials);
-    assert_eq!(
-        err.to_string(),
-        "authentication failed: invalid credentials"
-    );
-}
-
-#[test]
-fn error_display_timeout() {
-    let err = Error::Timeout(TimeoutError::Action {
-        elapsed: Duration::from_secs(5),
-    });
-    assert_eq!(
-        err.to_string(),
-        "operation timed out: action timed out after 5s"
-    );
-}
-
-#[test]
-fn error_display_protocol() {
-    let err = Error::Protocol(ProtocolError::MalformedMessage {
-        details: "missing header".into(),
-    });
-    assert_eq!(
-        err.to_string(),
-        "protocol error: malformed message: missing header"
-    );
-}
-
-#[test]
-fn error_display_io() {
-    let io_err = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe broke");
-    let err = Error::Io(io_err);
-    assert_eq!(err.to_string(), "I/O error: pipe broke");
 }
 
 // --- ConnectionError Display ---
@@ -190,50 +140,6 @@ fn protocol_error_unsupported_version() {
         version: "99.0".into(),
     };
     assert_eq!(err.to_string(), "unsupported protocol version: 99.0");
-}
-
-// --- From impls ---
-
-#[test]
-fn from_connection_error() {
-    let inner = ConnectionError::Closed;
-    let err: Error = inner.into();
-    assert!(matches!(err, Error::Connection(ConnectionError::Closed)));
-}
-
-#[test]
-fn from_auth_error() {
-    let inner = AuthError::ChallengeFailed;
-    let err: Error = inner.into();
-    assert!(matches!(err, Error::Auth(AuthError::ChallengeFailed)));
-}
-
-#[test]
-fn from_timeout_error() {
-    let inner = TimeoutError::Action {
-        elapsed: Duration::from_secs(1),
-    };
-    let err: Error = inner.into();
-    assert!(matches!(err, Error::Timeout(TimeoutError::Action { .. })));
-}
-
-#[test]
-fn from_protocol_error() {
-    let inner = ProtocolError::MalformedMessage {
-        details: "x".into(),
-    };
-    let err: Error = inner.into();
-    assert!(matches!(
-        err,
-        Error::Protocol(ProtocolError::MalformedMessage { .. })
-    ));
-}
-
-#[test]
-fn from_io_error() {
-    let inner = std::io::Error::new(std::io::ErrorKind::NotFound, "gone");
-    let err: Error = inner.into();
-    assert!(matches!(err, Error::Io(_)));
 }
 
 // --- edge cases ---
@@ -418,7 +324,7 @@ fn queue_strategy_round_trip() {
 
 #[test]
 fn extension_state_round_trip() {
-    assert_eq!(ExtensionState::from_code(1), Some(ExtensionState::InUse));
+    assert_eq!(ExtensionState::from_code(1), ExtensionState::InUse);
     assert_eq!(ExtensionState::InUse.code(), 1);
 }
 
@@ -1009,7 +915,7 @@ fn extension_state_from_code_all_variants() {
     for &(code, expected, _) in EXTENSION_STATE_CASES {
         assert_eq!(
             ExtensionState::from_code(code),
-            Some(expected),
+            expected,
             "from_code({code}) should return {expected:?}",
         );
     }
@@ -1028,7 +934,7 @@ fn extension_state_from_code_other() {
     for code in [3, 5, 9, 17, 32, -3] {
         assert_eq!(
             ExtensionState::from_code(code),
-            Some(ExtensionState::Other(code)),
+            ExtensionState::Other(code),
             "from_code({code}) should return Other({code})",
         );
     }

@@ -280,8 +280,13 @@ async fn graceful_disconnect() {
         .await
         .expect("disconnect should succeed");
 
-    // give the background task a moment to process shutdown
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while client.connection_state() != ConnectionState::Disconnected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("disconnect state should become observable");
 
     assert_eq!(
         client.connection_state(),
@@ -937,9 +942,13 @@ async fn reconnect_on_disconnect() {
         .await
         .expect("initial connect should succeed");
 
-    // wait for connection to drop and reconnect to complete
-    // the client auto-reconnects in the background
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while client.connection_state() != ConnectionState::Connected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("reconnect should complete");
 
     // after reconnect, ping should work
     let response = client
@@ -1003,7 +1012,13 @@ async fn connection_state_transitions() {
         .await
         .expect("disconnect should succeed");
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while client.connection_state() != ConnectionState::Disconnected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("disconnect state should become observable");
 
     assert_eq!(
         client.connection_state(),
@@ -1122,12 +1137,13 @@ async fn multiple_subscribers_all_receive() {
 
     let server = MockAmiServer::start().await;
     let port = server.port();
+    let (subscribed_tx, subscribed_rx) = tokio::sync::oneshot::channel();
 
     let handle = server.accept_one(|mut conn| async move {
         handle_login(&mut conn).await;
-
-        // small delay so subscribers are registered before the event arrives
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        subscribed_rx
+            .await
+            .expect("subscriber registration signal should remain open");
 
         conn.send_message(&[
             ("Event", "FullyBooted"),
@@ -1156,6 +1172,9 @@ async fn multiple_subscribers_all_receive() {
     let mut sub1 = client.subscribe();
     let mut sub2 = client.subscribe();
     let mut sub3 = client.subscribe();
+    subscribed_tx
+        .send(())
+        .expect("mock server should await subscriber registration");
 
     let timeout = Duration::from_secs(3);
     let e1 = tokio::time::timeout(timeout, sub1.recv_lossy())
@@ -1287,7 +1306,13 @@ async fn send_on_disconnected_client_returns_error() {
         .await
         .expect("disconnect should succeed");
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while client.connection_state() != ConnectionState::Disconnected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("disconnect state should become observable");
 
     let result = client.ping().await;
     assert!(result.is_err(), "ping on disconnected client should fail");
@@ -2000,9 +2025,6 @@ async fn event_bus_continues_during_action() {
         ])
         .await;
 
-        // small delay to ensure event is dispatched before response
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
         conn.send_message(&[
             ("Response", "Success"),
             ("ActionID", &aid),
@@ -2117,8 +2139,13 @@ async fn rapid_disconnect_reconnect_disabled() {
 
     match result {
         Ok(client) => {
-            // build succeeded before disconnect propagated — wait for it
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while client.connection_state() != ConnectionState::Disconnected {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("disconnect should propagate");
             assert_eq!(
                 client.connection_state(),
                 asterisk_rs_core::config::ConnectionState::Disconnected,
@@ -2192,14 +2219,8 @@ async fn builder_custom_timeout() {
 
         // read the action then delay longer than the client timeout
         let _msg = conn.read_message().await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        // hold open
-        loop {
-            if conn.read_message().await.is_none() {
-                break;
-            }
-        }
+        // Hold the request open without replying until client shutdown closes the socket.
+        while conn.read_message().await.is_some() {}
     });
 
     let client = AmiClient::builder()
@@ -2217,7 +2238,10 @@ async fn builder_custom_timeout() {
         "a written action must report an unknown outcome after its response deadline"
     );
 
-    drop(client);
+    client
+        .disconnect()
+        .await
+        .expect("client shutdown should complete");
     assert_server_ok(handle.await);
 }
 
@@ -2267,7 +2291,7 @@ async fn definitive_auth_failure_is_not_retried() {
         }
     });
 
-    ready.notified().await;
+    ready.await.expect("mock AMI accept loop should start");
 
     let result = tokio::time::timeout(
         Duration::from_secs(5),
@@ -2293,7 +2317,7 @@ async fn definitive_auth_failure_is_not_retried() {
         "unchanged invalid credentials must not be retried"
     );
 
-    handle.abort();
+    handle.shutdown().await;
 }
 
 #[tokio::test]
@@ -2313,7 +2337,7 @@ async fn unstable_reconnect_does_not_reset_retry_budget() {
             // configured stability window.
         }
     });
-    ready.notified().await;
+    ready.await.expect("mock AMI accept loop should start");
 
     let client = AmiClient::builder()
         .host("127.0.0.1")
@@ -2336,14 +2360,14 @@ async fn unstable_reconnect_does_not_reset_retry_budget() {
     })
     .await
     .expect("retry budget should be exhausted after the unstable reconnect");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::task::yield_now().await;
     assert_eq!(
         attempts.load(Ordering::SeqCst),
         2,
         "an unstable reconnect must not restore the consumed retry"
     );
 
-    handle.abort();
+    handle.shutdown().await;
 }
 
 #[tokio::test]
@@ -2360,13 +2384,18 @@ async fn stable_reconnect_resets_retry_budget() {
             attempts.fetch_add(1, Ordering::SeqCst);
             handle_login(&mut conn).await;
             if index == 1 {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(100), std::future::pending::<()>())
+                        .await
+                        .is_err(),
+                    "stability window hold should elapse"
+                );
             } else if index >= 2 {
                 while conn.read_message().await.is_some() {}
             }
         }
     });
-    ready.notified().await;
+    ready.await.expect("mock AMI accept loop should start");
 
     let client = AmiClient::builder()
         .host("127.0.0.1")
@@ -2396,7 +2425,7 @@ async fn stable_reconnect_resets_retry_budget() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    handle.abort();
+    handle.shutdown().await;
 }
 
 #[tokio::test]
@@ -2418,7 +2447,10 @@ async fn initial_connection_timeout_bounds_builder() {
     let port = server.port();
     let handle = server.accept_one(|mut conn| async move {
         let _challenge = conn.read_message().await;
-        std::future::pending::<()>().await;
+        assert!(
+            conn.read_message().await.is_none(),
+            "timed-out client should close the mock connection"
+        );
     });
 
     let started = tokio::time::Instant::now();
@@ -2438,7 +2470,11 @@ async fn initial_connection_timeout_bounds_builder() {
         started.elapsed() < Duration::from_secs(1),
         "builder exceeded its configured connection deadline"
     );
-    handle.abort();
+    assert_server_ok(
+        tokio::time::timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("mock server should observe the timed-out client closing"),
+    );
 }
 
 #[tokio::test]
@@ -2552,9 +2588,7 @@ async fn timed_out_queued_mutations_never_reach_the_wire() {
         .disconnect()
         .await
         .expect("disconnect should succeed");
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert!(!handle.is_finished(), "accept loop should still be healthy");
-    handle.abort();
+    handle.shutdown().await;
 }
 
 struct InvalidOutboundAction {
@@ -3350,8 +3384,13 @@ async fn connection_state_connected_then_disconnected() {
         .await
         .expect("disconnect should succeed");
 
-    // give background task time to process shutdown
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while client.connection_state() != ConnectionState::Disconnected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("disconnect state should become observable");
 
     assert_eq!(
         client.connection_state(),
@@ -3474,7 +3513,7 @@ async fn action_during_reconnect_backoff_fails_fast() {
         }
     });
 
-    ready.notified().await;
+    ready.await.expect("mock AMI accept loop should start");
 
     let client = AmiClient::builder()
         .host("127.0.0.1")
@@ -3494,7 +3533,7 @@ async fn action_during_reconnect_backoff_fails_fast() {
             if client.connection_state() == ConnectionState::Reconnecting {
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            tokio::task::yield_now().await;
         }
     })
     .await
@@ -3512,6 +3551,9 @@ async fn action_during_reconnect_backoff_fails_fast() {
         "action should fail fast (took {elapsed:?}), not wait for reconnect"
     );
 
-    drop(client);
-    handle.abort();
+    client
+        .disconnect()
+        .await
+        .expect("client shutdown during reconnect backoff should succeed");
+    handle.shutdown().await;
 }

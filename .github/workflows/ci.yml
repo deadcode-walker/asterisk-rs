@@ -157,7 +157,13 @@ jobs:
           retention-days: 14
 
   live:
-    name: Live Asterisk 22
+    name: Live Asterisk ${{ matrix.asterisk }} (${{ matrix.suite }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Asterisk 22 is the repository's only declared live-support branch.
+        asterisk: ["22"]
+        suite: [smoke, full]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -176,7 +182,10 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' }}
           shared-key: live-1.97.1
-      - run: just live-ci
+      - name: Run selected live suite
+        env:
+          LIVE_SUITE: ${{ matrix.suite }}
+        run: just "live-${LIVE_SUITE}-ci"
 
   gate:
     name: CI

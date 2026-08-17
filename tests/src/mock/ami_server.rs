@@ -2,7 +2,27 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Notify;
+use tokio::sync::oneshot;
+
+pub struct MockAmiAcceptLoop {
+    shutdown_tx: oneshot::Sender<()>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl MockAmiAcceptLoop {
+    pub async fn shutdown(self) {
+        let _ = self.shutdown_tx.send(());
+        let mut task = self.task;
+        match tokio::time::timeout(std::time::Duration::from_secs(2), &mut task).await {
+            Ok(result) => crate::helpers::assert_server_ok(result),
+            Err(_) => {
+                task.abort();
+                let _ = task.await;
+                panic!("mock AMI accept loop did not stop within two seconds");
+            }
+        }
+    }
+}
 
 pub struct MockAmiServer {
     listener: TcpListener,
@@ -49,21 +69,24 @@ impl MockAmiServer {
 
     /// accept connections in a loop, calling handler for each.
     /// handler receives (connection, connection_index starting at 0).
-    /// the accept loop runs until the JoinHandle is aborted or the listener errors.
-    pub fn accept_loop<F, Fut>(self, handler: F) -> (tokio::task::JoinHandle<()>, Arc<Notify>)
+    /// the accept loop runs until owned shutdown or a listener error.
+    pub fn accept_loop<F, Fut>(self, handler: F) -> (MockAmiAcceptLoop, oneshot::Receiver<()>)
     where
         F: Fn(MockAmiConnection, usize) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = ()> + Send,
     {
         let handler = Arc::new(handler);
-        let ready = Arc::new(Notify::new());
-        let ready_clone = ready.clone();
-        let handle = tokio::spawn(async move {
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+        let task = tokio::spawn(async move {
             let mut index = 0;
+            let _ = ready_tx.send(());
             loop {
-                // signal that we're ready to accept
-                ready_clone.notify_waiters();
-                match self.listener.accept().await {
+                let accepted = tokio::select! {
+                    accepted = self.listener.accept() => accepted,
+                    _ = &mut shutdown_rx => break,
+                };
+                match accepted {
                     Ok((stream, _peer)) => {
                         let conn = MockAmiConnection::new(stream).await;
                         let h = handler.clone();
@@ -75,7 +98,7 @@ impl MockAmiServer {
                 }
             }
         });
-        (handle, ready)
+        (MockAmiAcceptLoop { shutdown_tx, task }, ready_rx)
     }
 }
 

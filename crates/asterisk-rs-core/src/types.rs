@@ -6,6 +6,24 @@
 //! specifications.
 
 use std::fmt;
+use std::str::FromStr;
+
+/// Error returned when a wire value is not a recognized domain constant.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unrecognized {kind}: {value}")]
+pub struct ParseDomainError {
+    kind: &'static str,
+    value: String,
+}
+
+impl ParseDomainError {
+    fn new(kind: &'static str, value: impl ToString) -> Self {
+        Self {
+            kind,
+            value: value.to_string(),
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // HangupCause
@@ -244,6 +262,13 @@ impl fmt::Display for HangupCause {
     }
 }
 
+impl TryFrom<u32> for HangupCause {
+    type Error = ParseDomainError;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::from_code(value).ok_or_else(|| ParseDomainError::new("hangup cause", value))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ChannelState
 // ---------------------------------------------------------------------------
@@ -334,6 +359,20 @@ impl fmt::Display for ChannelState {
     }
 }
 
+impl TryFrom<u32> for ChannelState {
+    type Error = ParseDomainError;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::from_code(value).ok_or_else(|| ParseDomainError::new("channel state", value))
+    }
+}
+
+impl FromStr for ChannelState {
+    type Err = ParseDomainError;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::from_str_name(value).ok_or_else(|| ParseDomainError::new("channel state", value))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // DeviceState
 // ---------------------------------------------------------------------------
@@ -398,6 +437,13 @@ impl DeviceState {
 impl fmt::Display for DeviceState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for DeviceState {
+    type Err = ParseDomainError;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::from_str_name(value).ok_or_else(|| ParseDomainError::new("device state", value))
     }
 }
 
@@ -472,6 +518,13 @@ impl fmt::Display for DialStatus {
     }
 }
 
+impl FromStr for DialStatus {
+    type Err = ParseDomainError;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::from_str_name(value).ok_or_else(|| ParseDomainError::new("dial status", value))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // CdrDisposition
 // ---------------------------------------------------------------------------
@@ -520,6 +573,13 @@ impl CdrDisposition {
 impl fmt::Display for CdrDisposition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for CdrDisposition {
+    type Err = ParseDomainError;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::from_str_name(value).ok_or_else(|| ParseDomainError::new("CDR disposition", value))
     }
 }
 
@@ -582,6 +642,13 @@ impl fmt::Display for PeerStatus {
     }
 }
 
+impl FromStr for PeerStatus {
+    type Err = ParseDomainError;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::from_str_name(value).ok_or_else(|| ParseDomainError::new("peer status", value))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // QueueStrategy
 // ---------------------------------------------------------------------------
@@ -641,6 +708,13 @@ impl fmt::Display for QueueStrategy {
     }
 }
 
+impl FromStr for QueueStrategy {
+    type Err = ParseDomainError;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::from_str_name(value).ok_or_else(|| ParseDomainError::new("queue strategy", value))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ExtensionState
 // ---------------------------------------------------------------------------
@@ -673,19 +747,20 @@ pub enum ExtensionState {
 }
 
 impl ExtensionState {
-    /// parse an extension state from its numeric code.
-    /// always returns `Some`; unrecognized or bitmask values map to `Other(code)`
-    pub fn from_code(code: i32) -> Option<Self> {
+    /// Parse an extension state from its numeric code.
+    ///
+    /// Unrecognized and bitmask values are preserved as [`Self::Other`].
+    pub fn from_code(code: i32) -> Self {
         match code {
-            -2 => Some(Self::Removed),
-            -1 => Some(Self::Deactivated),
-            0 => Some(Self::NotInUse),
-            1 => Some(Self::InUse),
-            2 => Some(Self::Busy),
-            4 => Some(Self::Unavailable),
-            8 => Some(Self::Ringing),
-            16 => Some(Self::OnHold),
-            _ => Some(Self::Other(code)),
+            -2 => Self::Removed,
+            -1 => Self::Deactivated,
+            0 => Self::NotInUse,
+            1 => Self::InUse,
+            2 => Self::Busy,
+            4 => Self::Unavailable,
+            8 => Self::Ringing,
+            16 => Self::OnHold,
+            _ => Self::Other(code),
         }
     }
 
@@ -702,6 +777,12 @@ impl ExtensionState {
             Self::OnHold => 16,
             Self::Other(code) => code,
         }
+    }
+}
+
+impl From<i32> for ExtensionState {
+    fn from(value: i32) -> Self {
+        Self::from_code(value)
     }
 }
 
@@ -767,6 +848,13 @@ impl fmt::Display for AgiStatus {
             Self::EndUsage => "end usage",
         };
         f.write_str(s)
+    }
+}
+
+impl TryFrom<u16> for AgiStatus {
+    type Error = ParseDomainError;
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        Self::from_code(value).ok_or_else(|| ParseDomainError::new("AGI status", value))
     }
 }
 

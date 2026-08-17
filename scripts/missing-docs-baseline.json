@@ -1,0 +1,9 @@
+{
+  "packages": {
+    "asterisk-rs-core": 37,
+    "asterisk-rs-ami": 946,
+    "asterisk-rs-agi": 83,
+    "asterisk-rs-ari": 295,
+    "asterisk-rs": 8
+  }
+}

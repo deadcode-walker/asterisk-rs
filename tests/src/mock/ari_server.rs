@@ -22,6 +22,8 @@ pub struct MockRoute {
     pub status: u16,
     pub body: String,
     framing: ResponseFraming,
+    before_response: Vec<Message>,
+    response_delay: std::time::Duration,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -62,9 +64,12 @@ impl std::fmt::Debug for MockRequest {
 /// shared state visible to all connection handlers
 struct ServerState {
     routes: HashMap<(String, String), MockRoute>,
-    event_tx: broadcast::Sender<String>,
+    event_tx: broadcast::Sender<Message>,
     ws_clients: AtomicUsize,
+    ws_connections: AtomicUsize,
     ws_connected: Notify,
+    ws_requests: Mutex<Vec<serde_json::Value>>,
+    ws_request_received: Notify,
     requests: Mutex<Vec<MockRequest>>,
     request_received: Notify,
 }
@@ -72,7 +77,7 @@ struct ServerState {
 /// mock ARI server binding HTTP and WebSocket on one port
 pub struct MockAriServer {
     addr: SocketAddr,
-    event_tx: broadcast::Sender<String>,
+    event_tx: broadcast::Sender<Message>,
     shutdown_tx: watch::Sender<bool>,
     task: tokio::task::JoinHandle<()>,
     state: Arc<ServerState>,
@@ -93,20 +98,65 @@ impl MockAriServer {
 
     /// push a JSON event string to all connected websocket clients
     pub fn send_event(&self, json: &str) {
-        // ignore error when no receivers are connected
-        let _ = self.event_tx.send(json.to_string());
+        self.send_ws_message(Message::Text(json.to_owned().into()));
+    }
+
+    /// push an exact WebSocket frame to all connected clients
+    pub fn send_ws_message(&self, message: Message) {
+        // An absent receiver is a useful no-op for tests that arrange frames
+        // before connecting.
+        let _ = self.event_tx.send(message);
+    }
+
+    /// number of WebSocket connections currently handled by the server
+    pub fn active_ws_connections(&self) -> usize {
+        self.state.ws_clients.load(Ordering::Acquire)
+    }
+
+    /// total WebSocket connections accepted over the server lifetime
+    pub fn total_ws_connections(&self) -> usize {
+        self.state.ws_connections.load(Ordering::Acquire)
+    }
+
+    /// snapshot decoded unified REST request envelopes
+    pub fn ws_requests(&self) -> Vec<serde_json::Value> {
+        self.state
+            .ws_requests
+            .lock()
+            .expect("mock WebSocket request mutex poisoned")
+            .clone()
+    }
+
+    /// wait until at least `count` unified REST request envelopes are captured
+    pub async fn wait_for_ws_requests(&self, count: usize) {
+        loop {
+            let notified = self.state.ws_request_received.notified();
+            if self
+                .state
+                .ws_requests
+                .lock()
+                .expect("mock WebSocket request mutex poisoned")
+                .len()
+                >= count
+            {
+                return;
+            }
+            notified.await;
+        }
     }
 
     /// signal active handlers to close, then stop the accept loop
     pub async fn shutdown(self) {
         let _ = self.shutdown_tx.send(true);
         let mut task = self.task;
-        if tokio::time::timeout(std::time::Duration::from_secs(2), &mut task)
-            .await
-            .is_err()
-        {
-            task.abort();
-            let _ = task.await;
+        match tokio::time::timeout(std::time::Duration::from_secs(2), &mut task).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => panic!("mock ARI accept task failed: {error}"),
+            Err(_) => {
+                task.abort();
+                let _ = task.await;
+                panic!("mock ARI server did not join within two seconds");
+            }
         }
     }
 
@@ -179,6 +229,8 @@ impl MockAriServerBuilder {
                 status,
                 body: body.to_string(),
                 framing: ResponseFraming::Fixed,
+                before_response: Vec::new(),
+                response_delay: std::time::Duration::ZERO,
             },
         );
         self
@@ -192,6 +244,8 @@ impl MockAriServerBuilder {
                 status,
                 body: body.to_owned(),
                 framing: ResponseFraming::Chunked,
+                before_response: Vec::new(),
+                response_delay: std::time::Duration::ZERO,
             },
         );
         self
@@ -205,6 +259,52 @@ impl MockAriServerBuilder {
                 status: 500,
                 body: String::new(),
                 framing: ResponseFraming::Disconnect,
+                before_response: Vec::new(),
+                response_delay: std::time::Duration::ZERO,
+            },
+        );
+        self
+    }
+
+    /// register a response that emits exact WebSocket frames before replying
+    pub fn route_after_ws_messages(
+        mut self,
+        method: &str,
+        path: &str,
+        status: u16,
+        body: &str,
+        messages: Vec<Message>,
+    ) -> Self {
+        self.routes.insert(
+            (method.to_uppercase(), path.to_owned()),
+            MockRoute {
+                status,
+                body: body.to_owned(),
+                framing: ResponseFraming::Fixed,
+                before_response: messages,
+                response_delay: std::time::Duration::ZERO,
+            },
+        );
+        self
+    }
+
+    /// register a response held long enough for a test to inject pre-response events
+    pub fn route_delayed(
+        mut self,
+        method: &str,
+        path: &str,
+        status: u16,
+        body: &str,
+        delay: std::time::Duration,
+    ) -> Self {
+        self.routes.insert(
+            (method.to_uppercase(), path.to_owned()),
+            MockRoute {
+                status,
+                body: body.to_owned(),
+                framing: ResponseFraming::Fixed,
+                before_response: Vec::new(),
+                response_delay: delay,
             },
         );
         self
@@ -225,14 +325,17 @@ impl MockAriServerBuilder {
             .local_addr()
             .expect("failed to get mock ARI local addr");
 
-        let (event_tx, _) = broadcast::channel::<String>(64);
+        let (event_tx, _) = broadcast::channel::<Message>(64);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         let state = Arc::new(ServerState {
             routes: self.routes,
             event_tx: event_tx.clone(),
             ws_clients: AtomicUsize::new(0),
+            ws_connections: AtomicUsize::new(0),
             ws_connected: Notify::new(),
+            ws_requests: Mutex::new(Vec::new()),
+            ws_request_received: Notify::new(),
             requests: Mutex::new(Vec::new()),
             request_received: Notify::new(),
         });
@@ -266,7 +369,7 @@ async fn accept_loop(
             }
             result = handlers.join_next(), if !handlers.is_empty() => {
                 if let Some(Err(error)) = result {
-                    tracing::warn!(error = %error, "mock ARI connection task failed");
+                    panic!("mock ARI connection task failed: {error}");
                 }
             }
             result = listener.accept() => {
@@ -287,7 +390,7 @@ async fn accept_loop(
     let drain = async {
         while let Some(result) = handlers.join_next().await {
             if let Err(error) = result {
-                tracing::warn!(error = %error, "mock ARI connection task failed");
+                panic!("mock ARI connection task failed: {error}");
             }
         }
     };
@@ -306,20 +409,43 @@ async fn handle_connection(
     state: Arc<ServerState>,
     shutdown_rx: watch::Receiver<bool>,
 ) {
-    // peek at the request to decide protocol without consuming bytes
-    let mut buf = [0u8; 4096];
-    let n = match stream.peek(&mut buf).await {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::warn!(error = %e, "mock ARI peek failed");
+    // Wait for the complete header block before classifying the protocol. A
+    // single peek can observe a fragmented Upgrade header and route a real
+    // WebSocket handshake into the HTTP handler.
+    let mut buf = [0u8; 16 * 1024];
+    let n = match tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let n = stream.peek(&mut buf).await?;
+            if n == 0 || buf[..n].windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                return std::io::Result::Ok(n);
+            }
+            if n == buf.len() {
+                return std::io::Result::Ok(n);
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    {
+        Ok(Ok(n)) => n,
+        Ok(Err(error)) => {
+            tracing::warn!(%error, "mock ARI peek failed");
+            return;
+        }
+        Err(_) => {
+            tracing::warn!("mock ARI request headers timed out");
             return;
         }
     };
 
-    let request_preview = String::from_utf8_lossy(&buf[..n]);
-    let lower = request_preview.to_lowercase();
+    let is_websocket = String::from_utf8_lossy(&buf[..n])
+        .split("\r\n")
+        .filter_map(|line| line.split_once(':'))
+        .any(|(name, value)| {
+            name.eq_ignore_ascii_case("upgrade") && value.trim().eq_ignore_ascii_case("websocket")
+        });
 
-    if lower.contains("upgrade: websocket") {
+    if is_websocket {
         handle_websocket(stream, state, shutdown_rx).await;
     } else {
         handle_http(stream, state).await;
@@ -340,8 +466,17 @@ async fn handle_websocket(
         }
     };
 
+    struct ActiveConnection<'a>(&'a AtomicUsize);
+    impl Drop for ActiveConnection<'_> {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+
     // signal that a ws client has connected
     state.ws_clients.fetch_add(1, Ordering::Release);
+    state.ws_connections.fetch_add(1, Ordering::Release);
+    let _active_connection = ActiveConnection(&state.ws_clients);
     state.ws_connected.notify_waiters();
 
     let (mut write, mut read) = ws.split();
@@ -357,8 +492,8 @@ async fn handle_websocket(
             }
             event = event_rx.recv() => {
                 match event {
-                    Ok(json) => {
-                        if write.send(Message::Text(json.into())).await.is_err() {
+                    Ok(message) => {
+                        if write.send(message).await.is_err() {
                             break;
                         }
                     }
@@ -378,6 +513,12 @@ async fn handle_websocket(
                         if request["type"] != "RESTRequest" {
                             continue;
                         }
+                        state
+                            .ws_requests
+                            .lock()
+                            .expect("mock WebSocket request mutex poisoned")
+                            .push(request.clone());
+                        state.ws_request_received.notify_waiters();
 
                         let method = request["method"].as_str().unwrap_or_default().to_owned();
                         let uri = request["uri"].as_str().unwrap_or_default().to_owned();
@@ -394,6 +535,8 @@ async fn handle_websocket(
                                 status: 404,
                                 body: r#"{"message":"not found"}"#.to_owned(),
                                 framing: ResponseFraming::Fixed,
+                                before_response: Vec::new(),
+                                response_delay: std::time::Duration::ZERO,
                             });
                         let response = serde_json::json!({
                             "type": "RESTResponse",
@@ -509,7 +652,21 @@ async fn handle_http(mut stream: TcpStream, state: Arc<ServerState>) {
         status: 404,
         body: r#"{"message":"not found"}"#.to_string(),
         framing: ResponseFraming::Fixed,
+        before_response: Vec::new(),
+        response_delay: std::time::Duration::ZERO,
     });
+
+    if !route.before_response.is_empty() {
+        for message in &route.before_response {
+            let _ = state.event_tx.send(message.clone());
+        }
+        // Give the already-connected WebSocket handler a scheduling turn so
+        // the scripted pre-response frames reach the wire before HTTP reply.
+        tokio::task::yield_now().await;
+    }
+    if !route.response_delay.is_zero() {
+        tokio::time::sleep(route.response_delay).await;
+    }
 
     let reason = status_reason(route.status);
     match route.framing {

@@ -131,7 +131,8 @@ it does not own that TLS session.
 
 ## Capabilities
 
-- Typed events and actions covering the full Asterisk 23 AMI surface
+- Typed actions and events for the modeled AMI surface; exact support is defined by rustdoc and the
+  repository's Asterisk 22 protocol/live evidence
 - Filtered subscriptions -- receive only events you care about
 - Event-collecting actions -- `send_collecting()` gathers multi-event responses
 - Call tracking with `CallTracker` -- correlates events into `CompletedCall` records

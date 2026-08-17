@@ -9,13 +9,16 @@ use asterisk_rs_ami::action::{
 use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_tests::helpers::*;
+use tokio::io::copy_bidirectional;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::oneshot;
 
 /// build an AMI client connected to the test Asterisk instance
 async fn connect() -> AmiClient {
     AmiClient::builder()
         .host(ami_host())
         .port(ami_port())
-        .credentials("testadmin", "testsecret")
+        .credentials(ami_username(), ami_secret())
         .reconnect(ReconnectPolicy::none())
         .timeout(Duration::from_secs(10))
         .build()
@@ -133,11 +136,42 @@ async fn originate_to_invalid_extension() {
 async fn reconnect_after_connection_drop() {
     init_tracing();
 
-    // connect with reconnect enabled
+    // Put a controllable TCP relay in front of the real Asterisk AMI socket.
+    // Cutting the first relay connection exercises recovery from a real EOF
+    // while keeping fixture lifecycle outside the client under test.
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("failed to bind AMI cut relay");
+    let relay_port = listener.local_addr().expect("relay address").port();
+    let upstream = (ami_host(), ami_port());
+    let (cut_tx, mut cut_rx) = oneshot::channel::<()>();
+    let relay = tokio::spawn(async move {
+        for connection_index in 0..2 {
+            let (mut downstream, _) = listener.accept().await.expect("relay accept failed");
+            let mut upstream = TcpStream::connect(&upstream)
+                .await
+                .expect("relay upstream connect failed");
+            if connection_index == 0 {
+                tokio::select! {
+                    result = copy_bidirectional(&mut downstream, &mut upstream) => {
+                        result.expect("first relay copy failed");
+                    }
+                    result = &mut cut_rx => {
+                        result.expect("cut sender dropped");
+                    }
+                }
+            } else {
+                copy_bidirectional(&mut downstream, &mut upstream)
+                    .await
+                    .expect("reconnected relay copy failed");
+            }
+        }
+    });
+
     let client = AmiClient::builder()
-        .host(ami_host())
-        .port(ami_port())
-        .credentials("testadmin", "testsecret")
+        .host("127.0.0.1")
+        .port(relay_port)
+        .credentials(ami_username(), ami_secret())
         .reconnect(ReconnectPolicy::exponential(
             Duration::from_millis(500),
             Duration::from_secs(5),
@@ -151,25 +185,26 @@ async fn reconnect_after_connection_drop() {
     let response = client.ping().await.expect("initial ping failed");
     assert!(response.success);
 
-    // force the connection to drop by sending a Logoff through a second client
-    // actually, we can't easily kill the TCP from the client side without
-    // internal access. instead, just verify reconnect works after a brief
-    // disconnect cycle. send a command that forces a reconnect scenario.
-    // the simplest approach: disconnect and reconnect by building a new client.
-    // but that doesn't test auto-reconnect.
-
-    // alternative: use the AMI "Challenge" action as a health check after
-    // waiting — this at least proves the connection is still alive and
-    // the keep-alive mechanism works.
-    tokio::time::sleep(Duration::from_secs(2)).await;
-
-    let response = client
-        .ping()
-        .await
-        .expect("ping after delay should still work");
-    assert!(response.success, "connection should remain alive");
+    cut_tx.send(()).expect("relay cut receiver dropped");
+    let response = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(response) = client.ping().await {
+                if response.success {
+                    return response;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("AMI did not reconnect after the real relay transport cut");
+    assert_eq!(response.get("Ping"), Some("Pong"));
 
     client.disconnect().await.expect("disconnect failed");
+    tokio::time::timeout(Duration::from_secs(5), relay)
+        .await
+        .expect("relay task did not stop")
+        .expect("relay task panicked");
 }
 
 #[tokio::test]
@@ -673,11 +708,12 @@ async fn db_put_get_del_cycle() {
     init_tracing();
 
     let client = connect().await;
+    let family = live_config().resource_name("db");
 
     // put
     let put = DBPutAction {
-        family: "test".to_string(),
-        key: "integration".to_string(),
+        family: family.clone(),
+        key: "value".to_string(),
         val: "hello123".to_string(),
     };
     let response = client.send_action(&put).await.expect("db put failed");
@@ -685,8 +721,8 @@ async fn db_put_get_del_cycle() {
 
     // get — should find the value (asterisk may return DBGet as event-list)
     let get = DBGetAction {
-        family: "test".to_string(),
-        key: "integration".to_string(),
+        family: family.clone(),
+        key: "value".to_string(),
     };
     let result = client.send_collecting(&get).await.expect("db get failed");
     assert!(
@@ -714,8 +750,8 @@ async fn db_put_get_del_cycle() {
 
     // delete
     let del = DBDelAction {
-        family: "test".to_string(),
-        key: "integration".to_string(),
+        family,
+        key: "value".to_string(),
     };
     let response = client.send_action(&del).await.expect("db del failed");
     assert!(response.success, "db del should succeed: {response:?}");
@@ -739,11 +775,12 @@ async fn db_del_tree() {
     init_tracing();
 
     let client = connect().await;
+    let family = live_config().resource_name("dbtree");
 
     // put 3 keys under testfamily
     for i in 0..3 {
         let put = DBPutAction {
-            family: "testfamily".to_string(),
+            family: family.clone(),
             key: format!("key{i}"),
             val: format!("val{i}"),
         };
@@ -753,7 +790,7 @@ async fn db_del_tree() {
 
     // delete the entire family
     let del_tree = DBDelTreeAction {
-        family: "testfamily".to_string(),
+        family: family.clone(),
         key: None,
     };
     let response = client
@@ -765,7 +802,7 @@ async fn db_del_tree() {
     // verify all keys are gone
     for i in 0..3 {
         let get = DBGetAction {
-            family: "testfamily".to_string(),
+            family: family.clone(),
             key: format!("key{i}"),
         };
         let response = client
@@ -1141,6 +1178,7 @@ async fn originate_with_account_code() {
 
     let client = connect().await;
     let mut sub = client.subscribe();
+    let account = live_config().resource_name("account");
 
     let action = OriginateAction {
         channel: "Local/100@default".to_string(),
@@ -1151,7 +1189,7 @@ async fn originate_with_account_code() {
         data: None,
         timeout: Some(10000),
         caller_id: None,
-        account: Some("test-account".to_string()),
+        account: Some(account.clone()),
         async_: true,
         variables: vec![],
     };
@@ -1171,7 +1209,7 @@ async fn originate_with_account_code() {
         loop {
             let ev = sub.recv_lossy().await.expect("event bus closed");
             if let AmiEvent::NewAccountCode { account_code, .. } = &ev {
-                if account_code == "test-account" {
+                if account_code == &account {
                     found_account = true;
                     break;
                 }
@@ -1180,7 +1218,7 @@ async fn originate_with_account_code() {
                 variable, value, ..
             } = &ev
             {
-                if variable.contains("accountcode") && value == "test-account" {
+                if variable.contains("accountcode") && value == &account {
                     found_account = true;
                     break;
                 }
@@ -1192,11 +1230,10 @@ async fn originate_with_account_code() {
     })
     .await;
 
-    // not all Asterisk versions/configurations emit account code events for
-    // Local channels — the originate acceptance above is the primary assertion
-    if !found_account {
-        tracing::warn!("account code event not observed, skipping assertion");
-    }
+    assert!(
+        found_account,
+        "owned fixture must expose the configured account code through a live event"
+    );
 
     client.disconnect().await.expect("disconnect failed");
 }

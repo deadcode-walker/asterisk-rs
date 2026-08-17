@@ -2,14 +2,7 @@
 
 use crate::client::{AriClient, url_encode};
 use crate::error::Result;
-
-/// ari device state representation
-#[derive(Debug, Clone, serde::Deserialize)]
-#[non_exhaustive]
-pub struct DeviceState {
-    pub name: String,
-    pub state: String,
-}
+pub use crate::event::DeviceState;
 
 /// list all device states
 pub async fn list(client: &AriClient) -> Result<Vec<DeviceState>> {

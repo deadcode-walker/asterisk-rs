@@ -25,7 +25,6 @@ asterisk-rs-core = { path = "../crates/asterisk-rs-core" }
 asterisk-rs = { path = "../crates/asterisk-rs", features = ["ami"] }
 tokio-util = { workspace = true, features = ["codec"] }
 bytes.workspace = true
-url.workspace = true
 zeroize.workspace = true
 rustls.workspace = true
 tokio-rustls.workspace = true
@@ -35,6 +34,15 @@ aws-lc-rs.workspace = true
 integration = []
 
 [[test]]
-name = "live_integration"
-path = "tests/live_integration.rs"
+name = "live_smoke"
+path = "tests/live_smoke.rs"
 required-features = ["integration"]
+
+[[test]]
+name = "live_full"
+path = "tests/live_full.rs"
+required-features = ["integration"]
+
+[[bench]]
+name = "protocol"
+harness = false

@@ -3,6 +3,8 @@
 use crate::client::{AriClient, url_encode};
 use crate::error::Result;
 use crate::event::{Bridge, LiveRecording, Playback};
+use crate::resources::playback::PlaybackHandle;
+use crate::resources::recording::RecordingHandle;
 
 /// handle to an ari bridge
 #[derive(Debug, Clone)]
@@ -55,6 +57,12 @@ impl BridgeHandle {
             .await
     }
 
+    /// Play media and return the lifecycle handle for the created playback.
+    pub async fn play_handle(&self, media: &str) -> Result<PlaybackHandle> {
+        let playback = self.play(media).await?;
+        Ok(PlaybackHandle::new(playback.id, self.client.clone()))
+    }
+
     /// start recording on the bridge
     pub async fn record(&self, name: &str, format: &str) -> Result<LiveRecording> {
         self.client
@@ -63,6 +71,12 @@ impl BridgeHandle {
                 &serde_json::json!({"name": name, "format": format}),
             )
             .await
+    }
+
+    /// Start recording and return the lifecycle handle for the created recording.
+    pub async fn record_handle(&self, name: &str, format: &str) -> Result<RecordingHandle> {
+        let recording = self.record(name, format).await?;
+        Ok(RecordingHandle::new(recording.name, self.client.clone()))
     }
 
     /// destroy this bridge
@@ -106,6 +120,16 @@ impl BridgeHandle {
             .await
     }
 
+    /// Play media with a caller-selected ID and return its lifecycle handle.
+    pub async fn play_with_id_handle(
+        &self,
+        playback_id: &str,
+        media: &str,
+    ) -> Result<PlaybackHandle> {
+        self.play_with_id(playback_id, media).await?;
+        Ok(PlaybackHandle::new(playback_id, self.client.clone()))
+    }
+
     /// set the video source for the bridge
     pub async fn set_video_source(&self, channel_id: &str) -> Result<()> {
         self.client
@@ -142,6 +166,16 @@ pub async fn create(
     client
         .post("/bridges", &serde_json::Value::Object(body))
         .await
+}
+
+/// Create a bridge and return its lifecycle handle.
+pub async fn create_handle(
+    client: &AriClient,
+    bridge_type: Option<&str>,
+    name: Option<&str>,
+) -> Result<BridgeHandle> {
+    let bridge = create(client, bridge_type, name).await?;
+    Ok(BridgeHandle::new(bridge.id, client.clone()))
 }
 
 /// list all bridges

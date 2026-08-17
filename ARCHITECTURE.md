@@ -34,7 +34,7 @@ cancellation semantics distinguish definitely-unsent work from an indeterminate 
 | `crates/asterisk-rs-ari` | HTTP/WS transports, events, resources, media, outbound server | transport/media/server actors |
 | `crates/asterisk-rs` | feature-gated re-exports and `Pbx` composition | composed protocol handles |
 | `tests` | unit, mock-boundary, and live-Asterisk evidence | isolated fixtures and selected PBX |
-| `docs/generate.py` | generated mdBook protocol/type references | generated files under `docs/src/` |
+| `docs/src/` | curated behavioral guide linked to canonical crate rustdoc | protocol maintainers |
 
 ## Dependency and cross-cutting boundaries
 
@@ -53,8 +53,8 @@ enforces peer-dependency, unsafe-lint, instruction, plan, link, and external-tes
 Untrusted wire data is parsed at codec/request/serde boundaries before effects. Protocol APIs own
 their errors. Credentials remain redacted and zeroized where stored. Existing bounded lifecycle
 controls are owned by their protocol actors; unresolved cross-protocol gaps remain explicit in the
-active modernization plan. Generated references derive from Rust source; do not create a competing
-handwritten table.
+active modernization plan. Rustdoc owns the exhaustive public API inventory. The mdBook explains
+behavior and links to rustdoc; do not create a competing handwritten or regex-generated table.
 
 ## Toolchain and evidence authority
 
@@ -63,8 +63,8 @@ handwritten table.
 | compatibility and exact compiler | workspace `rust-version`, `rust-toolchain.toml`, `clippy.toml` | `just check`, `just msrv` | Linux/macOS/Windows CI |
 | dependency/build graph | `Cargo.toml` and `Cargo.lock` | Cargo feature matrix, cargo-deny, cargo-shear | crates.io packages |
 | public commands | `justfile` | `just --list`, recipe execution | contributors, agents, CI |
-| protocol behavior | Rust source and external `tests` package | focused tests, `just ci`, `just live` | mock boundary or isolated Asterisk 22 |
-| public documentation | rustdoc, `docs/src/`, `docs/generate.py` | `just docs`, `just docs-check` | GitHub Pages and published crates |
+| protocol behavior | Rust source and external `tests` package | focused tests, `just ci`, `just live-smoke`, `just live-full` | mock boundary or marker-verified isolated Asterisk 22 |
+| public documentation | rustdoc and `docs/src/` | `just docs`, `just docs-check` | GitHub Pages and published crates |
 | release identity/changelogs | `release-plz.toml`, conventional commits | blocking CI and release PR review | protected GitHub/crates.io environments |
 | workflow policy | `.github/workflows/` | `just workflows` and aggregate CI | GitHub repository settings |
 

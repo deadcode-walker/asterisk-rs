@@ -1,27 +1,5 @@
 //! Base error types for the asterisk-rs ecosystem.
 
-/// top-level error type encompassing all asterisk-rs failures
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum Error {
-    #[error("connection failed: {0}")]
-    Connection(#[from] ConnectionError),
-
-    #[error("authentication failed: {0}")]
-    Auth(#[from] AuthError),
-
-    #[error("operation timed out: {0}")]
-    Timeout(#[from] TimeoutError),
-
-    #[error("protocol error: {0}")]
-    Protocol(#[from] ProtocolError),
-
-    #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ConnectionError {

@@ -2921,6 +2921,30 @@ impl AmiEvent {
             _ => None,
         }
     }
+
+    /// Typed hangup cause when this is a `Hangup` event.
+    pub fn hangup_cause(&self) -> Option<asterisk_rs_core::types::HangupCause> {
+        match self {
+            Self::Hangup { cause, .. } => (*cause).try_into().ok(),
+            _ => None,
+        }
+    }
+
+    /// Typed device state when this is a `DeviceStateChange` event.
+    pub fn device_state(&self) -> Option<asterisk_rs_core::types::DeviceState> {
+        match self {
+            Self::DeviceStateChange { state, .. } => state.parse().ok(),
+            _ => None,
+        }
+    }
+
+    /// Lossless typed extension state when this is an `ExtensionStatus` event.
+    pub fn extension_state(&self) -> Option<asterisk_rs_core::types::ExtensionState> {
+        match self {
+            Self::ExtensionStatus { status, .. } => Some((*status as i32).into()),
+            _ => None,
+        }
+    }
 }
 
 // AmiEvent works with the core EventBus

@@ -26,6 +26,11 @@ REQUIRED = (
     "docs/product-specs/index.md",
     "docs/references/index.md",
 )
+DOCUMENTATION_PROOF_FILES = (
+    "scripts/check_missing_docs.py",
+    "scripts/missing-docs-baseline.json",
+    "tests/tests/documentation_snippets.rs",
+)
 EXPECTED_INDEX_TARGETS = {
     "docs/README.md",
     "AGENTS.md",
@@ -629,6 +634,10 @@ def main() -> int:
         else:
             texts[relative] = text
 
+    for relative in DOCUMENTATION_PROOF_FILES:
+        if text_if_file(relative) is None:
+            errors.append(f"documentation proof owner is missing or empty: {relative}")
+
     agents = texts.get("AGENTS.md")
     if agents is not None:
         agents_words = len(agents.split())
@@ -700,8 +709,17 @@ def main() -> int:
         errors.append("CLAUDE.md duplicates the repository knowledge system; remove it")
     if (ROOT / "docs/generated").exists():
         errors.append(
-            "docs/generated is an unowned empty scaffold; generated references belong under docs/src"
+            "docs/generated is an unowned empty scaffold; public guides belong under docs/src"
         )
+    if (ROOT / "docs/generate.py").exists():
+        errors.append(
+            "docs/generate.py duplicates rustdoc with an unscoped generated symbol table; remove it"
+        )
+
+    justfile = texts.get("justfile", "")
+    for recipe in ("missing-docs:", "docs-snippets:", "docs-check: missing-docs docs-snippets"):
+        if recipe not in justfile:
+            errors.append(f"justfile does not route required documentation proof: {recipe}")
 
     cargo_path = ROOT / "Cargo.toml"
     clippy_path = ROOT / "clippy.toml"

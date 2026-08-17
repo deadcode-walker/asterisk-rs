@@ -8,6 +8,7 @@ use asterisk_rs_ami::action::OriginateAction;
 use asterisk_rs_ami::client::AmiClient;
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_tests::helpers::*;
+use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 
 /// data captured by the test handler
@@ -85,7 +86,7 @@ async fn real_agi_session() {
     let ami = AmiClient::builder()
         .host(ami_host())
         .port(ami_port())
-        .credentials("testadmin", "testsecret")
+        .credentials(ami_username(), ami_secret())
         .reconnect(ReconnectPolicy::none())
         .timeout(Duration::from_secs(10))
         .build()
@@ -153,7 +154,7 @@ async fn connect_ami() -> AmiClient {
     AmiClient::builder()
         .host(ami_host())
         .port(ami_port())
-        .credentials("testadmin", "testsecret")
+        .credentials(ami_username(), ami_secret())
         .reconnect(ReconnectPolicy::none())
         .timeout(Duration::from_secs(10))
         .build()
@@ -798,6 +799,7 @@ async fn agi_multiple_commands_sequence() {
 
 struct ConcurrentSessionHandler {
     tx: mpsc::Sender<String>,
+    release: std::sync::Arc<Semaphore>,
 }
 
 impl AgiHandler for ConcurrentSessionHandler {
@@ -807,9 +809,15 @@ impl AgiHandler for ConcurrentSessionHandler {
         mut channel: AgiChannel,
     ) -> asterisk_rs_agi::error::Result<()> {
         let uid = request.unique_id().unwrap_or("unknown").to_string();
+        let _ = self.tx.send(uid).await;
+        let permit = self
+            .release
+            .acquire()
+            .await
+            .expect("release semaphore closed");
+        permit.forget();
         let _ = channel.noop().await;
         let _ = channel.hangup(None).await;
-        let _ = self.tx.send(uid).await;
         Ok(())
     }
 }
@@ -820,7 +828,19 @@ async fn agi_concurrent_sessions() {
     init_tracing();
 
     let (tx, mut rx) = mpsc::channel(4);
-    let (server_handle, shutdown) = spawn_agi(ConcurrentSessionHandler { tx }).await;
+    let release = std::sync::Arc::new(Semaphore::new(0));
+    let (server, shutdown) = AgiServer::builder()
+        .bind("0.0.0.0:4573")
+        .allow_external_bind(true)
+        .max_connections(1)
+        .handler(ConcurrentSessionHandler {
+            tx,
+            release: std::sync::Arc::clone(&release),
+        })
+        .build()
+        .await
+        .expect("failed to bind bounded AGI server");
+    let server_handle = tokio::spawn(server.run());
     let ami = connect_ami().await;
 
     // originate two calls concurrently
@@ -835,17 +855,26 @@ async fn agi_concurrent_sessions() {
     assert!(resp1.success, "originate 1 should succeed");
     assert!(resp2.success, "originate 2 should succeed");
 
-    // collect both unique_ids
+    // The first handler is admitted and deliberately held. The second TCP
+    // session must remain outside the handler until the single permit returns.
     let uid1 = tokio::time::timeout(Duration::from_secs(30), rx.recv())
         .await
         .expect("timed out waiting for session 1")
         .expect("channel closed");
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .is_err(),
+        "second AGI handler ran while max_connections=1 was occupied"
+    );
+    release.add_permits(1);
     let uid2 = tokio::time::timeout(Duration::from_secs(30), rx.recv())
         .await
         .expect("timed out waiting for session 2")
         .expect("channel closed");
 
     assert_ne!(uid1, uid2, "two sessions should have distinct unique_ids");
+    release.add_permits(1);
 
     ami.disconnect().await.expect("disconnect failed");
     shutdown.shutdown();

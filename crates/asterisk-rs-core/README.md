@@ -20,8 +20,8 @@ all depend on this crate for common types; it contains no protocol-specific logi
 
 - `Event` — marker trait required by the bus: `Clone + Send + Sync + Debug + 'static`
 - `EventBus<E>` — broadcast hub; protocol crates publish into it internally
-- `EventSubscription<E>` — unbounded receiver; all events since subscribe
-- `FilteredSubscription<E>` — like `EventSubscription` but with a predicate applied before delivery
+- `EventSubscription<E>` — bounded broadcast receiver that reports lag explicitly
+- `FilteredSubscription<E>` — subscription with a predicate applied before delivery
 
 ### Reconnection
 
@@ -41,21 +41,21 @@ Strongly-typed enums parsed from Asterisk protocol strings:
 
 | Type | Examples |
 |---|---|
-| `HangupCause` | `Normal`, `Busy`, `NoAnswer`, `Congestion`, `NoRouteDestination`, … |
-| `ChannelState` | `Down`, `Rsrvd`, `OffHook`, `Dialing`, `Ring`, `Up`, … |
+| `HangupCause` | `NormalClearing`, `UserBusy`, `NoAnswer`, `NormalCircuitCongestion`, `NoRouteDestination`, … |
+| `ChannelState` | `Down`, `Reserved`, `OffHook`, `Dialing`, `Ring`, `Up`, … |
 | `DeviceState` | `Unknown`, `NotInUse`, `InUse`, `Busy`, `Unavailable`, … |
 | `DialStatus` | `Answer`, `Busy`, `NoAnswer`, `Cancel`, `Congestion`, … |
 | `CdrDisposition` | `Answered`, `NoAnswer`, `Busy`, `Failed` |
 | `PeerStatus` | `Registered`, `Unregistered`, `Reachable`, `Unreachable`, … |
 | `QueueStrategy` | `RingAll`, `LeastRecent`, `FewestCalls`, `RoundRobin`, … |
 | `ExtensionState` | `NotInUse`, `InUse`, `Busy`, `Unavailable`, … |
-| `AgiStatus` | `Success`, `Failure`, `NotPermitted` |
+| `AgiStatus` | `Success`, `InvalidCommand`, `DeadChannel`, `EndUsage` |
 
 ## Usage
 
 You do not need to add this crate as a direct dependency unless you are building
-a custom protocol integration. Add `asterisk-rs-ami`, `asterisk-rs-agi`, or
-`asterisk-rs-ari` instead; they re-export the types callers need.
+a custom protocol integration. Applications that use these types directly should add
+`asterisk-rs-core`; the protocol crates do not implicitly re-export its complete type surface.
 
 ---
 

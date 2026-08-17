@@ -56,4 +56,4 @@ let pong = asterisk::ping(&client).await?;
 asterisk::reload_module(&client, "res_pjsip.so").await?;
 ```
 
-See [Reference](./reference.md) for all operations per resource.
+See [API reference](./reference.md) for the canonical rustdoc resource inventory.

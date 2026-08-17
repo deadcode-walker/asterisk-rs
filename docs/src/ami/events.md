@@ -1,8 +1,7 @@
 # Events
 
 AMI delivers real-time events as things happen in Asterisk. Events are parsed
-into typed `AmiEvent` variants. See [Reference](./reference.md) for the
-complete list.
+into typed `AmiEvent` variants. See [API reference](./reference.md) for canonical rustdoc links.
 
 ## Subscribing
 

@@ -41,9 +41,10 @@ they must remain available offline or repeatedly; ordinary links do not require 
 
 ## Documentation and changelog workflow
 
-Code, rustdoc, and protocol guides own behavior. Generated reference pages under `docs/src/` derive
-from Rust source through `docs/generate.py`; change the source or generator, run `just docs`, and do
-not maintain a competing handwritten reference.
+Code, rustdoc, and protocol guides own behavior. Rustdoc is the exhaustive API inventory; curated
+reference pages under `docs/src/` explain where behavior lives and link to rustdoc. Do not maintain
+a competing handwritten or regex-generated symbol table. Run `just docs-check` to compile the
+representative snippets, enforce the missing-doc ratchet, and build both documentation surfaces.
 
 Ordinary changes update affected guides, rustdoc, examples, and migration notes in the same slice.
 They do not hand-edit speculative `Unreleased` sections. Accurate conventional commits feed

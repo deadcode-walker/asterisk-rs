@@ -28,8 +28,8 @@ proof and ownership maps.
 - Keep one coherent outcome per pull request and preserve unrelated work.
 - Add behavior-level tests for observable changes and failure semantics.
 - Public API changes require `just semver` evidence and migration guidance.
-- Update affected guides, rustdoc, examples, reliability/security notes, and generated references in
-  the same change. Run `just docs`; do not hand-edit generated protocol tables.
+- Update affected guides, rustdoc, examples, and reliability/security notes in the same change.
+  Run `just docs-check`; exhaustive API inventories belong to rustdoc rather than copied tables.
 - Use conventional commit prefixes: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `perf:`, `test:`,
   `ci:`, or `build:`. Mark breaking changes explicitly.
 

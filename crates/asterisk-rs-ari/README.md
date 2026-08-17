@@ -165,7 +165,7 @@ the same parsed roots are applied to HTTPS, event WSS, and unified WSS. Use
 
 ## Capabilities
 
-- REST client and WebSocket listener covering the full Asterisk 23 ARI surface
+- REST/WebSocket clients for the modeled ARI surface, with Asterisk 22 as the live-proven boundary
 - Typed events with metadata (application, timestamp, asterisk_id) on every event
 - Filtered subscriptions -- receive only events you care about
 - Race-free resource creation with PendingChannel, PendingBridge, PendingPlayback

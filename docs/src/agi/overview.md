@@ -52,4 +52,4 @@ bind when Asterisk runs on the same host.
 - Graceful shutdown via `ShutdownHandle`
 
 See [FastAGI Server](./fastagi.md) for server details and
-[Reference](./reference.md) for the complete command list.
+[API reference](./reference.md) for the canonical rustdoc command inventory.

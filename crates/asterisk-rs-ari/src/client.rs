@@ -162,18 +162,36 @@ impl AriClient {
     ///
     /// the returned PendingChannel subscribes to events for its ID immediately,
     /// so no StasisStart events are missed between originate and subscribe.
-    pub fn channel(&self) -> crate::pending::PendingChannel {
+    pub fn pending_channel(&self) -> crate::pending::PendingChannel {
         crate::pending::PendingChannel::new(self.clone())
     }
 
+    /// Compatibility alias for [`Self::pending_channel`].
+    #[deprecated(since = "0.8.0", note = "use pending_channel")]
+    pub fn channel(&self) -> crate::pending::PendingChannel {
+        self.pending_channel()
+    }
+
     /// create a pending bridge with a pre-generated ID
-    pub fn bridge(&self) -> crate::pending::PendingBridge {
+    pub fn pending_bridge(&self) -> crate::pending::PendingBridge {
         crate::pending::PendingBridge::new(self.clone())
     }
 
+    /// Compatibility alias for [`Self::pending_bridge`].
+    #[deprecated(since = "0.8.0", note = "use pending_bridge")]
+    pub fn bridge(&self) -> crate::pending::PendingBridge {
+        self.pending_bridge()
+    }
+
     /// create a pending playback with a pre-generated ID
-    pub fn playback(&self) -> crate::pending::PendingPlayback {
+    pub fn pending_playback(&self) -> crate::pending::PendingPlayback {
         crate::pending::PendingPlayback::new(self)
+    }
+
+    /// Compatibility alias for [`Self::pending_playback`].
+    #[deprecated(since = "0.8.0", note = "use pending_playback")]
+    pub fn playback(&self) -> crate::pending::PendingPlayback {
+        self.pending_playback()
     }
 
     /// shut down the websocket listener and transport

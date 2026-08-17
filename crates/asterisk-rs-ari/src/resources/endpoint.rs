@@ -2,18 +2,7 @@
 
 use crate::client::{AriClient, url_encode};
 use crate::error::Result;
-
-/// ari endpoint representation
-#[derive(Debug, Clone, serde::Deserialize)]
-#[non_exhaustive]
-pub struct Endpoint {
-    pub technology: String,
-    pub resource: String,
-    #[serde(default)]
-    pub state: Option<String>,
-    #[serde(default)]
-    pub channel_ids: Vec<String>,
-}
+pub use crate::event::Endpoint;
 
 /// list all endpoints
 pub async fn list(client: &AriClient) -> Result<Vec<Endpoint>> {

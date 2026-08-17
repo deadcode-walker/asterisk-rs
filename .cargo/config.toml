@@ -1,2 +1,3 @@
 [alias]
-test-live = "test --locked -p asterisk-rs-tests --test live_integration --features integration -- --include-ignored --test-threads=1"
+test-live-smoke = "test --locked -p asterisk-rs-tests --test live_smoke --features integration -- --include-ignored --test-threads=1"
+test-live-full = "test --locked -p asterisk-rs-tests --test live_full --features integration -- --include-ignored --test-threads=1"

@@ -39,73 +39,35 @@ fn next_action_id_is_numeric() {
 }
 
 #[test]
-fn logoff_action_headers() {
-    let action = LogoffAction;
-    assert_eq!(action.action_name(), "Logoff");
-    let (id, msg) = action.to_message();
-    assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("Logoff".into()));
-    assert_eq!(get_header(&msg, "ActionID"), Some(id));
-}
+fn simple_actions_have_common_wire_contract() {
+    type Case = (
+        &'static str,
+        fn() -> (String, asterisk_rs_ami::codec::RawAmiMessage),
+    );
+    let cases: &[Case] = &[
+        ("Logoff", || LogoffAction.to_message()),
+        ("Ping", || PingAction.to_message()),
+        ("CoreStatus", || CoreStatusAction.to_message()),
+        ("CoreSettings", || CoreSettingsAction.to_message()),
+        ("CoreShowChannels", || CoreShowChannelsAction.to_message()),
+        ("ListCommands", || ListCommandsAction.to_message()),
+        ("LoggerRotate", || LoggerRotateAction.to_message()),
+    ];
 
-#[test]
-fn ping_action_headers() {
-    let action = PingAction;
-    assert_eq!(action.action_name(), "Ping");
-    let (id, msg) = action.to_message();
-    assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("Ping".into()));
-    assert_eq!(get_header(&msg, "ActionID"), Some(id));
-}
-
-#[test]
-fn core_status_action_headers() {
-    let action = CoreStatusAction;
-    assert_eq!(action.action_name(), "CoreStatus");
-    let (id, msg) = action.to_message();
-    assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("CoreStatus".into()));
-    assert_eq!(get_header(&msg, "ActionID"), Some(id));
-}
-
-#[test]
-fn core_settings_action_headers() {
-    let action = CoreSettingsAction;
-    assert_eq!(action.action_name(), "CoreSettings");
-    let (id, msg) = action.to_message();
-    assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("CoreSettings".into()));
-    assert_eq!(get_header(&msg, "ActionID"), Some(id));
-}
-
-#[test]
-fn core_show_channels_action_headers() {
-    let action = CoreShowChannelsAction;
-    assert_eq!(action.action_name(), "CoreShowChannels");
-    let (id, msg) = action.to_message();
-    assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("CoreShowChannels".into()));
-    assert_eq!(get_header(&msg, "ActionID"), Some(id));
-}
-
-#[test]
-fn list_commands_action_headers() {
-    let action = ListCommandsAction;
-    assert_eq!(action.action_name(), "ListCommands");
-    let (id, msg) = action.to_message();
-    assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("ListCommands".into()));
-    assert_eq!(get_header(&msg, "ActionID"), Some(id));
-}
-
-#[test]
-fn logger_rotate_action_headers() {
-    let action = LoggerRotateAction;
-    assert_eq!(action.action_name(), "LoggerRotate");
-    let (id, msg) = action.to_message();
-    assert!(!id.is_empty());
-    assert_eq!(get_header(&msg, "Action"), Some("LoggerRotate".into()));
-    assert_eq!(get_header(&msg, "ActionID"), Some(id));
+    for (expected_name, build) in cases {
+        let (id, msg) = build();
+        assert!(!id.is_empty(), "{expected_name} ActionID");
+        assert_eq!(
+            get_header(&msg, "Action").as_deref(),
+            Some(*expected_name),
+            "{expected_name} action header"
+        );
+        assert_eq!(
+            get_header(&msg, "ActionID").as_deref(),
+            Some(id.as_str()),
+            "{expected_name} ActionID header"
+        );
+    }
 }
 
 #[test]
@@ -278,7 +240,7 @@ fn agents_action_headers() {
 
 #[test]
 fn fax_sessions_action_headers() {
-    let action = FAXSessionsAction;
+    let action = FaxSessionsAction;
     assert_eq!(action.action_name(), "FAXSessions");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
@@ -288,7 +250,7 @@ fn fax_sessions_action_headers() {
 
 #[test]
 fn fax_stats_action_headers() {
-    let action = FAXStatsAction;
+    let action = FaxStatsAction;
     assert_eq!(action.action_name(), "FAXStats");
     let (id, msg) = action.to_message();
     assert!(!id.is_empty());
@@ -1116,7 +1078,7 @@ fn meetme_unmute_action_headers() {
 
 #[test]
 fn fax_session_action_headers() {
-    let action = FAXSessionAction {
+    let action = FaxSessionAction {
         session_number: "42".into(),
     };
     assert_eq!(action.action_name(), "FAXSession");
@@ -1606,7 +1568,7 @@ fn user_event_action_no_extra_headers() {
 
 #[test]
 fn play_dtmf_action_with_duration() {
-    let action = PlayDTMFAction {
+    let action = PlayDtmfAction {
         channel: "PJSIP/100-0001".into(),
         digit: "5".into(),
         duration: Some(250),
@@ -1620,7 +1582,7 @@ fn play_dtmf_action_with_duration() {
 
 #[test]
 fn play_dtmf_action_without_duration() {
-    let action = PlayDTMFAction {
+    let action = PlayDtmfAction {
         channel: "PJSIP/100-0001".into(),
         digit: "#".into(),
         duration: None,
@@ -1631,7 +1593,7 @@ fn play_dtmf_action_without_duration() {
 
 #[test]
 fn agi_action_with_command_id() {
-    let action = AGIAction {
+    let action = AgiAction {
         channel: "PJSIP/100-0001".into(),
         command: "EXEC Playback hello-world".into(),
         command_id: Some("cmd-1".into()),
@@ -1648,7 +1610,7 @@ fn agi_action_with_command_id() {
 
 #[test]
 fn agi_action_without_command_id() {
-    let action = AGIAction {
+    let action = AgiAction {
         channel: "PJSIP/100-0001".into(),
         command: "ANSWER".into(),
         command_id: None,

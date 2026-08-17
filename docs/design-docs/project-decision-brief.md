@@ -54,7 +54,7 @@ exchange, and ARI REST/WebSocket resource lifecycle.
 |---|---|---|---|---|
 | A fresh agent finds the correct owner | one root guide and five semantic owners exist | `just harness` plus a read-only fresh-session trace | fresh session identifies instruction scope, code path, command, and active plan without chat | Codex instruction discovery behavior |
 | A contributor runs the right command | Cargo commands were previously duplicated across docs and CI | `just --list` and one filtered `just test` | `just ci` on the frozen tree and the same recipes in CI | supported host and CI runner availability |
-| Protocol behavior is observable | unit and mocks need no service; live tests require Asterisk | focused unit or mock boundary test | `just live-ci` against the digest-pinned Asterisk fixture | Docker and the selected Asterisk image |
+| Protocol behavior is observable | unit and mocks need no service; live tests require Asterisk | focused unit or mock boundary test, then `just live-smoke-ci` | `just live-full-ci` against the marker-verified digest-pinned Asterisk 22 fixture | Docker and the selected Asterisk image |
 | A long task recovers from durable state | one active modernization plan exists | fresh reviewer states objective, exact checkpoint, risk, and next slice from repository files | a later session resumes without relying on this conversation | none |
 | Mechanical boundaries remediate drift | harness checker validates files, instruction size, links, plans, and crate direction | intentional missing-owner failure produces an actionable error | `just ci` rejects generated, structural, dependency, and workflow drift | none |
 | Delivery authority remains explicit | local work is four commits ahead of origin | agent distinguishes local proof from push/close/release authority | pushed exact SHA, protected settings, and external records are verified before mutation | GitHub repository owner and release environment |
@@ -69,7 +69,7 @@ exchange, and ARI REST/WebSocket resource lifecycle.
 | Live service lifecycle: `tests/docker-compose.yml` | digest-pinned isolated Asterisk fixture with bounded readiness and teardown | no service for unit/mock work; no shared PBX default | retain prior image digest; recheck on Asterisk branch/image or fixture-contract change |
 | CI and documentation delivery: `.github/workflows/` | GitHub Actions calls repository recipes with least privilege and immutable action revisions | no second CI provider or agent-only gate | Git restores the prior workflow; recheck action/runner revisions, permissions, and protected settings |
 | Release identity and changelogs: `release-plz.toml` | release-plz updates per-crate changelogs and umbrella release notes from reviewed commits | no independent version bumper or routine hand-edited `Unreleased` ledger | protected environment and trusted publishing remain external gates; recheck release-plz/crates.io contracts on update |
-| Documentation: Markdown, rustdoc, mdBook, and `docs/generate.py` | repository-local public guide with mechanically checked generated references | no second portal or private Codex documentation tree | Git and generated-source inputs provide recovery; recheck when audience, publication, or generator needs change |
+| Documentation: Markdown, rustdoc, and mdBook | repository-local behavioral guide linked to canonical rustdoc, with compiled snippets and a missing-doc ratchet | no generated symbol-table scanner, second portal, or private Codex documentation tree | Git provides recovery; recheck when audience, publication, or API ownership changes |
 | Supply chain and verification: Cargo lints, cargo-deny, cargo-shear, Dependabot, and `scripts/check_harness.py` | one control per current advisory/license/unused-dependency/harness gap | no overlapping audit stack, test runner, or model grader without measured need | tool pins and policy are reviewed on update; remove a control when its signal no longer pays its lifecycle cost |
 
 ## Decisions
@@ -107,8 +107,9 @@ exchange, and ARI REST/WebSocket resource lifecycle.
     requires documenting that host integration and exercising it in CI rather than hiding a runtime
     initialization requirement inside this reusable library.
 13. Keep documentation public and repository-local. Public behavior is owned by code, rustdoc, and
-    the mdBook; generated references have one checked generator. release-plz owns package changelogs
-    and the umbrella release body, while ordinary changes own same-slice guides and migration notes.
+    the mdBook; rustdoc owns the exhaustive API inventory while curated guide pages link to it.
+    Compiled snippets and a missing-doc ratchet detect drift. release-plz owns package changelogs and
+    the umbrella release body, while ordinary changes own same-slice guides and migration notes.
 14. Adopt the Harness Engineering assets as semantic structures populated with verified repository
     facts: a short routing guide, useful-path architecture map, canonical knowledge index, and
     recoverable execution-plan contract. Complex cycles persist exact state and explicit resource
@@ -168,7 +169,7 @@ boundary appear compatible.
 
 - A newcomer can locate protocol ownership and dependency direction from AGENTS.md and
   ARCHITECTURE.md.
-- `just --list` exposes focused, full, live, docs, dependency, and release-adjacent checks.
+- `just --list` exposes focused, full, live-smoke, live-full, docs, dependency, and release-adjacent checks.
 - `just check` is the bounded local/CI development gate and fails with actionable command output.
 - `just ci` exercises the frozen candidate across formatting, lint, tests, feature gates, docs,
   dependency policy, security advisories, and repository structure.

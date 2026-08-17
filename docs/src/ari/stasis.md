@@ -45,4 +45,4 @@ Every `AriMessage` carries:
 - `asterisk_id` — unique Asterisk instance ID (for clusters)
 - `event` — the typed `AriEvent` payload
 
-See [Reference](./reference.md) for the complete event list.
+See [API reference](./reference.md) for the canonical rustdoc event inventory.
