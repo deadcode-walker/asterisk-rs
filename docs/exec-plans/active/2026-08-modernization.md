@@ -555,6 +555,10 @@ arbitrary cleartext host during preflight and that this interface section still 
 harness-only correction. Attach preflight now rejects anything except explicit loopback AMI/ARI IPs
 before constructing authorization, the runner checker proves the rejection, and this section records
 the actual coordinated 0.8 interface and evidence owners.
+The first hosted run of the pushed candidate exposed a workflow-only defect that local actionlint and
+zizmor could not exercise: the checksum-pinned actionlint download did not follow GitHub's release
+redirect, so it hashed the redirect response instead of the verified archive. The installer now uses
+HTTPS-only redirect following while retaining the exact archive checksum.
 
 Accepted bounded tradeoff: AMI outbound frames are prevalidated before actor admission and then
 validated and encoded again at the socket boundary. The duplicate work is bounded by the 64 KiB

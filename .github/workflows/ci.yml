@@ -41,7 +41,7 @@ jobs:
         run: |
           archive="$RUNNER_TEMP/actionlint.tar.gz"
           install_dir="$RUNNER_TEMP/actionlint"
-          curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
             --output "$archive" \
             https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
           echo "$ACTIONLINT_SHA256  $archive" | sha256sum --check --strict
