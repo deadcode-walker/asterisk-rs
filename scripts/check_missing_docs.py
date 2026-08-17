@@ -69,7 +69,11 @@ def main() -> int:
     failed = False
     for package, allowed in baseline["packages"].items():
         actual, output, returncode = rustdoc_count(package)
-        if actual > allowed:
+        if actual == 0 and returncode != 0:
+            print(f"{package}: rustdoc failed without missing-doc diagnostics", file=sys.stderr)
+            print(output, file=sys.stderr)
+            failed = True
+        elif actual > allowed:
             print(f"{package}: missing docs increased: {actual} > {allowed}", file=sys.stderr)
             print(output, file=sys.stderr)
             failed = True
@@ -78,10 +82,6 @@ def main() -> int:
                 f"{package}: missing docs improved: {actual} < {allowed}; lower the baseline",
                 file=sys.stderr,
             )
-            failed = True
-        elif actual == 0 and returncode != 0:
-            print(f"{package}: rustdoc failed without missing-doc diagnostics", file=sys.stderr)
-            print(output, file=sys.stderr)
             failed = True
         else:
             print(f"{package}: {actual} missing-doc diagnostics (baseline {allowed})")
