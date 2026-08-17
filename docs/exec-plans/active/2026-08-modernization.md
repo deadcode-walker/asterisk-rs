@@ -559,6 +559,15 @@ The first hosted run of the pushed candidate exposed a workflow-only defect that
 zizmor could not exercise: the checksum-pinned actionlint download did not follow GitHub's release
 redirect, so it hashed the redirect response instead of the verified archive. The installer now uses
 HTTPS-only redirect following while retaining the exact archive checksum.
+The replacement hosted run passed the repaired installer, Linux live smoke/full, coverage, and
+semver, then macOS exposed two portability assumptions: private-CA test certificates used a 25-year
+leaf validity that Apple rejects, and five AMI tests let the peer publish before the subscriber or
+tracker existed. Certificates now use a generated one-year validity plus explicit leaf/CA key usage,
+basic constraints, server-auth EKU, and SAN; the AMI fixtures use explicit readiness handshakes.
+The superseded Windows run also showed that private-CA failures could leave fixture tasks pending and
+that the retry-exhaustion assertion used an unnecessarily narrow two-second platform deadline. Each
+private-CA journey now has a 15-second whole-case bound, retry observation has a 10-second bound, and
+the superseded run was cancelled before pushing the replacement candidate.
 
 Accepted bounded tradeoff: AMI outbound frames are prevalidated before actor admission and then
 validated and encoded again at the socket boundary. The duplicate work is bounded by the 64 KiB

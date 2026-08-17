@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use asterisk_rs_ari::AriClient;
 use asterisk_rs_ari::config::{AriConfigBuilder, TransportMode};
@@ -79,9 +80,73 @@ fn ca_extension() -> Vec<u8> {
     ])
 }
 
+fn leaf_basic_constraints_extension() -> Vec<u8> {
+    sequence(&[
+        &der(0x06, &[0x55, 0x1d, 0x13]),
+        &der(0x01, &[0xff]),
+        &der(0x04, &sequence(&[])),
+    ])
+}
+
+fn key_usage_extension(bits: u8, unused_bits: u8) -> Vec<u8> {
+    let usage = der(0x03, &[unused_bits, bits]);
+    sequence(&[
+        &der(0x06, &[0x55, 0x1d, 0x0f]),
+        &der(0x01, &[0xff]),
+        &der(0x04, &usage),
+    ])
+}
+
+fn server_auth_extension() -> Vec<u8> {
+    let server_auth = der(0x06, &[0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01]);
+    sequence(&[
+        &der(0x06, &[0x55, 0x1d, 0x25]),
+        &der(0x04, &sequence(&[&server_auth])),
+    ])
+}
+
 fn subject_alt_name_extension(hostname: &str) -> Vec<u8> {
     let names = sequence(&[&der(0x82, hostname.as_bytes())]);
     sequence(&[&der(0x06, &[0x55, 0x1d, 0x11]), &der(0x04, &names)])
+}
+
+fn utc_time(day_offset: i64) -> Vec<u8> {
+    let seconds = i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time after Unix epoch")
+            .as_secs(),
+    )
+    .expect("current timestamp fits i64")
+        + day_offset * 86_400;
+    let days = seconds.div_euclid(86_400);
+    let seconds_in_day = seconds.rem_euclid(86_400);
+
+    // Gregorian civil date from days since 1970-01-01.
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+
+    assert!((1950..=2049).contains(&year), "UTCTime year out of range");
+    let hour = seconds_in_day / 3_600;
+    let minute = seconds_in_day % 3_600 / 60;
+    let second = seconds_in_day % 60;
+    der(
+        0x17,
+        format!(
+            "{:02}{month:02}{day:02}{hour:02}{minute:02}{second:02}Z",
+            year % 100
+        )
+        .as_bytes(),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -90,16 +155,17 @@ fn certificate_der(
     issuer: &[u8],
     subject: &[u8],
     public_key: &[u8],
-    extension: Vec<u8>,
+    extensions: &[Vec<u8>],
     signer: &EcdsaKeyPair,
     rng: &SystemRandom,
 ) -> Vec<u8> {
     let version = der(0xa0, &der(0x02, &[2]));
     let serial = der(0x02, &[serial]);
     let algorithm = signature_algorithm();
-    let validity = sequence(&[&der(0x17, b"250101000000Z"), &der(0x17, b"491231235959Z")]);
+    let validity = sequence(&[&utc_time(-1), &utc_time(364)]);
     let public_key = subject_public_key_info(public_key);
-    let extensions = der(0xa3, &sequence(&[&extension]));
+    let extension_refs = extensions.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let extensions = der(0xa3, &sequence(&extension_refs));
     let tbs = sequence(&[
         &version,
         &serial,
@@ -158,7 +224,10 @@ impl PrivateCaFixture {
             &ca_name,
             &ca_name,
             ca_key.public_key().as_ref(),
-            ca_extension(),
+            &[
+                ca_extension(),
+                key_usage_extension(0x06, 1), // keyCertSign and cRLSign
+            ],
             &ca_key,
             &rng,
         );
@@ -173,7 +242,12 @@ impl PrivateCaFixture {
             &ca_name,
             &distinguished_name("localhost"),
             leaf_key.public_key().as_ref(),
-            subject_alt_name_extension("localhost"),
+            &[
+                leaf_basic_constraints_extension(),
+                subject_alt_name_extension("localhost"),
+                key_usage_extension(0x80, 7), // digitalSignature
+                server_auth_extension(),
+            ],
             &ca_key,
             &rng,
         );
@@ -244,8 +318,7 @@ async fn reject_untrusted_tls(listener: TcpListener, acceptor: TlsAcceptor) {
     );
 }
 
-#[tokio::test]
-async fn private_ca_secures_http_events_and_https_requests() {
+async fn private_ca_secures_http_events_and_https_requests_case() {
     let (listener, fixture) = bind_tls().await;
     let port = listener.local_addr().expect("listener address").port();
 
@@ -308,8 +381,7 @@ async fn private_ca_secures_http_events_and_https_requests() {
     server.await.expect("trusted HTTP server task");
 }
 
-#[tokio::test]
-async fn private_ca_secures_unified_websocket_transport() {
+async fn private_ca_secures_unified_websocket_transport_case() {
     let (listener, fixture) = bind_tls().await;
     let port = listener.local_addr().expect("listener address").port();
     let untrusted = tokio::spawn(reject_untrusted_tls(listener, fixture.acceptor.clone()));
@@ -333,8 +405,7 @@ async fn private_ca_secures_unified_websocket_transport() {
     server.await.expect("unified WSS server task");
 }
 
-#[tokio::test]
-async fn private_ca_secures_media_websocket() {
+async fn private_ca_secures_media_websocket_case() {
     let (listener, fixture) = bind_tls().await;
     let port = listener.local_addr().expect("listener address").port();
     let url = format!("wss://localhost:{port}/media/test");
@@ -356,6 +427,33 @@ async fn private_ca_secures_media_websocket() {
         .expect("private CA should secure media WSS");
     media.disconnect_and_wait().await;
     server.await.expect("media WSS server task");
+}
+
+async fn bounded_private_ca_case(future: impl std::future::Future<Output = ()>) {
+    tokio::time::timeout(Duration::from_secs(15), future)
+        .await
+        .expect("private-CA fixture must terminate within its platform-independent deadline");
+}
+
+#[tokio::test]
+async fn private_ca_secures_http_events_and_https_requests() {
+    bounded_private_ca_case(Box::pin(
+        private_ca_secures_http_events_and_https_requests_case(),
+    ))
+    .await;
+}
+
+#[tokio::test]
+async fn private_ca_secures_unified_websocket_transport() {
+    bounded_private_ca_case(Box::pin(
+        private_ca_secures_unified_websocket_transport_case(),
+    ))
+    .await;
+}
+
+#[tokio::test]
+async fn private_ca_secures_media_websocket() {
+    bounded_private_ca_case(Box::pin(private_ca_secures_media_websocket_case())).await;
 }
 
 #[tokio::test]

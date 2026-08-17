@@ -196,8 +196,12 @@ async fn receive_events() {
     let server = MockAmiServer::start().await;
     let port = server.port();
 
+    let (subscription_ready_tx, subscription_ready_rx) = tokio::sync::oneshot::channel();
     let handle = server.accept_one(|mut conn| async move {
         handle_login(&mut conn).await;
+        subscription_ready_rx
+            .await
+            .expect("event subscriber should become ready");
 
         // send an unsolicited event
         conn.send_message(&[
@@ -226,6 +230,9 @@ async fn receive_events() {
         .expect("client should connect");
 
     let mut sub = client.subscribe();
+    subscription_ready_tx
+        .send(())
+        .expect("mock server should await the subscriber");
 
     // wait for the event with a timeout
     let event = tokio::time::timeout(Duration::from_secs(3), sub.recv_lossy())
@@ -607,8 +614,12 @@ async fn filtered_subscription() {
     let server = MockAmiServer::start().await;
     let port = server.port();
 
+    let (subscription_ready_tx, subscription_ready_rx) = tokio::sync::oneshot::channel();
     let handle = server.accept_one(|mut conn| async move {
         handle_login(&mut conn).await;
+        subscription_ready_rx
+            .await
+            .expect("filtered subscriber should become ready");
 
         // send a mix of events — only Hangup should pass the filter
         conn.send_message(&[("Event", "FullyBooted"), ("Status", "Fully Booted")])
@@ -642,6 +653,9 @@ async fn filtered_subscription() {
         .expect("client should connect");
 
     let mut filtered = client.subscribe_filtered(|e| e.event_name() == "Hangup");
+    subscription_ready_tx
+        .send(())
+        .expect("mock server should await the filtered subscriber");
 
     let event = tokio::time::timeout(Duration::from_secs(3), filtered.recv_lossy())
         .await
@@ -2167,8 +2181,12 @@ async fn builder_custom_event_capacity() {
     let server = MockAmiServer::start().await;
     let port = server.port();
 
+    let (subscription_ready_tx, subscription_ready_rx) = tokio::sync::oneshot::channel();
     let handle = server.accept_one(|mut conn| async move {
         handle_login(&mut conn).await;
+        subscription_ready_rx
+            .await
+            .expect("custom-capacity subscriber should become ready");
 
         // send several events to test that the small capacity works
         for i in 0..5 {
@@ -2195,6 +2213,9 @@ async fn builder_custom_event_capacity() {
         .expect("client should connect with custom event capacity");
 
     let mut sub = client.subscribe();
+    subscription_ready_tx
+        .send(())
+        .expect("mock server should await the custom-capacity subscriber");
 
     // receive at least one event to verify the bus works at custom capacity
     let event = tokio::time::timeout(Duration::from_secs(3), sub.recv_lossy())
@@ -3286,8 +3307,12 @@ async fn events_delivered_during_connected() {
     let server = MockAmiServer::start().await;
     let port = server.port();
 
+    let (subscription_ready_tx, subscription_ready_rx) = tokio::sync::oneshot::channel();
     let handle = server.accept_one(|mut conn| async move {
         handle_login(&mut conn).await;
+        subscription_ready_rx
+            .await
+            .expect("connected-state subscriber should become ready");
 
         // send an unsolicited event
         conn.send_message(&[
@@ -3318,6 +3343,9 @@ async fn events_delivered_during_connected() {
         .expect("client should connect");
 
     let mut sub = client.subscribe();
+    subscription_ready_tx
+        .send(())
+        .expect("mock server should await the connected-state subscriber");
 
     // receive event
     let event = tokio::time::timeout(Duration::from_secs(3), sub.recv_lossy())
@@ -3410,8 +3438,12 @@ async fn call_tracker_via_mock_ami() {
     let server = MockAmiServer::start().await;
     let port = server.port();
 
+    let (tracker_ready_tx, tracker_ready_rx) = tokio::sync::oneshot::channel();
     let handle = server.accept_one(|mut conn| async move {
         handle_login(&mut conn).await;
+        tracker_ready_rx
+            .await
+            .expect("call tracker should become ready");
 
         // send NewChannel event
         conn.send_message(&[
@@ -3465,6 +3497,9 @@ async fn call_tracker_via_mock_ami() {
         .expect("client should connect and login");
 
     let (_tracker, mut completed_rx) = client.call_tracker();
+    tracker_ready_tx
+        .send(())
+        .expect("mock server should await the call tracker");
 
     let completed = tokio::time::timeout(Duration::from_secs(5), completed_rx.recv())
         .await

@@ -3825,7 +3825,7 @@ async fn ws_max_retries_stops_reconnecting() {
     // shut down server — client will try to reconnect, exhaust 2 retries, then stop
     server.shutdown().await;
 
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if matches!(
                 &*states.borrow_and_update(),
