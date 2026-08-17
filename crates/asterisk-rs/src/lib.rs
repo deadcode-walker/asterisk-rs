@@ -5,14 +5,14 @@
 //!
 //! ```toml
 //! [dependencies]
-//! asterisk-rs = { version = "0.1", default-features = false, features = ["ami"] }
+//! asterisk-rs = { version = "0.8", default-features = false, features = ["ami"] }
 //! ```
 //!
 //! Or use individual crates directly:
 //!
 //! ```toml
 //! [dependencies]
-//! asterisk-ami = "0.1"
+//! asterisk-rs-ami = "0.8"
 //! ```
 
 pub use asterisk_rs_core as core;

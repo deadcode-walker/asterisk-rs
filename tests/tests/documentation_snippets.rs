@@ -9,8 +9,15 @@ use asterisk_rs_ari::resources::channel::{ExternalMediaParams, OriginateParams};
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_core::types::{AgiStatus, ChannelState, HangupCause};
 
+const UMBRELLA_RUSTDOC: &str = include_str!("../../crates/asterisk-rs/src/lib.rs");
+
 #[test]
 fn readme_builders_and_domain_types_match_the_public_api() {
+    assert!(UMBRELLA_RUSTDOC.contains("asterisk-rs = { version = \"0.8\""));
+    assert!(UMBRELLA_RUSTDOC.contains("asterisk-rs-ami = \"0.8\""));
+    assert!(!UMBRELLA_RUSTDOC.contains("asterisk-ami"));
+    assert!(!UMBRELLA_RUSTDOC.contains("version = \"0.1\""));
+
     let ami = OriginateAction::new("PJSIP/100")
         .context("default")
         .extension("200")

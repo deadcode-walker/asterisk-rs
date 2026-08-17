@@ -85,6 +85,11 @@ is either a green local harness commit or a concrete authority/external-state bl
   race claim and this missing checkpoint record. The following candidate removed the impossible
   remote-branch atomicity claim: release calls are serialized and act only on their immutable,
   aggregate-CI-proven SHA, even if a later main commit arrives while publication is running.
+- [x] 2026-08-17: froze checkpoint `b8c8f327bf1d8670e652cceeb544be1fd30f8733`
+  (tree `cc0e18f618b485ae0a3aa126db1281edc9406816`) with a clean worktree after rerunning
+  `just ci`, `just msrv`, `just semver`, `just live-smoke-ci` (4/4), and `just live-full-ci`
+  (73/73). Fresh review then found stale umbrella rustdoc package coordinates and this absent exact
+  checkpoint; the following candidate corrects both and makes the coordinates part of docs proof.
 - [x] 2026-08-17: completed the pinned-contract and unknown-ARI-event portion of Slice 1. Pinned the official
   Asterisk `22.9.0` ARI documents and chan_websocket implementation at peeled commit
   `da123773c723ed1263ff74569544f7ee84626c1a`, recorded their SHA-256 identities and upstream
