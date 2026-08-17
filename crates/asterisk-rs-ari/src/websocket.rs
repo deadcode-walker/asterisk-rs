@@ -9,6 +9,7 @@ use asterisk_rs_core::event::EventBus;
 use futures_util::{SinkExt, StreamExt};
 use rustls_platform_verifier::BuilderVerifierExt;
 use tokio::sync::watch;
+use zeroize::Zeroizing;
 
 use crate::error::{AriError, Result};
 use crate::event::AriMessage;
@@ -189,13 +190,13 @@ pub(crate) struct WsEventListener {
 impl WsEventListener {
     /// spawn the websocket listener as a background task
     pub(crate) fn spawn(
-        ws_url: String,
+        ws_url: Zeroizing<String>,
         event_bus: EventBus<AriMessage>,
         reconnect: ReconnectPolicy,
         max_websocket_message_bytes: usize,
         extra_roots: &[rustls::pki_types::CertificateDer<'static>],
     ) -> Result<Self> {
-        let tls_connector = connector_for_url(&ws_url, extra_roots)?;
+        let tls_connector = connector_for_url(ws_url.as_str(), extra_roots)?;
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let (state_tx, state_rx) = watch::channel(AriConnectionState::Connecting);
 
@@ -246,7 +247,7 @@ impl Drop for WsEventListener {
 
 /// main websocket loop with reconnection logic
 async fn ws_loop(
-    ws_url: String,
+    ws_url: Zeroizing<String>,
     event_bus: EventBus<AriMessage>,
     reconnect: ReconnectPolicy,
     tls_connector: tokio_tungstenite::Connector,
@@ -269,12 +270,12 @@ async fn ws_loop(
             AriConnectionState::Reconnecting
         });
 
-        tracing::info!(url = %redact_url(&ws_url), attempt, "connecting to ARI websocket");
+        tracing::info!(url = %redact_url(ws_url.as_str()), attempt, "connecting to ARI websocket");
 
         match tokio::time::timeout(
             Duration::from_secs(10),
             tokio_tungstenite::connect_async_tls_with_config(
-                &ws_url,
+                ws_url.as_str(),
                 Some(websocket_config(max_websocket_message_bytes)),
                 false,
                 Some(tls_connector.clone()),

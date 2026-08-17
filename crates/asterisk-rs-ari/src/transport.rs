@@ -417,7 +417,7 @@ impl HttpTransport {
             .map_err(|error| AriError::Http(HttpError::new(error)))?;
 
         let ws_listener = WsEventListener::spawn(
-            config.ws_url().to_string(),
+            config.ws_url(),
             event_bus,
             config.reconnect_policy().clone(),
             config.max_websocket_message_bytes(),

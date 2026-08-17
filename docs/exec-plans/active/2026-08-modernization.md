@@ -23,11 +23,12 @@ fixture, and the external GitHub state must be re-read before it is changed.
 
 ## Authority and side effects
 
-The repository owner authorized local implementation, verification, documentation updates, and a
-coherent local commit. Push, issue/PR closure, repository settings, merge, release, deployment, and
-live-system mutation remain explicit later gates. For the 2026-08-17 harness correction, the owner
-explicitly waived delegates and fresh reviewers; the main agent owns the source comparison,
-mechanical gates, exact-diff inspection, and commit.
+The repository owner authorized local implementation, verification, documentation updates, coherent
+local commits, push, GitHub repository and release-protection settings, exact-SHA monitoring,
+issue/PR closure, and mutation of the isolated repository-owned Asterisk fixture. The owner did not
+authorize package publication, a GitHub Release, deployment, or mutation of any non-fixture Asterisk.
+Fresh candidate review uses the repository-declared Harness Engineering read-only review workflow;
+the main agent remains the sole writer and integration owner.
 
 This interactive correction cycle has one implementation owner, no delegate concurrency, no blind
 retry loop, and one complete-gate attempt after focused proof. A failed gate ends the tactic: record
@@ -537,6 +538,9 @@ The next review challenged non-atomic remote-branch freshness checks and the med
 wildcard bind. Release calls now serialize immutable aggregate-CI-proven SHAs instead of claiming an
 impossible atomic relationship to a moving branch. The Compose runner derives a host-gateway bind
 and exact container peer; attach mode requires both explicitly, and the listener rejects other peers.
+The final secret-lifetime review found that both ARI WebSocket actors immediately converted their
+zeroizing credential URLs back into ordinary long-lived strings. Both actors now own
+`Zeroizing<String>` through shutdown and borrow it only for parsing, redacted logging, and connects.
 
 Accepted bounded tradeoff: AMI outbound frames are prevalidated before actor admission and then
 validated and encoded again at the socket boundary. The duplicate work is bounded by the 64 KiB

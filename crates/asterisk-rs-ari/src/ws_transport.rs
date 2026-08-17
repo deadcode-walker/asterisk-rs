@@ -14,6 +14,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
+use zeroize::Zeroizing;
 
 use asterisk_rs_core::config::ReconnectPolicy;
 use asterisk_rs_core::event::EventBus;
@@ -61,8 +62,8 @@ pub(crate) struct WsTransport {
 impl WsTransport {
     /// spawn the background websocket task
     pub(crate) fn spawn(config: &AriConfig, event_bus: EventBus<AriMessage>) -> Result<Self> {
-        let ws_url = config.ws_url().to_string();
-        let tls_connector = connector_for_url(&ws_url, &config.tls_trust.rustls_roots)?;
+        let ws_url = config.ws_url();
+        let tls_connector = connector_for_url(ws_url.as_str(), &config.tls_trust.rustls_roots)?;
         let loop_config = WsLoopConfig {
             reconnect: config.reconnect_policy().clone(),
             max_response_body_bytes: config.max_response_body_bytes(),
@@ -181,7 +182,7 @@ impl Drop for WsTransport {
 
 /// main websocket loop with reconnection logic
 async fn ws_loop(
-    ws_url: String,
+    ws_url: Zeroizing<String>,
     event_bus: EventBus<AriMessage>,
     tls_connector: tokio_tungstenite::Connector,
     config: WsLoopConfig,
@@ -203,12 +204,12 @@ async fn ws_loop(
             AriConnectionState::Reconnecting
         });
 
-        tracing::info!(url = %redact_url(&ws_url), attempt, "connecting to ARI websocket (unified mode)");
+        tracing::info!(url = %redact_url(ws_url.as_str()), attempt, "connecting to ARI websocket (unified mode)");
 
         let connection = tokio::time::timeout(
             Duration::from_secs(10),
             tokio_tungstenite::connect_async_tls_with_config(
-                &ws_url,
+                ws_url.as_str(),
                 Some(websocket_config(config.max_websocket_message_bytes)),
                 false,
                 Some(tls_connector.clone()),
