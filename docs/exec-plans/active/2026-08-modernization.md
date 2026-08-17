@@ -568,6 +568,12 @@ The superseded Windows run also showed that private-CA failures could leave fixt
 that the retry-exhaustion assertion used an unnecessarily narrow two-second platform deadline. Each
 private-CA journey now has a 15-second whole-case bound, retry observation has a 10-second bound, and
 the superseded run was cancelled before pushing the replacement candidate.
+The next exact-SHA run passed macOS and both live suites, then exposed two fresh-run/platform edges.
+ANSI-colored rustdoc diagnostics bypassed the missing-doc ratchet's plain-text matcher, and Windows
+does not reliably send a TLS close alert after client-side certificate rejection. The ratchet now
+normalizes ANSI escapes with a colored-diagnostic self-test, while rejected-TLS fixtures are explicitly
+aborted and joined after the client rejection rather than waiting on a peer close alert. The complete
+local `just ci` gate passes these repairs before the next push.
 
 Accepted bounded tradeoff: AMI outbound frames are prevalidated before actor admission and then
 validated and encoded again at the socket boundary. The duplicate work is bounded by the 64 KiB

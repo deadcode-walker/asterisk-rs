@@ -318,6 +318,18 @@ async fn reject_untrusted_tls(listener: TcpListener, acceptor: TlsAcceptor) {
     );
 }
 
+async fn stop_rejected_tls_fixture(task: tokio::task::JoinHandle<()>) {
+    // Some platform TLS stacks do not send a close alert when the client-side
+    // verifier rejects a certificate. The client rejection is the behavior
+    // under test; do not make fixture teardown depend on a peer close alert.
+    task.abort();
+    match task.await {
+        Ok(()) => {}
+        Err(error) if error.is_cancelled() => {}
+        Err(error) => panic!("TLS fixture task failed: {error}"),
+    }
+}
+
 async fn private_ca_secures_http_events_and_https_requests_case() {
     let (listener, fixture) = bind_tls().await;
     let port = listener.local_addr().expect("listener address").port();
@@ -327,7 +339,7 @@ async fn private_ca_secures_http_events_and_https_requests_case() {
         .await
         .expect_err("private CA must not be trusted implicitly");
     assert!(matches!(error, AriError::WebSocket(_)));
-    untrusted.await.expect("untrusted TLS server task");
+    stop_rejected_tls_fixture(untrusted).await;
 
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
@@ -363,6 +375,11 @@ async fn private_ca_secures_http_events_and_https_requests_case() {
             .expect("HTTPS response");
         http_tls.shutdown().await.expect("HTTPS shutdown");
         event_task.abort();
+        match event_task.await {
+            Ok(()) => {}
+            Err(error) if error.is_cancelled() => {}
+            Err(error) => panic!("event fixture task failed: {error}"),
+        }
     });
 
     let client = AriClient::connect(secure_ari_config(
@@ -388,7 +405,7 @@ async fn private_ca_secures_unified_websocket_transport_case() {
     AriClient::connect(secure_ari_config(port, TransportMode::WebSocket, None))
         .await
         .expect_err("private CA must not be trusted implicitly");
-    untrusted.await.expect("untrusted TLS server task");
+    stop_rejected_tls_fixture(untrusted).await;
 
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
@@ -413,7 +430,7 @@ async fn private_ca_secures_media_websocket_case() {
     MediaChannel::connect(&url)
         .await
         .expect_err("private CA must not be trusted implicitly");
-    untrusted.await.expect("untrusted TLS server task");
+    stop_rejected_tls_fixture(untrusted).await;
 
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await

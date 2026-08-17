@@ -15,11 +15,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BASELINE_PATH = ROOT / "scripts" / "missing-docs-baseline.json"
 MISSING_DOC = re.compile(r"^error: missing documentation", re.MULTILINE)
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def count_missing_docs(output: str) -> int:
     """Count rustdoc diagnostics without depending on paths or message categories."""
-    return len(MISSING_DOC.findall(output))
+    return len(MISSING_DOC.findall(ANSI_ESCAPE.sub("", output)))
 
 
 def check_self_test() -> None:
@@ -29,6 +30,7 @@ error: missing documentation for a struct field
 error: could not document `fixture`
 """
     assert count_missing_docs(fixture) == 2
+    assert count_missing_docs("\x1b[1m\x1b[91merror\x1b[0m: missing documentation") == 1
     assert count_missing_docs("Documenting fixture\nFinished") == 0
 
 
