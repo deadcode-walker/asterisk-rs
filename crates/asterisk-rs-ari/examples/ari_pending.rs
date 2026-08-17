@@ -5,7 +5,7 @@
 //! the caller has a chance to subscribe. The PendingChannel factory fixes this
 //! by subscribing to channel events *before* sending the originate request.
 //! Any events that arrive between the REST call returning and the caller calling
-//! `events.recv()` are buffered in the subscription channel — none are lost.
+//! `events.recv()` surfaces any lag before buffered delivery resumes.
 //!
 //! Flow:
 //!   1. `client.channel()` — allocates a pre-generated channel ID, installs a
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // step 3: drive the call by processing the pre-subscribed event stream.
     // events that arrived between originate completing and this loop starting
     // are already buffered — recv() delivers them in order.
-    while let Some(msg) = events.recv().await {
+    while let Some(msg) = events.recv_lossy().await {
         match msg.event {
             AriEvent::StasisStart { channel, args, .. } => {
                 tracing::info!(

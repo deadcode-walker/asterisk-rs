@@ -55,7 +55,7 @@ async fn wait_stasis_start(
 ) -> (String, String) {
     tokio::time::timeout(Duration::from_secs(timeout_secs), async {
         loop {
-            let msg = sub.recv().await.expect("ari event bus closed");
+            let msg = sub.recv_lossy().await.expect("ari event bus closed");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
                 if channel.caller.number == caller_number {
                     return (channel.id.clone(), channel.name.clone());
@@ -120,7 +120,7 @@ async fn ami_originate_ari_stasis_lifecycle() {
     // ARI sees StasisEnd
     let saw_stasis_end = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = ari_sub.recv().await.expect("ari event bus closed");
+            let msg = ari_sub.recv_lossy().await.expect("ari event bus closed");
             if let AriEvent::StasisEnd { channel, .. } = &msg.event {
                 if channel.id == channel_id {
                     return true;
@@ -135,7 +135,7 @@ async fn ami_originate_ari_stasis_lifecycle() {
     // AMI should see a Hangup event for a channel matching the originate
     let saw_hangup = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let event = ami_sub.recv().await.expect("ami event bus closed");
+            let event = ami_sub.recv_lossy().await.expect("ami event bus closed");
             if let AmiEvent::Hangup { channel, .. } = &event {
                 if channel.contains("Local/") {
                     return true;
@@ -237,7 +237,7 @@ async fn ami_originate_agi_handler_completes() {
     let mut saw_hangup = false;
     let _ = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let event = ami_sub.recv().await.expect("ami event bus closed");
+            let event = ami_sub.recv_lossy().await.expect("ami event bus closed");
             match &event {
                 AmiEvent::NewChannel { channel, .. } if channel.contains("Local/") => {
                     saw_new = true;
@@ -395,7 +395,7 @@ async fn ari_bridge_with_two_channels() {
     let mut entered_count = 0;
     let _ = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = ari_sub.recv().await.expect("ari event bus closed");
+            let msg = ari_sub.recv_lossy().await.expect("ari event bus closed");
             if let AriEvent::ChannelEnteredBridge { bridge, .. } = &msg.event {
                 if bridge.id == bridge_id {
                     entered_count += 1;
@@ -420,7 +420,7 @@ async fn ari_bridge_with_two_channels() {
     // verify ChannelLeftBridge
     let saw_left = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = ari_sub.recv().await.expect("ari event bus closed");
+            let msg = ari_sub.recv_lossy().await.expect("ari event bus closed");
             if let AriEvent::ChannelLeftBridge {
                 bridge, channel, ..
             } = &msg.event
@@ -486,7 +486,7 @@ async fn ami_monitors_ari_activity() {
     let mut saw_new_channel = false;
     let _ = tokio::time::timeout(Duration::from_secs(3), async {
         loop {
-            let event = ami_sub.recv().await.expect("ami event bus closed");
+            let event = ami_sub.recv_lossy().await.expect("ami event bus closed");
             if let AmiEvent::NewChannel { channel, .. } = &event {
                 if channel.contains("Local/") {
                     saw_new_channel = true;
@@ -524,7 +524,7 @@ async fn ami_monitors_ari_activity() {
     // AMI should see Hangup for a Local channel
     let saw_hangup = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let event = ami_sub.recv().await.expect("ami event bus closed");
+            let event = ami_sub.recv_lossy().await.expect("ami event bus closed");
             if let AmiEvent::Hangup { channel, .. } = &event {
                 if channel.contains("Local/") {
                     return true;

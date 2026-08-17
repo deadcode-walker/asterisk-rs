@@ -3,5 +3,7 @@ mod mock_tests {
     mod agi;
     mod ami;
     mod ari;
+    mod ari_security;
     mod ari_server;
+    mod pbx;
 }

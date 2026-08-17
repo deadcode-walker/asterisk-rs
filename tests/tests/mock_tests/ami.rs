@@ -228,7 +228,7 @@ async fn receive_events() {
     let mut sub = client.subscribe();
 
     // wait for the event with a timeout
-    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv_lossy())
         .await
         .expect("should receive event within timeout")
         .expect("subscription should not be closed");
@@ -638,7 +638,7 @@ async fn filtered_subscription() {
 
     let mut filtered = client.subscribe_filtered(|e| e.event_name() == "Hangup");
 
-    let event = tokio::time::timeout(Duration::from_secs(3), filtered.recv())
+    let event = tokio::time::timeout(Duration::from_secs(3), filtered.recv_lossy())
         .await
         .expect("should receive filtered event within timeout")
         .expect("subscription should not be closed");
@@ -1158,15 +1158,15 @@ async fn multiple_subscribers_all_receive() {
     let mut sub3 = client.subscribe();
 
     let timeout = Duration::from_secs(3);
-    let e1 = tokio::time::timeout(timeout, sub1.recv())
+    let e1 = tokio::time::timeout(timeout, sub1.recv_lossy())
         .await
         .expect("sub1 should receive event within timeout")
         .expect("sub1 should not be closed");
-    let e2 = tokio::time::timeout(timeout, sub2.recv())
+    let e2 = tokio::time::timeout(timeout, sub2.recv_lossy())
         .await
         .expect("sub2 should receive event within timeout")
         .expect("sub2 should not be closed");
-    let e3 = tokio::time::timeout(timeout, sub3.recv())
+    let e3 = tokio::time::timeout(timeout, sub3.recv_lossy())
         .await
         .expect("sub3 should receive event within timeout")
         .expect("sub3 should not be closed");
@@ -2030,7 +2030,7 @@ async fn event_bus_continues_during_action() {
     assert!(response.success);
 
     // the event should have been delivered to the subscriber
-    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv_lossy())
         .await
         .expect("should receive event within timeout")
         .expect("subscription should not be closed");
@@ -2170,7 +2170,7 @@ async fn builder_custom_event_capacity() {
     let mut sub = client.subscribe();
 
     // receive at least one event to verify the bus works at custom capacity
-    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv_lossy())
         .await
         .expect("should receive event within timeout")
         .expect("subscription should not be closed");
@@ -3286,7 +3286,7 @@ async fn events_delivered_during_connected() {
     let mut sub = client.subscribe();
 
     // receive event
-    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(3), sub.recv_lossy())
         .await
         .expect("should receive event within timeout")
         .expect("subscription should not be closed");
@@ -3302,7 +3302,7 @@ async fn events_delivered_during_connected() {
     drop(client);
 
     // subscription should eventually yield None when bus is dropped
-    let closed = tokio::time::timeout(Duration::from_secs(3), sub.recv()).await;
+    let closed = tokio::time::timeout(Duration::from_secs(3), sub.recv_lossy()).await;
     assert!(
         matches!(closed, Ok(None) | Err(_)),
         "subscription should close after client is dropped"

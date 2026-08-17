@@ -1,5 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use crate::client::AriClient;
 use crate::error::Result;
 use crate::event::{AriEvent, AriMessage, Bridge, Channel};
@@ -7,105 +5,23 @@ use crate::resources::bridge::BridgeHandle;
 use crate::resources::channel::{ChannelHandle, OriginateParams};
 use asterisk_rs_core::event::FilteredSubscription;
 
-static PENDING_COUNTER: AtomicU64 = AtomicU64::new(1);
-
 fn generate_pending_id(prefix: &str) -> String {
-    let id = PENDING_COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("{prefix}-pending-{id}")
+    format!("{prefix}-pending-{}", uuid::Uuid::new_v4().simple())
 }
 
 /// returns true if the event involves the given channel id
 fn event_matches_channel_id(event: &AriEvent, id: &str) -> bool {
-    match event {
-        AriEvent::StasisStart { channel, .. }
-        | AriEvent::StasisEnd { channel }
-        | AriEvent::ChannelCreated { channel }
-        | AriEvent::ChannelDestroyed { channel, .. }
-        | AriEvent::ChannelStateChange { channel }
-        | AriEvent::ChannelDtmfReceived { channel, .. }
-        | AriEvent::ChannelHangupRequest { channel }
-        | AriEvent::ChannelCallerId { channel, .. }
-        | AriEvent::ChannelConnectedLine { channel }
-        | AriEvent::ChannelDialplan { channel, .. }
-        | AriEvent::ChannelHold { channel, .. }
-        | AriEvent::ChannelUnhold { channel }
-        | AriEvent::ChannelTalkingStarted { channel }
-        | AriEvent::ChannelTalkingFinished { channel, .. }
-        | AriEvent::ChannelToneDetected { channel }
-        | AriEvent::ChannelTransfer { channel, .. }
-        | AriEvent::ChannelEnteredBridge { channel, .. }
-        | AriEvent::ChannelLeftBridge { channel, .. }
-        | AriEvent::ApplicationMoveFailed { channel, .. } => channel.id == id,
-        // dial events involve multiple participants; any could be the watched channel
-        AriEvent::Dial {
-            peer,
-            caller,
-            forwarded,
-            ..
-        } => {
-            peer.id == id
-                || caller.as_ref().is_some_and(|c| c.id == id)
-                || forwarded.as_ref().is_some_and(|c| c.id == id)
-        }
-        // blind transfer involves the transferring channel and the transferee
-        AriEvent::BridgeBlindTransfer {
-            channel,
-            transferee,
-            replace_channel,
-            ..
-        } => {
-            channel.id == id
-                || transferee.as_ref().is_some_and(|c| c.id == id)
-                || replace_channel.as_ref().is_some_and(|c| c.id == id)
-        }
-        _ => false,
-    }
+    event.channel_ids().contains(&id)
 }
 
 /// returns true if the event involves the given bridge id
 fn event_matches_bridge_id(event: &AriEvent, id: &str) -> bool {
-    match event {
-        AriEvent::BridgeCreated { bridge }
-        | AriEvent::BridgeDestroyed { bridge }
-        | AriEvent::ChannelEnteredBridge { bridge, .. }
-        | AriEvent::ChannelLeftBridge { bridge, .. }
-        | AriEvent::BridgeVideoSourceChanged { bridge, .. } => bridge.id == id,
-        // both bridges checked: the merged-from bridge may be the one being watched
-        AriEvent::BridgeMerged {
-            bridge,
-            bridge_from,
-        } => bridge.id == id || bridge_from.id == id,
-        // bridge is optional on blind transfer
-        AriEvent::BridgeBlindTransfer { bridge, .. } => bridge.as_ref().is_some_and(|b| b.id == id),
-        // attended transfer may route through several optional bridge legs
-        AriEvent::BridgeAttendedTransfer {
-            transferer_first_leg_bridge,
-            transferer_second_leg_bridge,
-            destination_threeway_bridge,
-            ..
-        } => {
-            transferer_first_leg_bridge
-                .as_ref()
-                .is_some_and(|b| b.id == id)
-                || transferer_second_leg_bridge
-                    .as_ref()
-                    .is_some_and(|b| b.id == id)
-                || destination_threeway_bridge
-                    .as_ref()
-                    .is_some_and(|b| b.id == id)
-        }
-        _ => false,
-    }
+    event.bridge_ids().contains(&id)
 }
 
 /// extracts the playback id from an event, if present
 fn event_playback_id(event: &AriEvent) -> Option<&str> {
-    match event {
-        AriEvent::PlaybackStarted { playback }
-        | AriEvent::PlaybackFinished { playback }
-        | AriEvent::PlaybackContinuing { playback } => Some(&playback.id),
-        _ => None,
-    }
+    event.playback_ids().first().copied()
 }
 
 /// a channel that has been pre-registered for events but not yet created.

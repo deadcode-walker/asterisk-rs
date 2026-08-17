@@ -8,6 +8,7 @@ use asterisk_rs_ari::event::{AriEvent, AriMessage};
 use asterisk_rs_ari::media::{MediaCommand, MediaDirection, MediaEvent};
 use asterisk_rs_ari::resources::asterisk::ConfigTuple;
 use asterisk_rs_ari::resources::channel::{ExternalMediaParams, OriginateParams};
+use asterisk_rs_core::event::EventReceive;
 
 #[test]
 fn downstream_uses_owned_builders_and_future_facing_matches() {
@@ -59,6 +60,17 @@ fn downstream_uses_owned_builders_and_future_facing_matches() {
     fn accept_error(error: AriError) {
         let _ = error.to_string();
     }
+    fn accept_receive(outcome: EventReceive<AriMessage>) {
+        match outcome {
+            EventReceive::Event(_) | EventReceive::Lagged(_) | EventReceive::Closed => {}
+        }
+    }
 
-    let _ = (accept_event, accept_message, accept_media, accept_error);
+    let _ = (
+        accept_event,
+        accept_message,
+        accept_media,
+        accept_error,
+        accept_receive,
+    );
 }

@@ -139,6 +139,7 @@ fn build_with_custom_host_port() {
     let config = AriConfigBuilder::new("myapp")
         .host("10.0.0.1")
         .port(9999)
+        .allow_insecure_remote(true)
         .username("admin")
         .password("secret")
         .build()
@@ -149,6 +150,51 @@ fn build_with_custom_host_port() {
         "base_url should contain custom host:port, got: {}",
         config.base_url()
     );
+}
+
+#[test]
+fn remote_cleartext_requires_explicit_opt_in() {
+    let error = AriConfigBuilder::new("myapp")
+        .host("192.0.2.10")
+        .username("admin")
+        .password("secret")
+        .build()
+        .expect_err("remote cleartext must be rejected by default");
+    assert!(
+        matches!(error, AriError::InvalidConfig(message) if message.contains("allow_insecure_remote"))
+    );
+
+    AriConfigBuilder::new("myapp")
+        .host("192.0.2.10")
+        .username("admin")
+        .password("secret")
+        .allow_insecure_remote(true)
+        .build()
+        .expect("explicit remote cleartext opt-in should build");
+}
+
+#[test]
+fn loopback_cleartext_remains_allowed() {
+    for host in ["localhost", "127.0.0.1", "::1"] {
+        AriConfigBuilder::new("myapp")
+            .host(host)
+            .username("admin")
+            .password("secret")
+            .build()
+            .unwrap_or_else(|error| panic!("loopback {host} should build: {error}"));
+    }
+}
+
+#[test]
+fn malformed_private_ca_is_rejected_during_build() {
+    let error = AriConfigBuilder::new("myapp")
+        .secure(true)
+        .username("admin")
+        .password("secret")
+        .private_ca_pem(b"not a certificate".to_vec())
+        .build()
+        .expect_err("malformed CA must fail before connection");
+    assert!(matches!(error, AriError::InvalidConfig(message) if message.contains("private CA")));
 }
 
 #[test]

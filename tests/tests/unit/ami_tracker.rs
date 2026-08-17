@@ -5,7 +5,7 @@
 use std::time::{Duration, Instant};
 
 use asterisk_rs_ami::event::AmiEvent;
-use asterisk_rs_ami::tracker::{CallTracker, CompletedCall};
+use asterisk_rs_ami::tracker::{CallTracker, CallTrackerConfig, CompletedCall};
 use asterisk_rs_core::event::EventBus;
 
 #[test]
@@ -22,6 +22,7 @@ fn test_completed_call_fields() {
         cause: 16,
         cause_txt: "Normal Clearing".into(),
         events: vec![],
+        events_truncated: 0,
     };
     assert_eq!(call.channel, "SIP/100-00000001");
     assert_eq!(call.unique_id, "abc.1");
@@ -30,6 +31,140 @@ fn test_completed_call_fields() {
     assert_eq!(call.cause_txt, "Normal Clearing");
     assert_eq!(call.duration, Duration::from_secs(30));
     assert!(call.events.is_empty());
+}
+
+fn new_channel(unique_id: &str) -> AmiEvent {
+    AmiEvent::NewChannel {
+        channel: format!("PJSIP/{unique_id}"),
+        channel_state: "0".into(),
+        channel_state_desc: "Down".into(),
+        caller_id_num: "100".into(),
+        caller_id_name: "Test".into(),
+        unique_id: unique_id.into(),
+        linked_id: format!("linked-{unique_id}"),
+    }
+}
+
+#[test]
+fn event_id_accessors_are_canonical() {
+    let event = new_channel("uid-1");
+    assert_eq!(event.unique_id(), Some("uid-1"));
+    assert_eq!(event.linked_id(), Some("linked-uid-1"));
+    assert_eq!(event.action_id(), None);
+
+    let originate = AmiEvent::OriginateResponse {
+        action_id: Some("action-1".into()),
+        channel: "PJSIP/100".into(),
+        unique_id: "uid-1".into(),
+        response: "Success".into(),
+        reason: "4".into(),
+    };
+    assert_eq!(originate.action_id(), Some("action-1"));
+    assert_eq!(originate.unique_id(), Some("uid-1"));
+}
+
+#[tokio::test]
+async fn tracker_invalidates_and_terminates_after_event_lag() {
+    let bus = EventBus::<AmiEvent>::new(1);
+    let (tracker, mut rx) = CallTracker::new(bus.subscribe());
+    bus.publish(new_channel("lost-1"));
+    bus.publish(new_channel("lost-2"));
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while tracker.stats().valid {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("tracker should observe lag");
+
+    assert_eq!(tracker.stats().lagged_events, 1);
+    assert_eq!(tracker.stats().active_calls, 0);
+    assert!(rx.recv().await.is_none(), "invalid tracker must terminate");
+}
+
+#[tokio::test]
+async fn tracker_bounds_active_calls_and_event_history() {
+    let bus = EventBus::<AmiEvent>::new(32);
+    let config = CallTrackerConfig {
+        max_active_calls: 1,
+        max_events_per_call: 2,
+        ..CallTrackerConfig::default()
+    };
+    let (tracker, mut rx) = CallTracker::with_config(bus.subscribe(), config);
+    bus.publish(new_channel("evicted"));
+    bus.publish(new_channel("retained"));
+    bus.publish(AmiEvent::Newstate {
+        channel: "PJSIP/retained".into(),
+        channel_state: "6".into(),
+        channel_state_desc: "Up".into(),
+        unique_id: "retained".into(),
+    });
+    bus.publish(AmiEvent::Hangup {
+        channel: "PJSIP/retained".into(),
+        unique_id: "retained".into(),
+        cause: 16,
+        cause_txt: "Normal Clearing".into(),
+    });
+
+    let call = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("completion timeout")
+        .expect("completion channel closed");
+    assert_eq!(call.events.len(), 2);
+    assert_eq!(call.events_truncated, 1);
+    let stats = tracker.stats();
+    assert_eq!(stats.active_calls_evicted, 1);
+    assert_eq!(stats.truncated_events, 1);
+    assert_eq!(stats.active_calls, 0);
+}
+
+#[tokio::test]
+async fn tracker_periodically_evicts_without_new_events() {
+    let bus = EventBus::<AmiEvent>::new(8);
+    let config = CallTrackerConfig {
+        call_ttl: Duration::from_millis(10),
+        eviction_interval: Duration::from_millis(5),
+        ..CallTrackerConfig::default()
+    };
+    let (tracker, mut rx) = CallTracker::with_config(bus.subscribe(), config);
+    bus.publish(new_channel("stale"));
+
+    let call = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("periodic eviction timeout")
+        .expect("completion channel closed");
+    assert_eq!(call.unique_id, "stale");
+    assert_eq!(call.cause, 0);
+    assert_eq!(tracker.stats().active_calls_evicted, 1);
+}
+
+#[tokio::test]
+async fn tracker_reports_completed_delivery_loss() {
+    let bus = EventBus::<AmiEvent>::new(16);
+    let config = CallTrackerConfig {
+        completed_capacity: 1,
+        ..CallTrackerConfig::default()
+    };
+    let (tracker, _rx) = CallTracker::with_config(bus.subscribe(), config);
+    for id in ["one", "two"] {
+        bus.publish(new_channel(id));
+        bus.publish(AmiEvent::Hangup {
+            channel: format!("PJSIP/{id}"),
+            unique_id: id.into(),
+            cause: 16,
+            cause_txt: "Normal Clearing".into(),
+        });
+    }
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while tracker.stats().completed_calls_lost == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("completed loss should become observable");
+    assert_eq!(tracker.stats().completed_calls_lost, 1);
 }
 
 #[tokio::test]
@@ -229,6 +364,9 @@ async fn test_tracker_shutdown_stops_processing() {
 
     // shutdown immediately before any events
     tracker.shutdown();
+    let stats = tracker.stats();
+    assert!(!stats.valid, "shutdown tracker state must be invalid");
+    assert_eq!(stats.active_calls, 0, "shutdown must clear active state");
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     // publish events after shutdown

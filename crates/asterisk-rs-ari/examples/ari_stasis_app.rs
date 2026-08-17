@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut events = client.subscribe();
 
-    while let Some(event) = events.recv().await {
+    while let Some(event) = events.recv_lossy().await {
         match event.event {
             AriEvent::StasisStart { channel, args, .. } => {
                 tracing::info!(

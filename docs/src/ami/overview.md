@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Capabilities
 
 - Typed events and actions covering the full Asterisk 23 AMI surface
-- MD5 challenge-response and plaintext authentication
+- MD5 challenge-response with configurable plaintext fallback; remote transport requires an operator-owned, versioned TLS proxy
 - Automatic reconnection with re-authentication
 - Filtered subscriptions -- receive only events you care about
 - Event-collecting actions -- `send_collecting()` gathers multi-event responses

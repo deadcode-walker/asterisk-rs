@@ -31,7 +31,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("connected to AMI");
 
-    let mut pbx = Pbx::new(client);
+    // Tracking is explicit: applications that need completed-call records opt in.
+    let (tracker, mut completed_calls) = client.call_tracker();
+    let pbx = Pbx::new(client);
 
     let options = DialOptions::new()
         .caller_id("Rust PBX <100>")
@@ -39,16 +41,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!(from = "PJSIP/100", to = "200", "dialing");
 
-    let call = match pbx.dial("PJSIP/100", "200", Some(options)).await {
+    let mut call = match pbx.dial("PJSIP/100", "200", Some(options)).await {
         Ok(c) => c,
         Err(PbxError::CallFailed { cause, cause_txt }) => {
             tracing::error!(cause, cause_txt, "call failed before answer");
-            pbx.shutdown();
             return Ok(());
         }
         Err(PbxError::Timeout) => {
             tracing::error!("originate timed out");
-            pbx.shutdown();
             return Ok(());
         }
         Err(e) => return Err(e.into()),
@@ -66,13 +66,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(PbxError::CallFailed { cause, cause_txt }) => {
             tracing::error!(cause, cause_txt, "remote end rejected the call");
-            pbx.shutdown();
             return Ok(());
         }
         Err(PbxError::Timeout) => {
             tracing::error!("no answer within 30 seconds, hanging up");
             call.hangup().await?;
-            pbx.shutdown();
             return Ok(());
         }
         Err(e) => return Err(e.into()),
@@ -84,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // drain one completed-call record; the tracker correlates all AMI events
     // that occurred during the channel's lifetime into a single struct
-    if let Some(completed) = pbx.next_completed_call().await {
+    if let Some(completed) = completed_calls.recv().await {
         tracing::info!(
             channel          = %completed.channel,
             unique_id        = %completed.unique_id,
@@ -97,6 +95,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    pbx.shutdown();
+    tracker.shutdown();
     Ok(())
 }

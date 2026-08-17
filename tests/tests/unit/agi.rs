@@ -8,7 +8,7 @@ use asterisk_rs_agi::response::AgiResponse;
 use asterisk_rs_core::error::ProtocolError;
 use std::io::Cursor;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -574,28 +574,98 @@ async fn channel_command_timeout_poisons_stream() {
 }
 
 #[tokio::test]
-async fn channel_has_no_command_timeout_by_default() {
+async fn channel_has_finite_command_timeout_by_default() {
+    let (channel, _server_reader, _server_writer) = mock_channel().await;
+    assert_eq!(channel.command_timeout(), Some(Duration::from_secs(30)));
+}
+
+#[test]
+fn command_rejects_encoded_line_over_limit_before_allocation() {
+    let argument = "x".repeat(8 * 1024);
+    let error = command::format_command(command::NOOP, &[&argument])
+        .expect_err("oversized encoded command must be rejected");
+    assert!(matches!(error, AgiError::InvalidArgument { .. }));
+}
+
+#[tokio::test]
+async fn channel_rejects_oversized_raw_command_before_write() {
+    let (mut channel, mut server_reader, _server_writer) = mock_channel().await;
+    let command = format!("NOOP {}\n", "x".repeat(8 * 1024));
+    let error = channel
+        .send_command(&command)
+        .await
+        .expect_err("oversized raw command must be rejected");
+    assert!(matches!(error, AgiError::InvalidArgument { .. }));
+    let mut observed = Vec::new();
+    let read = tokio::time::timeout(
+        Duration::from_millis(20),
+        server_reader.read_to_end(&mut observed),
+    )
+    .await;
+    assert!(read.is_err(), "server must receive no command bytes");
+}
+
+#[tokio::test]
+async fn channel_multiline_response_accepts_aggregate_under_limit() {
     let (mut channel, mut server_reader, mut server_writer) = mock_channel().await;
-    assert_eq!(channel.command_timeout(), None);
     let server = tokio::spawn(async move {
         let mut command = String::new();
         server_reader
             .read_line(&mut command)
             .await
-            .expect("read command");
-        assert_eq!(command, "WAIT FOR DIGIT -1\n");
-        tokio::time::sleep(Duration::from_millis(50)).await;
+            .expect("command");
         server_writer
-            .write_all(b"200 result=0\n")
+            .write_all(b"520-start\n")
             .await
-            .expect("write response");
+            .expect("start");
+        for _ in 0..8 {
+            server_writer
+                .write_all(format!("{}\n", "x".repeat(7_000)).as_bytes())
+                .await
+                .expect("continuation");
+        }
+        server_writer
+            .write_all(b"520 End of proper usage.\n")
+            .await
+            .expect("terminator");
     });
-
-    tokio::time::timeout(Duration::from_secs(1), channel.wait_for_digit(-1))
+    let error = channel
+        .answer()
         .await
-        .expect("test guard")
-        .expect("default must allow an indefinite AGI command");
-    server.await.expect("server task");
+        .expect_err("520 is a command failure");
+    assert!(matches!(error, AgiError::CommandFailed { code: 520, .. }));
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn channel_multiline_response_rejects_aggregate_over_limit() {
+    let (mut channel, mut server_reader, mut server_writer) = mock_channel().await;
+    let server = tokio::spawn(async move {
+        let mut command = String::new();
+        server_reader
+            .read_line(&mut command)
+            .await
+            .expect("command");
+        server_writer
+            .write_all(b"520-start\n")
+            .await
+            .expect("start");
+        for _ in 0..9 {
+            server_writer
+                .write_all(format!("{}\n", "x".repeat(8_000)).as_bytes())
+                .await
+                .expect("continuation");
+        }
+    });
+    let error = channel
+        .answer()
+        .await
+        .expect_err("oversized aggregate must fail");
+    assert!(matches!(
+        error,
+        AgiError::ResponseTooLarge { limit: 65_536 }
+    ));
+    server.await.expect("server");
 }
 
 #[tokio::test]
@@ -619,7 +689,7 @@ async fn channel_rejects_zero_command_timeout() {
         .set_command_timeout(Some(Duration::ZERO))
         .expect_err("zero timeout is ambiguous");
     assert!(matches!(error, AgiError::InvalidArgument { .. }));
-    assert_eq!(channel.command_timeout(), None);
+    assert_eq!(channel.command_timeout(), Some(Duration::from_secs(30)));
 }
 
 #[tokio::test]

@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut subscription = client.subscribe();
 
-    while let Some(event) = subscription.recv().await {
+    while let Some(event) = subscription.recv_lossy().await {
         println!(
             "[{}] channel={:?} unique_id={:?}",
             event.event_name(),

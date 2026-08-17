@@ -107,33 +107,55 @@ fn report_task_result(
 ///
 /// Supplying the provider directly prevents downstream feature unification
 /// from making rustls choose between AWS-LC and another compiled provider.
-fn platform_tls_connector() -> Result<tokio_tungstenite::Connector> {
+fn platform_tls_connector(
+    extra_roots: &[rustls::pki_types::CertificateDer<'static>],
+) -> Result<tokio_tungstenite::Connector> {
     let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-    let config = rustls::ClientConfig::builder_with_provider(provider)
+    let builder = rustls::ClientConfig::builder_with_provider(provider.clone())
         .with_safe_default_protocol_versions()
         .map_err(|error| {
             AriError::WebSocket(format!(
                 "failed to select websocket TLS protocol versions: {error}"
             ))
-        })?
-        .with_platform_verifier()
+        })?;
+    let config = if extra_roots.is_empty() {
+        builder
+            .with_platform_verifier()
+            .map_err(|error| {
+                AriError::WebSocket(format!(
+                    "failed to configure websocket platform verifier: {error}"
+                ))
+            })?
+            .with_no_client_auth()
+    } else {
+        let verifier = rustls_platform_verifier::Verifier::new_with_extra_roots(
+            extra_roots.iter().cloned(),
+            provider,
+        )
         .map_err(|error| {
             AriError::WebSocket(format!(
-                "failed to configure websocket platform verifier: {error}"
+                "failed to configure websocket private CA roots: {error}"
             ))
-        })?
-        .with_no_client_auth();
+        })?;
+        builder
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(verifier))
+            .with_no_client_auth()
+    };
 
     Ok(tokio_tungstenite::Connector::Rustls(Arc::new(config)))
 }
 
-pub(crate) fn connector_for_url(url: &str) -> Result<tokio_tungstenite::Connector> {
+pub(crate) fn connector_for_url(
+    url: &str,
+    extra_roots: &[rustls::pki_types::CertificateDer<'static>],
+) -> Result<tokio_tungstenite::Connector> {
     match url::Url::parse(url)
         .map_err(|error| AriError::InvalidUrl(error.to_string()))?
         .scheme()
     {
         "ws" => Ok(tokio_tungstenite::Connector::Plain),
-        "wss" => platform_tls_connector(),
+        "wss" => platform_tls_connector(extra_roots),
         scheme => Err(AriError::InvalidUrl(format!(
             "unsupported websocket URL scheme: {scheme}"
         ))),
@@ -171,8 +193,9 @@ impl WsEventListener {
         event_bus: EventBus<AriMessage>,
         reconnect: ReconnectPolicy,
         max_websocket_message_bytes: usize,
+        extra_roots: &[rustls::pki_types::CertificateDer<'static>],
     ) -> Result<Self> {
-        let tls_connector = connector_for_url(&ws_url)?;
+        let tls_connector = connector_for_url(&ws_url, extra_roots)?;
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let (state_tx, state_rx) = watch::channel(AriConnectionState::Connecting);
 

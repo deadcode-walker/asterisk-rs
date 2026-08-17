@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         tokio::select! {
-            Some(msg) = events.recv() => {
+            Some(msg) = events.recv_lossy() => {
                 match msg.event {
                     AriEvent::StasisStart { channel, args, .. } => {
                         tracing::info!(

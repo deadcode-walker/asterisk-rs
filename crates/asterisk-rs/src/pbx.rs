@@ -3,31 +3,27 @@
 //! wraps [`AmiClient`] with call lifecycle
 //! tracking and convenience methods for common telephony operations
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use asterisk_rs_ami::AmiClient;
 use asterisk_rs_ami::action::{HangupAction, OriginateAction};
 use asterisk_rs_ami::event::AmiEvent;
-use asterisk_rs_ami::tracker::{CallTracker, CompletedCall};
-use asterisk_rs_core::event::EventSubscription;
-use tokio::sync::{Mutex, mpsc};
+use asterisk_rs_core::event::{EventReceive, EventSubscription};
 
 /// a live call being tracked by the PBX
 ///
 /// wraps a channel name and unique_id with the AMI client for
 /// issuing commands and tracking events
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Call {
     /// channel name (e.g. "PJSIP/100-00000001")
     pub channel: String,
     /// per-channel unique identifier
     pub unique_id: String,
     client: AmiClient,
-    // pre-started subscription created before originate so that any Newstate/Hangup
-    // events arriving before wait_for_answer is called are buffered and not lost;
-    // Arc+Mutex keeps Call Clone and lets wait_for_answer take &self
-    answer_sub: Arc<Mutex<EventSubscription<AmiEvent>>>,
+    // A Call exclusively owns its pre-started lifecycle subscription. This prevents
+    // clones from competing to consume a single event stream.
+    answer_sub: EventSubscription<AmiEvent>,
 }
 
 impl Call {
@@ -43,20 +39,15 @@ impl Call {
     /// listens for Newstate events with channel_state_desc "Up".
     /// returns Err if the channel hangs up before answering.
     ///
-    /// the inner subscription is protected by a tokio Mutex so that
-    /// [`Call`] can remain `Clone`. if multiple clones call this
-    /// concurrently, only one acquires the lock at a time — the
-    /// winner consumes events while the others block on the mutex.
-    /// callers that need concurrent waiting should create separate
-    /// subscriptions via [`Pbx::client`].
-    pub async fn wait_for_answer(&self, timeout: Duration) -> Result<(), PbxError> {
+    pub async fn wait_for_answer(&mut self, timeout: Duration) -> Result<(), PbxError> {
         let uid = self.unique_id.clone();
 
         let result = tokio::time::timeout(timeout, async {
-            let mut sub = self.answer_sub.lock().await;
             loop {
-                let Some(event) = sub.recv().await else {
-                    return Err(PbxError::Disconnected);
+                let event = match self.answer_sub.recv_outcome().await {
+                    EventReceive::Event(event) => event,
+                    EventReceive::Lagged(missed) => return Err(PbxError::EventLoss { missed }),
+                    EventReceive::Closed => return Err(PbxError::Disconnected),
                 };
                 match event {
                     AmiEvent::Newstate {
@@ -133,28 +124,23 @@ pub enum PbxError {
 
     #[error("client disconnected")]
     Disconnected,
+
+    #[error("call state invalidated after {missed} lost events")]
+    EventLoss { missed: u64 },
 }
 
 /// high-level PBX abstraction wrapping an AMI client
 ///
 /// provides convenient methods for common telephony operations
-/// with built-in call tracking via [`CallTracker`]
 #[derive(Debug)]
 pub struct Pbx {
     client: AmiClient,
-    tracker: CallTracker,
-    completed_rx: mpsc::Receiver<CompletedCall>,
 }
 
 impl Pbx {
     /// create a new PBX abstraction wrapping an AMI client
     pub fn new(client: AmiClient) -> Self {
-        let (tracker, completed_rx) = client.call_tracker();
-        Self {
-            client,
-            tracker,
-            completed_rx,
-        }
+        Self { client }
     }
 
     /// originate a call from one endpoint to another
@@ -193,7 +179,7 @@ impl Pbx {
         // subscribe to answer-state events BEFORE sending the originate action;
         // events arriving between originate and wait_for_answer are buffered
         // in the broadcast channel and will not be missed
-        let answer_sub = Arc::new(Mutex::new(self.client.subscribe()));
+        let answer_sub = self.client.subscribe();
 
         // subscribe to OriginateResponse before sending so we don't miss a fast
         // response; we don't know action_id yet, so filter by type here and match
@@ -203,26 +189,39 @@ impl Pbx {
             .subscribe_filtered(move |e| matches!(e, AmiEvent::OriginateResponse { .. }));
 
         let orig_response = self.client.originate(action).await?;
+        if !orig_response.success {
+            return Err(PbxError::CallFailed {
+                cause: 0,
+                cause_txt: orig_response
+                    .message
+                    .unwrap_or_else(|| "originate rejected".to_owned()),
+            });
+        }
         let expected_action_id = orig_response.action_id;
 
         // wait for the OriginateResponse event with a timeout
-        let originate_timeout =
-            Duration::from_secs(opts.timeout_ms.map(|ms| ms / 1000 + 5).unwrap_or(35));
+        let originate_timeout = opts
+            .timeout_ms
+            .map(Duration::from_millis)
+            .unwrap_or(Duration::from_secs(30))
+            .checked_add(Duration::from_secs(5))
+            .unwrap_or(Duration::MAX);
 
         let event = tokio::time::timeout(originate_timeout, async {
             loop {
-                let Some(event) = orig_sub.recv().await else {
-                    return Err(PbxError::Disconnected);
+                let event = match orig_sub.recv_outcome().await {
+                    EventReceive::Event(event) => event,
+                    EventReceive::Lagged(missed) => return Err(PbxError::EventLoss { missed }),
+                    EventReceive::Closed => return Err(PbxError::Disconnected),
                 };
-                if let AmiEvent::OriginateResponse {
-                    action_id,
-                    channel,
-                    unique_id,
-                    response,
-                    ..
-                } = event
-                {
-                    if action_id.as_deref() == Some(expected_action_id.as_str()) {
+                if event.action_id() == Some(expected_action_id.as_str()) {
+                    if let AmiEvent::OriginateResponse {
+                        channel,
+                        unique_id,
+                        response,
+                        ..
+                    } = event
+                    {
                         return Ok((channel, unique_id, response));
                     }
                 }
@@ -248,18 +247,8 @@ impl Pbx {
         })
     }
 
-    /// receive the next completed call record
-    pub async fn next_completed_call(&mut self) -> Option<CompletedCall> {
-        self.completed_rx.recv().await
-    }
-
     /// access the underlying AMI client
     pub fn client(&self) -> &AmiClient {
         &self.client
-    }
-
-    /// shut down the call tracker
-    pub fn shutdown(self) {
-        self.tracker.shutdown();
     }
 }

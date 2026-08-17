@@ -16,6 +16,36 @@ use crate::websocket::OwnedTask;
 
 const MEDIA_CLOSE_TIMEOUT: Duration = Duration::from_millis(500);
 const MEDIA_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
+/// Maximum raw media payload accepted from or sent to Asterisk.
+pub const MAX_MEDIA_PAYLOAD_BYTES: usize = 65_500;
+
+/// Security and trust options for an outbound media WebSocket.
+#[derive(Clone, Default)]
+pub struct MediaConnectionOptions {
+    allow_insecure_remote: bool,
+    tls_trust: crate::config::TlsTrust,
+}
+
+impl MediaConnectionOptions {
+    /// Create secure-by-default media connection options.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Explicitly permit a cleartext `ws://` connection to a non-loopback host.
+    pub fn allow_insecure_remote(mut self, allow: bool) -> Self {
+        self.allow_insecure_remote = allow;
+        self
+    }
+
+    /// Add one or more PEM-encoded private CA certificates for `wss://`.
+    ///
+    /// The bundle is parsed immediately and augments the platform trust store.
+    pub fn private_ca_pem(mut self, pem: impl AsRef<[u8]>) -> Result<Self> {
+        self.tls_trust = crate::config::parse_private_ca_pem(pem.as_ref())?;
+        Ok(self)
+    }
+}
 
 /// events received from Asterisk over the media websocket
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -205,14 +235,31 @@ impl MediaChannel {
     /// url should be the full websocket URL including the connection_id path,
     /// e.g. `ws://asterisk:8088/media/32966726-4388-456b-a333-fdf5dbecc60d`
     pub async fn connect(url: &str) -> Result<Self> {
-        let tls_connector = crate::websocket::connector_for_url(url)?;
+        Self::connect_with_options(url, MediaConnectionOptions::default()).await
+    }
+
+    /// connect with explicit cleartext and private-CA policy
+    pub async fn connect_with_options(url: &str, options: MediaConnectionOptions) -> Result<Self> {
+        let parsed =
+            url::Url::parse(url).map_err(|error| AriError::InvalidUrl(error.to_string()))?;
+        let host = parsed
+            .host_str()
+            .ok_or_else(|| AriError::InvalidUrl("media websocket URL has no host".to_owned()))?;
+        if parsed.scheme() == "ws"
+            && !options.allow_insecure_remote
+            && !crate::config::is_loopback_host(host)
+        {
+            return Err(AriError::InvalidConfig(format!(
+                "cleartext media websocket to non-loopback host '{host}' requires allow_insecure_remote(true)"
+            )));
+        }
+        let tls_connector =
+            crate::websocket::connector_for_url(url, &options.tls_trust.rustls_roots)?;
         let (ws_stream, _) = tokio::time::timeout(
             std::time::Duration::from_secs(10),
             tokio_tungstenite::connect_async_tls_with_config(
                 url,
-                Some(crate::websocket::websocket_config(
-                    crate::config::DEFAULT_MAX_WEBSOCKET_MESSAGE_BYTES,
-                )),
+                Some(crate::websocket::websocket_config(MAX_MEDIA_PAYLOAD_BYTES)),
                 false,
                 Some(tls_connector),
             ),
@@ -229,7 +276,19 @@ impl MediaChannel {
     /// useful when running a media server that accepts incoming connections
     /// The accepting server remains responsible for configuring frame, message,
     /// and write-buffer limits before passing the established stream here.
-    pub fn from_accepted(ws_stream: AcceptedWsStream) -> Self {
+    pub fn from_accepted(ws_stream: AcceptedWsStream) -> Result<Self> {
+        let config = ws_stream.get_config();
+        if config
+            .max_message_size
+            .is_none_or(|limit| limit > MAX_MEDIA_PAYLOAD_BYTES)
+            || config
+                .max_frame_size
+                .is_none_or(|limit| limit > MAX_MEDIA_PAYLOAD_BYTES)
+        {
+            return Err(AriError::InvalidConfig(format!(
+                "accepted media websocket must cap messages and frames at {MAX_MEDIA_PAYLOAD_BYTES} bytes"
+            )));
+        }
         let (event_tx, event_rx) = mpsc::channel(64);
         let (audio_tx, audio_rx) = mpsc::channel(256);
         let (control_tx, control_rx) = mpsc::channel(64);
@@ -247,7 +306,7 @@ impl MediaChannel {
             shutdown_rx,
         ));
 
-        Self {
+        Ok(Self {
             event_rx,
             audio_rx,
             control_tx,
@@ -255,7 +314,21 @@ impl MediaChannel {
             flow_control_rx,
             shutdown_tx,
             task: OwnedTask::new(task_handle),
-        }
+        })
+    }
+
+    /// accept a raw TCP connection as a bounded media WebSocket
+    ///
+    /// This is preferred to [`Self::from_accepted`] because frame and message
+    /// limits are installed during the WebSocket handshake.
+    pub async fn accept(stream: tokio::net::TcpStream) -> Result<Self> {
+        let websocket = tokio_tungstenite::accept_async_with_config(
+            stream,
+            Some(crate::websocket::websocket_config(MAX_MEDIA_PAYLOAD_BYTES)),
+        )
+        .await
+        .map_err(|error| AriError::WebSocket(error.to_string()))?;
+        Self::from_accepted(websocket)
     }
 
     fn spawn_outbound(ws_stream: OutboundWsStream) -> Self {
@@ -321,7 +394,7 @@ impl MediaChannel {
     /// acknowledge socket transmission. Control commands use a separate,
     /// higher-priority queue.
     pub async fn send_audio(&self, data: Vec<u8>) -> Result<()> {
-        if data.len() > 65500 {
+        if data.len() > MAX_MEDIA_PAYLOAD_BYTES {
             return Err(AriError::WebSocket(format!(
                 "audio frame too large: {} bytes (max 65500)",
                 data.len()
@@ -519,6 +592,14 @@ async fn media_loop<S>(
                         }
                     }
                     Some(Ok(Message::Binary(data))) => {
+                        if data.len() > MAX_MEDIA_PAYLOAD_BYTES {
+                            tracing::warn!(
+                                payload_bytes = data.len(),
+                                limit = MAX_MEDIA_PAYLOAD_BYTES,
+                                "rejecting oversized inbound media frame"
+                            );
+                            return;
+                        }
                         match audio_tx.try_send(data.to_vec()) {
                             Ok(()) => {}
                             Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {

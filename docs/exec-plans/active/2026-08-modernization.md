@@ -141,6 +141,24 @@ is either a green local harness commit or a concrete authority/external-state bl
   candidate now publishes `Reconnecting` immediately after socket loss, with external tests for
   both modes. The repaired exact tree passed `just ci`, `just msrv`, and `just semver` with 968 unit
   and 264 mock tests before commit.
+- [x] 2026-08-17: completed Slice 3's loss-aware state and resource bounds. Event subscriptions now
+  expose typed event, lag-count, and closure outcomes while retaining explicitly named lossy receive;
+  CallTracker uses canonical AMI identifiers, periodic eviction, bounded active/history/completed
+  state, and observable loss/truncation/eviction counters. Pbx no longer starts an implicit tracker,
+  Call has one event-stream owner, immediate Originate rejection is returned, and timeout arithmetic
+  is checked. Pending ARI resources use exhaustive centralized identifiers and UUIDv4 IDs. AGI
+  commands have a finite default deadline plus command and aggregate response caps. Remote cleartext
+  ARI/media requires explicit opt-in, private CA bundles augment HTTPS/WSS trust, media enforces the
+  65,500-byte protocol limit before cloning, and the AMI 0.8 TLS-proxy boundary is explicit. The
+  first integrated candidate passed 982 unit and 270 mock tests. Frozen review found four gaps: the
+  legacy `recv` name still hid lag, accepted media streams could retain larger Tungstenite defaults,
+  tracker shutdown left stale-valid metrics, and private-CA wiring lacked real TLS proof. All four
+  were repaired; CA-signed local fixtures now prove HTTPS plus event WSS, unified WSS, and media WSS
+  rejection without the root and success with it. The first complete gate rejected the fixture's
+  `rcgen` dependency through vulnerable `time 0.3.45`; the fixture now generates ephemeral P-256
+  certificates with the already-owned AWS-LC provider, leaving no vulnerable dependency or reusable
+  key. The repaired exact tree passed `just ci`, `just msrv`, and `just semver` with 982 unit and 274
+  mock tests before commit.
 
 ## Surprises and discoveries
 
@@ -270,20 +288,20 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
 
 ### Slice 3: loss-aware state and resource bounds
 
-- [ ] Expose event lag as a typed receive outcome. Stateful consumers must invalidate/reconcile rather
+- [x] Expose event lag as a typed receive outcome. Stateful consumers must invalidate/reconcile rather
   than silently continue; retain a separately named explicitly lossy convenience API if useful.
-- [ ] Rework CallTracker to use canonical event ID accessors, periodic time-driven eviction, bounded
+- [x] Rework CallTracker to use canonical event ID accessors, periodic time-driven eviction, bounded
   active calls, bounded per-call history, explicit truncation/loss counters, and observable completed
   call delivery loss.
-- [ ] Remove the always-on tracker from Pbx, make Call ownership honest instead of shared competing
+- [x] Remove the always-on tracker from Pbx, make Call ownership honest instead of shared competing
   clones, fail immediate Originate rejection, and use checked/saturating timeout conversion.
-- [ ] Make pending ARI channel/bridge/playback filters exhaustive using centralized channel/bridge ID
+- [x] Make pending ARI channel/bridge/playback filters exhaustive using centralized channel/bridge ID
   extraction; use restart-safe IDs rather than process-local counters.
-- [ ] Bound AGI prelude line/total/variable counts and command line/multiline/total response size and
+- [x] Bound AGI prelude line/total/variable counts and command line/multiline/total response size and
   time; require a blank prelude terminator and reject malformed lines without trimming meaningful data.
-- [ ] Bound WebSocket messages/frames by protocol, reject media above 65,500 bytes before cloning,
+- [x] Bound WebSocket messages/frames by protocol, reject media above 65,500 bytes before cloning,
   stream HTTP bodies under an application limit, and cap AMI collection bytes.
-- [ ] Add conservative admission limits for every externally reachable server. Make cleartext remote
+- [x] Add conservative admission limits for every externally reachable server. Make cleartext remote
   ARI require an explicit insecure opt-in and support private CAs; add verified rustls AMI transport or
   document an explicit versioned proxy boundary if native TLS cannot be delivered safely in this run.
 

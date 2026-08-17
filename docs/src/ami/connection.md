@@ -23,7 +23,12 @@ let client = AmiClient::builder()
 
 ## Authentication
 
-The client tries MD5 challenge-response first, falling back to plaintext.
+The client tries MD5 challenge-response first. Plaintext fallback is enabled by
+default for compatibility; set `.require_challenge(true)` outside an explicitly
+managed TLS proxy boundary. Version 0.8 owns only the TCP AMI client, so a
+non-loopback deployment must use a separately versioned and maintained TLS
+proxy whose listener, certificate verification, access policy, and upgrades
+are owned by the application operator.
 Authentication happens automatically during `build()` and after every reconnect.
 
 ## Reconnection

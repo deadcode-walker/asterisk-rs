@@ -1,6 +1,8 @@
 // standard AGI command names
 use crate::error::{AgiError, Result};
 
+pub(crate) const MAX_COMMAND_BYTES: usize = 8 * 1024;
+
 pub const ANSWER: &str = "ANSWER";
 pub const HANGUP: &str = "HANGUP";
 pub const STREAM_FILE: &str = "STREAM FILE";
@@ -73,7 +75,32 @@ pub fn format_command(name: &str, args: &[&str]) -> Result<String> {
         reject_crlf(arg)?;
     }
 
-    let mut cmd = String::from(name);
+    // Count the worst-case encoded size before allocating. Every backslash and
+    // quote in a quoted argument can add one escape byte.
+    let mut encoded_len = name.len().saturating_add(1);
+    for arg in args {
+        encoded_len = encoded_len.saturating_add(1);
+        if arg.is_empty() || arg.contains(' ') || arg.contains('"') {
+            encoded_len = encoded_len
+                .saturating_add(2)
+                .saturating_add(arg.len())
+                .saturating_add(
+                    arg.bytes()
+                        .filter(|byte| matches!(byte, b'\\' | b'"'))
+                        .count(),
+                );
+        } else {
+            encoded_len = encoded_len.saturating_add(arg.len());
+        }
+    }
+    if encoded_len > MAX_COMMAND_BYTES {
+        return Err(AgiError::InvalidArgument {
+            details: format!("AGI command exceeds the {MAX_COMMAND_BYTES}-byte limit"),
+        });
+    }
+
+    let mut cmd = String::with_capacity(encoded_len);
+    cmd.push_str(name);
 
     for arg in args {
         cmd.push(' ');

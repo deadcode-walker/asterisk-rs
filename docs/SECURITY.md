@@ -16,6 +16,8 @@ automation trust boundaries.
 - Credentials and authentication actions never reveal secrets through Debug or tracing.
 - Line protocols reject CR/LF injection in command names and arguments.
 - ARI user-controlled path and query values are percent-encoded at the request boundary.
+- ARI rejects remote cleartext HTTP/WebSocket by default and augments platform trust with any
+  explicitly configured private CA; certificate verification is never disabled.
 - Network operations use configured timeouts and bounded retry policy.
 - Release credentials are available only to the release job with explicit minimal permissions.
 

@@ -7,6 +7,8 @@ use asterisk_rs_core::config::ReconnectPolicy;
 use url::Url;
 use zeroize::Zeroizing;
 
+use rustls::pki_types::pem::PemObject;
+
 use crate::error::{AriError, Result};
 
 /// default deadline for one ARI REST operation
@@ -15,6 +17,36 @@ pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_MAX_RESPONSE_BODY_BYTES: usize = 4 * 1024 * 1024;
 /// default maximum WebSocket message and frame size
 pub const DEFAULT_MAX_WEBSOCKET_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
+
+#[derive(Clone, Default)]
+pub(crate) struct TlsTrust {
+    pub(crate) reqwest_roots: Vec<reqwest::Certificate>,
+    pub(crate) rustls_roots: Vec<rustls::pki_types::CertificateDer<'static>>,
+}
+
+pub(crate) fn parse_private_ca_pem(pem: &[u8]) -> Result<TlsTrust> {
+    let reqwest_roots = reqwest::Certificate::from_pem_bundle(pem)
+        .map_err(|error| AriError::InvalidConfig(format!("invalid private CA PEM: {error}")))?;
+    let rustls_roots = rustls::pki_types::CertificateDer::pem_slice_iter(pem)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|error| AriError::InvalidConfig(format!("invalid private CA PEM: {error}")))?;
+    if reqwest_roots.is_empty() || rustls_roots.is_empty() {
+        return Err(AriError::InvalidConfig(
+            "private CA PEM contains no certificates".to_owned(),
+        ));
+    }
+    Ok(TlsTrust {
+        reqwest_roots,
+        rustls_roots,
+    })
+}
+
+pub(crate) fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
 
 /// transport mode for ARI client communication
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -50,6 +82,7 @@ pub struct AriConfig {
     pub(crate) max_response_body_bytes: usize,
     /// maximum inbound WebSocket message and frame size
     pub(crate) max_websocket_message_bytes: usize,
+    pub(crate) tls_trust: TlsTrust,
 }
 
 impl std::fmt::Debug for AriConfig {
@@ -132,6 +165,8 @@ pub struct AriConfigBuilder {
     request_timeout: Duration,
     max_response_body_bytes: usize,
     max_websocket_message_bytes: usize,
+    allow_insecure_remote: bool,
+    private_ca_pem: Option<Vec<u8>>,
 }
 
 impl std::fmt::Debug for AriConfigBuilder {
@@ -169,6 +204,8 @@ impl AriConfigBuilder {
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             max_response_body_bytes: DEFAULT_MAX_RESPONSE_BODY_BYTES,
             max_websocket_message_bytes: DEFAULT_MAX_WEBSOCKET_MESSAGE_BYTES,
+            allow_insecure_remote: false,
+            private_ca_pem: None,
         }
     }
 
@@ -205,6 +242,24 @@ impl AriConfigBuilder {
     /// use https/wss when true (default false)
     pub fn secure(mut self, secure: bool) -> Self {
         self.secure = secure;
+        self
+    }
+
+    /// explicitly permit cleartext HTTP/WebSocket transport to a non-loopback host
+    ///
+    /// Remote cleartext exposes ARI credentials and traffic. Prefer [`Self::secure`]
+    /// and use this only behind a separately secured, trusted network boundary.
+    pub fn allow_insecure_remote(mut self, allow: bool) -> Self {
+        self.allow_insecure_remote = allow;
+        self
+    }
+
+    /// add one or more PEM-encoded private CA certificates for HTTPS and WSS
+    ///
+    /// The bundle is parsed during [`Self::build`] and augments, rather than
+    /// replaces, the platform trust store.
+    pub fn private_ca_pem(mut self, pem: impl Into<Vec<u8>>) -> Self {
+        self.private_ca_pem = Some(pem.into());
         self
     }
 
@@ -286,11 +341,28 @@ impl AriConfigBuilder {
         if let Err(details) = self.reconnect_policy.validate() {
             return Err(AriError::InvalidConfig(details.to_owned()));
         }
+        if !self.secure && !self.allow_insecure_remote && !is_loopback_host(&self.host) {
+            return Err(AriError::InvalidConfig(format!(
+                "cleartext ARI transport to non-loopback host '{}' requires allow_insecure_remote(true)",
+                self.host
+            )));
+        }
+        let tls_trust = self
+            .private_ca_pem
+            .as_deref()
+            .map(parse_private_ca_pem)
+            .transpose()?
+            .unwrap_or_default();
 
         let http_scheme = if self.secure { "https" } else { "http" };
         let ws_scheme = if self.secure { "wss" } else { "ws" };
+        let url_host = if self.host.parse::<std::net::Ipv6Addr>().is_ok() {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        };
 
-        let base_url_str = format!("{http_scheme}://{}:{}/ari", self.host, self.port);
+        let base_url_str = format!("{http_scheme}://{url_host}:{}/ari", self.port);
         let base_url =
             Url::parse(&base_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
 
@@ -305,7 +377,7 @@ impl AriConfigBuilder {
             .finish();
         let ws_url_str = format!(
             "{ws_scheme}://{}:{}/ari/events?{query}",
-            self.host, self.port
+            url_host, self.port
         );
         let ws_url = Url::parse(&ws_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
 
@@ -321,6 +393,7 @@ impl AriConfigBuilder {
             request_timeout: self.request_timeout,
             max_response_body_bytes: self.max_response_body_bytes,
             max_websocket_message_bytes: self.max_websocket_message_bytes,
+            tls_trust,
         })
     }
 }

@@ -62,7 +62,7 @@ impl WsTransport {
     /// spawn the background websocket task
     pub(crate) fn spawn(config: &AriConfig, event_bus: EventBus<AriMessage>) -> Result<Self> {
         let ws_url = config.ws_url().to_string();
-        let tls_connector = connector_for_url(&ws_url)?;
+        let tls_connector = connector_for_url(&ws_url, &config.tls_trust.rustls_roots)?;
         let loop_config = WsLoopConfig {
             reconnect: config.reconnect_policy().clone(),
             max_response_body_bytes: config.max_response_body_bytes(),

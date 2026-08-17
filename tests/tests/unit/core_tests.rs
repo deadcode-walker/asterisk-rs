@@ -5,7 +5,7 @@ use std::time::Duration;
 use asterisk_rs_core::auth::Credentials;
 use asterisk_rs_core::config::{ConnectionState, ReconnectPolicy};
 use asterisk_rs_core::error::*;
-use asterisk_rs_core::event::{Event, EventBus};
+use asterisk_rs_core::event::{Event, EventBus, EventReceive};
 use asterisk_rs_core::types::*;
 
 // =============================================================================
@@ -1297,7 +1297,7 @@ fn jitter_produces_values_in_expected_range() {
 // event tests
 // =============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct TestEvent(String);
 impl Event for TestEvent {}
 
@@ -1308,7 +1308,7 @@ async fn publish_and_receive() {
 
     bus.publish(TestEvent("hello".into()));
 
-    let event = sub.recv().await.expect("should receive event");
+    let event = sub.recv_lossy().await.expect("should receive event");
     assert_eq!(event.0, "hello");
 }
 
@@ -1350,10 +1350,13 @@ async fn filtered_subscription_only_matches() {
     bus.publish(TestEvent("skip-again".into()));
     bus.publish(TestEvent("match-too".into()));
 
-    let e1 = filtered.recv().await.expect("should get first match");
+    let e1 = filtered.recv_lossy().await.expect("should get first match");
     assert_eq!(e1.0, "match-this");
 
-    let e2 = filtered.recv().await.expect("should get second match");
+    let e2 = filtered
+        .recv_lossy()
+        .await
+        .expect("should get second match");
     assert_eq!(e2.0, "match-too");
 }
 
@@ -1366,7 +1369,7 @@ async fn subscription_with_filter_conversion() {
     bus.publish(TestEvent("other".into()));
     bus.publish(TestEvent("target".into()));
 
-    let event = filtered.recv().await.expect("should get target");
+    let event = filtered.recv_lossy().await.expect("should get target");
     assert_eq!(event.0, "target");
 }
 
@@ -1377,7 +1380,7 @@ async fn capacity_one_bus_works() {
 
     bus.publish(TestEvent("single".into()));
     let event = sub
-        .recv()
+        .recv_lossy()
         .await
         .expect("should receive from capacity-1 bus");
     assert_eq!(event.0, "single");
@@ -1391,8 +1394,8 @@ async fn multiple_subscribers_receive_same_event() {
 
     bus.publish(TestEvent("broadcast".into()));
 
-    let e1 = sub1.recv().await.expect("sub1 should receive");
-    let e2 = sub2.recv().await.expect("sub2 should receive");
+    let e1 = sub1.recv_lossy().await.expect("sub1 should receive");
+    let e2 = sub2.recv_lossy().await.expect("sub2 should receive");
     assert_eq!(e1.0, "broadcast");
     assert_eq!(e2.0, "broadcast");
 }
@@ -1404,8 +1407,36 @@ async fn bus_dropped_recv_returns_none() {
 
     drop(bus);
     assert!(
-        sub.recv().await.is_none(),
+        sub.recv_lossy().await.is_none(),
         "recv should return None after bus dropped"
+    );
+}
+
+#[tokio::test]
+async fn subscription_reports_lag_without_consuming_the_next_event() {
+    let bus = EventBus::new(1);
+    let mut sub = bus.subscribe();
+    bus.publish(TestEvent("lost".into()));
+    bus.publish(TestEvent("latest".into()));
+
+    assert_eq!(sub.recv().await, EventReceive::Lagged(1));
+    assert_eq!(
+        sub.recv().await,
+        EventReceive::Event(TestEvent("latest".into()))
+    );
+}
+
+#[tokio::test]
+async fn filtered_subscription_surfaces_lag_before_filtering_resumes() {
+    let bus = EventBus::new(1);
+    let mut sub = bus.subscribe_filtered(|event: &TestEvent| event.0 == "match");
+    bus.publish(TestEvent("lost".into()));
+    bus.publish(TestEvent("match".into()));
+
+    assert_eq!(sub.recv().await, EventReceive::Lagged(1));
+    assert_eq!(
+        sub.recv().await,
+        EventReceive::Event(TestEvent("match".into()))
     );
 }
 
@@ -1464,7 +1495,7 @@ async fn subscribe_filtered_always_false_never_delivers() {
     // drop bus so recv will eventually return None instead of hanging
     drop(bus);
     assert!(
-        filtered.recv().await.is_none(),
+        filtered.recv_lossy().await.is_none(),
         "always-false filter should never deliver"
     );
 }
@@ -1480,10 +1511,16 @@ async fn with_filter_on_existing_subscription() {
     bus.publish(TestEvent("xy".into()));
     bus.publish(TestEvent("wxyz".into()));
 
-    let e1 = filtered.recv().await.expect("should get first long event");
+    let e1 = filtered
+        .recv_lossy()
+        .await
+        .expect("should get first long event");
     assert_eq!(e1.0, "abcd");
 
-    let e2 = filtered.recv().await.expect("should get second long event");
+    let e2 = filtered
+        .recv_lossy()
+        .await
+        .expect("should get second long event");
     assert_eq!(e2.0, "wxyz");
 }
 
@@ -1502,7 +1539,7 @@ async fn event_bus_subscriber_lag_recovers() {
     }
 
     // recv should skip lagged events and return one of the later ones
-    let event = sub.recv().await;
+    let event = sub.recv_lossy().await;
     assert!(
         event.is_some(),
         "recv should return Some after lag recovery"
@@ -1519,7 +1556,7 @@ async fn event_bus_subscriber_lag_count() {
     }
 
     // exact lag count is broadcast-internal; just verify we get an event back
-    let event = sub.recv().await;
+    let event = sub.recv_lossy().await;
     assert!(
         event.is_some(),
         "recv should recover from lag and return Some"
@@ -1536,7 +1573,7 @@ async fn event_bus_lag_with_filtered_subscription() {
     }
 
     // lag handling lives in EventSubscription::recv, filtered delegates to it
-    let event = filtered.recv().await;
+    let event = filtered.recv_lossy().await;
     assert!(event.is_some(), "filtered recv should survive lag");
 }
 
@@ -1553,7 +1590,7 @@ async fn event_bus_lag() {
     }
 
     // recv recovers from lag (skips lost events) and returns the oldest surviving event
-    let first = sub.recv().await.expect("should recover from lag");
+    let first = sub.recv_lossy().await.expect("should recover from lag");
     assert_eq!(
         first.0, "evt-3",
         "first post-lag event should be oldest in buffer"
@@ -1561,7 +1598,7 @@ async fn event_bus_lag() {
 
     // second recv delivers the next buffered event without further lag
     let second = sub
-        .recv()
+        .recv_lossy()
         .await
         .expect("second recv should succeed after lag recovery");
     assert_eq!(

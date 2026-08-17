@@ -919,7 +919,7 @@ async fn websocket_events() {
 
     server.send_event(event_json);
 
-    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
         .await
         .expect("timed out waiting for ws event")
         .expect("event subscription closed unexpectedly");
@@ -1032,7 +1032,7 @@ async fn filtered_subscription() {
     }"#,
     );
 
-    let event = tokio::time::timeout(Duration::from_secs(5), filtered.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), filtered.recv_lossy())
         .await
         .expect("timed out waiting for filtered event")
         .expect("subscription closed");
@@ -1248,7 +1248,7 @@ async fn disconnect_stops_ws_listener() {
     }"#,
     );
 
-    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
         .await
         .expect("timed out waiting for event")
         .expect("subscription closed before event");
@@ -1258,7 +1258,7 @@ async fn disconnect_stops_ws_listener() {
     client.disconnect();
 
     // after disconnect, recv should return None (channel closed)
-    let result = tokio::time::timeout(Duration::from_secs(2), sub.recv()).await;
+    let result = tokio::time::timeout(Duration::from_secs(2), sub.recv_lossy()).await;
     match result {
         Ok(None) => {}    // expected: channel closed
         Ok(Some(_)) => {} // acceptable: buffered event before close
@@ -1330,7 +1330,7 @@ async fn multiple_websocket_events_in_sequence() {
 
     let mut received = Vec::new();
     for i in 0..5 {
-        let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+        let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
             .await
             .unwrap_or_else(|_| panic!("timed out waiting for event {i}"))
             .unwrap_or_else(|| panic!("subscription closed before event {i}"));
@@ -3240,7 +3240,7 @@ async fn ws_reconnects_after_server_restart() {
 
     server.wait_for_ws_client().await;
     server.send_event(&stasis_start_json("chan-1"));
-    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
         .await
         .expect("timed out waiting for event 1")
         .expect("subscription closed before event 1");
@@ -3262,7 +3262,7 @@ async fn ws_reconnects_after_server_restart() {
         .expect("client should reconnect to the restarted server on the same address");
     server2.send_event(&stasis_start_json("chan-2"));
 
-    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
         .await
         .expect("timed out waiting for event after exact reconnect")
         .expect("subscription closed before reconnect event");
@@ -3296,7 +3296,7 @@ async fn ws_max_retries_stops_reconnecting() {
 
     // confirm events work before shutdown
     server.send_event(&stasis_start_json("chan-1"));
-    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
         .await
         .expect("timed out waiting for event")
         .expect("subscription closed");
@@ -3308,7 +3308,7 @@ async fn ws_max_retries_stops_reconnecting() {
     // after retries are exhausted, the WS listener task exits but the EventBus
     // sender in the client keeps the channel open, so recv() won't return None.
     // the correct assertion is that no new events arrive (timeout expected).
-    let result = tokio::time::timeout(Duration::from_millis(500), sub.recv()).await;
+    let result = tokio::time::timeout(Duration::from_millis(500), sub.recv_lossy()).await;
     // timeout is the expected outcome — no events arrive, bus stays open
     assert!(
         result.is_err() || result.as_ref().is_ok_and(|v| v.is_none()),
@@ -3332,12 +3332,12 @@ async fn ws_events_delivered_to_multiple_subscribers() {
 
     server.send_event(&stasis_start_json("chan-multi"));
 
-    let ev1 = tokio::time::timeout(Duration::from_secs(5), sub1.recv())
+    let ev1 = tokio::time::timeout(Duration::from_secs(5), sub1.recv_lossy())
         .await
         .expect("timed out waiting for subscriber 1")
         .expect("subscriber 1 closed");
 
-    let ev2 = tokio::time::timeout(Duration::from_secs(5), sub2.recv())
+    let ev2 = tokio::time::timeout(Duration::from_secs(5), sub2.recv_lossy())
         .await
         .expect("timed out waiting for subscriber 2")
         .expect("subscriber 2 closed");
@@ -3377,7 +3377,7 @@ async fn ws_malformed_json_event_ignored() {
     server.send_event(&stasis_start_json("chan-good"));
 
     // the valid event should arrive despite the prior garbage
-    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
         .await
         .expect("timed out — malformed data may have broken the listener")
         .expect("subscription closed unexpectedly");
@@ -3411,7 +3411,7 @@ async fn ws_binary_message_ignored() {
     // after text garbage the client still works (binary is a subset of "ignored").
     server.send_event(&stasis_start_json("chan-after-binary"));
 
-    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
         .await
         .expect("timed out waiting for event")
         .expect("subscription closed");
@@ -3439,7 +3439,7 @@ async fn ws_events_after_client_disconnect_not_received() {
 
     // confirm subscription is working
     server.send_event(&stasis_start_json("chan-pre"));
-    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
         .await
         .expect("timed out")
         .expect("closed");
@@ -3453,7 +3453,7 @@ async fn ws_events_after_client_disconnect_not_received() {
     server.wait_for_ws_client().await;
 
     // subscription should yield None (bus closed)
-    let result = tokio::time::timeout(Duration::from_secs(2), sub.recv()).await;
+    let result = tokio::time::timeout(Duration::from_secs(2), sub.recv_lossy()).await;
     match result {
         Ok(None) => {}    // expected: bus closed after disconnect
         Ok(Some(_)) => {} // buffered event from before disconnect — acceptable
@@ -3485,7 +3485,7 @@ async fn ws_rapid_events_all_delivered() {
     // receive all events
     let mut received = Vec::with_capacity(count);
     for i in 0..count {
-        let event = tokio::time::timeout(Duration::from_secs(10), sub.recv())
+        let event = tokio::time::timeout(Duration::from_secs(10), sub.recv_lossy())
             .await
             .unwrap_or_else(|_| panic!("timed out waiting for event {i}/{count}"))
             .unwrap_or_else(|| panic!("subscription closed at event {i}/{count}"));
@@ -3531,7 +3531,7 @@ async fn ws_close_frame_handled_gracefully() {
 
     // send an event to confirm WS is working
     server.send_event(&stasis_start_json("chan-before-close"));
-    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
         .await
         .expect("timed out waiting for initial event")
         .expect("subscription closed");
@@ -3547,7 +3547,7 @@ async fn ws_close_frame_handled_gracefully() {
 
     // the client should survive the close without panicking
     // after shutdown, no more events should arrive (timeout expected)
-    let result = tokio::time::timeout(Duration::from_millis(500), sub.recv()).await;
+    let result = tokio::time::timeout(Duration::from_millis(500), sub.recv_lossy()).await;
     // either timeout (retries happening) or None (bus closed) are acceptable
     assert!(
         result.is_err() || result.as_ref().is_ok_and(|v| v.is_none()),
@@ -3664,7 +3664,7 @@ async fn ws_malformed_json_not_delivered() {
     server.send_event("this is not json");
 
     // verify the malformed event is not delivered
-    let bad = tokio::time::timeout(Duration::from_millis(500), sub.recv()).await;
+    let bad = tokio::time::timeout(Duration::from_millis(500), sub.recv_lossy()).await;
     assert!(
         bad.is_err(),
         "malformed json should not be delivered to subscriber"
@@ -3673,7 +3673,7 @@ async fn ws_malformed_json_not_delivered() {
     // send a valid event after the malformed one
     server.send_event(&stasis_start_json("chan-after-bad"));
 
-    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+    let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
         .await
         .expect("timed out waiting for valid event after malformed")
         .expect("subscription closed");
@@ -3705,7 +3705,7 @@ async fn multiple_subscribers_all_receive() {
     server.send_event(&stasis_start_json("chan-broadcast"));
 
     for (i, sub) in [&mut sub1, &mut sub2, &mut sub3].iter_mut().enumerate() {
-        let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+        let event = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy())
             .await
             .unwrap_or_else(|_| panic!("subscriber {i} timed out"))
             .unwrap_or_else(|| panic!("subscriber {i} closed"));
@@ -3743,7 +3743,7 @@ async fn disconnect_then_subscribe_returns_none() {
     drop(client);
 
     // recv should return None since all senders are dropped
-    let result = tokio::time::timeout(Duration::from_secs(5), sub.recv()).await;
+    let result = tokio::time::timeout(Duration::from_secs(5), sub.recv_lossy()).await;
     match result {
         Ok(None) => { /* expected: bus closed */ }
         Ok(Some(event)) => panic!("expected None after disconnect, got event: {event:?}"),
@@ -3896,6 +3896,81 @@ async fn pending_playback_creates_unique_id() {
         "pending playback id should start with 'playback-pending-', got: {id}"
     );
 
+    client.disconnect();
+    server.shutdown().await;
+}
+
+#[test]
+fn ari_event_id_accessors_include_optional_and_multi_resource_ids() {
+    let channel = |id: &str| {
+        serde_json::json!({
+            "id": id,
+            "name": format!("PJSIP/{id}"),
+            "state": "Up"
+        })
+    };
+    let stasis: asterisk_rs_ari::event::AriEvent = serde_json::from_value(serde_json::json!({
+        "type": "StasisStart",
+        "channel": channel("new"),
+        "replace_channel": channel("old")
+    }))
+    .expect("stasis event");
+    assert_eq!(stasis.channel_ids(), vec!["new", "old"]);
+
+    let varset: asterisk_rs_ari::event::AriEvent = serde_json::from_value(serde_json::json!({
+        "type": "ChannelVarset",
+        "channel": channel("var-channel"),
+        "variable": "TEST",
+        "value": "value"
+    }))
+    .expect("channel varset event");
+    assert_eq!(varset.channel_ids(), vec!["var-channel"]);
+
+    let bridge = |id: &str| {
+        serde_json::json!({
+            "id": id,
+            "technology": "simple_bridge",
+            "bridge_type": "mixing"
+        })
+    };
+    let merged: asterisk_rs_ari::event::AriEvent = serde_json::from_value(serde_json::json!({
+        "type": "BridgeMerged",
+        "bridge": bridge("destination"),
+        "bridge_from": bridge("source")
+    }))
+    .expect("bridge merged event");
+    assert_eq!(merged.bridge_ids(), vec!["destination", "source"]);
+
+    let playback: asterisk_rs_ari::event::AriEvent = serde_json::from_value(serde_json::json!({
+        "type": "PlaybackContinuing",
+        "playback": {
+            "id": "playback-1",
+            "media_uri": "sound:demo",
+            "state": "playing",
+            "target_uri": "channel:new"
+        }
+    }))
+    .expect("playback event");
+    assert_eq!(playback.playback_ids(), vec!["playback-1"]);
+}
+
+#[tokio::test]
+async fn pending_ids_are_readable_uuid_shaped_and_unique() {
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+    let mut ids = std::collections::HashSet::new();
+    for _ in 0..256 {
+        for (prefix, id) in [
+            ("channel-pending-", client.channel().id().to_owned()),
+            ("bridge-pending-", client.bridge().id().to_owned()),
+            ("playback-pending-", client.playback().id().to_owned()),
+        ] {
+            let suffix = id.strip_prefix(prefix).expect("readable resource prefix");
+            assert_eq!(suffix.len(), 32, "simple UUID length");
+            assert!(suffix.bytes().all(|byte| byte.is_ascii_hexdigit()));
+            assert!(ids.insert(id), "pending IDs must not collide");
+        }
+    }
     client.disconnect();
     server.shutdown().await;
 }
@@ -4509,7 +4584,7 @@ async fn outbound_ws_server_delivers_events_to_session() {
                 let tx = event_tx.clone();
                 async move {
                     let mut sub = session.subscribe();
-                    if let Some(msg) = sub.recv().await {
+                    if let Some(msg) = sub.recv_lossy().await {
                         if let asterisk_rs_ari::AriEvent::StasisStart { channel, .. } = &msg.event {
                             let _ = tx.send(channel.id.clone()).await;
                         }

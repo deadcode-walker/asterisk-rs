@@ -1,94 +1,163 @@
-//! call correlation engine — tracks AMI events by UniqueID into call lifecycle objects.
+//! Bounded, loss-aware AMI call correlation.
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use asterisk_rs_core::event::{EventReceive, EventSubscription};
 use tokio::sync::{mpsc, watch};
 
 use crate::event::AmiEvent;
-use asterisk_rs_core::event::EventSubscription;
 
-/// a fully resolved call with all collected events
+/// A fully resolved call with its bounded event history.
 #[derive(Debug, Clone)]
 pub struct CompletedCall {
-    /// channel name at creation
     pub channel: String,
-    /// per-channel unique identifier
     pub unique_id: String,
-    /// links bridged channels together
     pub linked_id: String,
-    /// when the channel was created
     pub start_time: Instant,
-    /// when the channel hung up
     pub end_time: Instant,
-    /// total call duration
     pub duration: Duration,
-    /// hangup cause code
     pub cause: u32,
-    /// hangup cause description
     pub cause_txt: String,
-    /// all events collected during this call's lifetime
+    /// Retained events, in arrival order.
     pub events: Vec<AmiEvent>,
+    /// Events omitted after the per-call history limit was reached.
+    pub events_truncated: u64,
 }
 
-/// tracks an in-progress call
+/// Resource limits for a [`CallTracker`].
+#[derive(Debug, Clone)]
+pub struct CallTrackerConfig {
+    pub call_ttl: Duration,
+    pub eviction_interval: Duration,
+    pub max_active_calls: usize,
+    pub max_events_per_call: usize,
+    pub completed_capacity: usize,
+}
+
+impl Default for CallTrackerConfig {
+    fn default() -> Self {
+        Self {
+            call_ttl: Duration::from_secs(3600),
+            eviction_interval: Duration::from_secs(30),
+            max_active_calls: 4096,
+            max_events_per_call: 256,
+            completed_capacity: 256,
+        }
+    }
+}
+
+impl CallTrackerConfig {
+    fn normalized(mut self) -> Self {
+        self.eviction_interval = self.eviction_interval.max(Duration::from_millis(1));
+        self.max_active_calls = self.max_active_calls.max(1);
+        self.max_events_per_call = self.max_events_per_call.max(1);
+        self.completed_capacity = self.completed_capacity.max(1);
+        self
+    }
+}
+
+/// Snapshot of tracker health and bounded-loss counters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CallTrackerStats {
+    pub active_calls: usize,
+    pub lagged_events: u64,
+    pub truncated_events: u64,
+    pub active_calls_evicted: u64,
+    pub completed_calls_lost: u64,
+    /// False after source lag or source closure makes tracked state incomplete.
+    pub valid: bool,
+}
+
+#[derive(Default)]
+struct TrackerMetrics {
+    active_calls: AtomicUsize,
+    lagged_events: AtomicU64,
+    truncated_events: AtomicU64,
+    active_calls_evicted: AtomicU64,
+    completed_calls_lost: AtomicU64,
+    valid: AtomicBool,
+}
+
 struct ActiveCall {
     channel: String,
     unique_id: String,
     linked_id: String,
     start_time: Instant,
     events: Vec<AmiEvent>,
+    events_truncated: u64,
 }
 
-/// correlates AMI events by UniqueID into complete call records
-///
-/// spawns a background task that consumes events from an EventSubscription,
-/// tracks active calls, and emits CompletedCall records when channels hang up.
+/// Correlates AMI events by UniqueID into bounded completed-call records.
 pub struct CallTracker {
     shutdown_tx: watch::Sender<bool>,
     task_handle: tokio::task::JoinHandle<()>,
-    dropped_count: Arc<AtomicU64>,
+    metrics: Arc<TrackerMetrics>,
 }
 
 impl std::fmt::Debug for CallTracker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CallTracker").finish_non_exhaustive()
+        f.debug_struct("CallTracker")
+            .field("stats", &self.stats())
+            .finish_non_exhaustive()
     }
 }
 
 impl CallTracker {
-    /// create a tracker that consumes events and produces completed call records
+    /// Create a tracker with conservative defaults.
     pub fn new(subscription: EventSubscription<AmiEvent>) -> (Self, mpsc::Receiver<CompletedCall>) {
-        let (completed_tx, completed_rx) = mpsc::channel(256);
-        let (shutdown_tx, shutdown_rx) = watch::channel(false);
-        let dropped_count = Arc::new(AtomicU64::new(0));
+        Self::with_config(subscription, CallTrackerConfig::default())
+    }
 
+    /// Create a tracker with explicit resource limits.
+    pub fn with_config(
+        subscription: EventSubscription<AmiEvent>,
+        config: CallTrackerConfig,
+    ) -> (Self, mpsc::Receiver<CompletedCall>) {
+        let config = config.normalized();
+        let (completed_tx, completed_rx) = mpsc::channel(config.completed_capacity);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let metrics = Arc::new(TrackerMetrics::default());
+        metrics.valid.store(true, Ordering::Relaxed);
         let task_handle = tokio::spawn(track_loop(
             subscription,
             completed_tx,
             shutdown_rx,
-            DEFAULT_CALL_TTL,
-            Arc::clone(&dropped_count),
+            config,
+            Arc::clone(&metrics),
         ));
-
-        let tracker = Self {
-            shutdown_tx,
-            task_handle,
-            dropped_count,
-        };
-
-        (tracker, completed_rx)
+        (
+            Self {
+                shutdown_tx,
+                task_handle,
+                metrics,
+            },
+            completed_rx,
+        )
     }
 
-    /// number of completed calls dropped because the receiver channel was full or closed
+    /// Current tracker state and cumulative loss counters.
+    pub fn stats(&self) -> CallTrackerStats {
+        CallTrackerStats {
+            active_calls: self.metrics.active_calls.load(Ordering::Relaxed),
+            lagged_events: self.metrics.lagged_events.load(Ordering::Relaxed),
+            truncated_events: self.metrics.truncated_events.load(Ordering::Relaxed),
+            active_calls_evicted: self.metrics.active_calls_evicted.load(Ordering::Relaxed),
+            completed_calls_lost: self.metrics.completed_calls_lost.load(Ordering::Relaxed),
+            valid: self.metrics.valid.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Compatibility accessor for completed delivery loss.
     pub fn dropped_count(&self) -> u64 {
-        self.dropped_count.load(Ordering::Relaxed)
+        self.stats().completed_calls_lost
     }
 
-    /// stop the background tracking task
     pub fn shutdown(&self) {
+        self.metrics.valid.store(false, Ordering::Relaxed);
+        self.metrics.active_calls.store(0, Ordering::Relaxed);
         let _ = self.shutdown_tx.send(true);
         self.task_handle.abort();
     }
@@ -100,26 +169,43 @@ impl Drop for CallTracker {
     }
 }
 
-const DEFAULT_CALL_TTL: Duration = Duration::from_secs(3600);
-
 async fn track_loop(
     mut subscription: EventSubscription<AmiEvent>,
     completed_tx: mpsc::Sender<CompletedCall>,
     mut shutdown_rx: watch::Receiver<bool>,
-    ttl: Duration,
-    dropped_count: Arc<AtomicU64>,
+    config: CallTrackerConfig,
+    metrics: Arc<TrackerMetrics>,
 ) {
-    let mut active: HashMap<String, ActiveCall> = HashMap::new();
+    let mut active = HashMap::new();
+    let mut eviction = tokio::time::interval(config.eviction_interval);
+    eviction.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    eviction.tick().await;
 
     loop {
         tokio::select! {
-            event = subscription.recv() => {
-                let Some(event) = event else { break };
-                evict_stale(&mut active, &completed_tx, ttl, &dropped_count);
-                handle_event(&mut active, &completed_tx, event, &dropped_count);
-            }
-            _ = shutdown_rx.changed() => {
-                break;
+            outcome = subscription.recv_outcome() => match outcome {
+                EventReceive::Event(event) => handle_event(
+                    &mut active, &completed_tx, event, &config, &metrics
+                ),
+                EventReceive::Lagged(count) => {
+                    metrics.lagged_events.fetch_add(count, Ordering::Relaxed);
+                    metrics.valid.store(false, Ordering::Relaxed);
+                    active.clear();
+                    metrics.active_calls.store(0, Ordering::Relaxed);
+                    break;
+                }
+                EventReceive::Closed => {
+                    metrics.valid.store(false, Ordering::Relaxed);
+                    active.clear();
+                    metrics.active_calls.store(0, Ordering::Relaxed);
+                    break;
+                }
+            },
+            _ = eviction.tick() => evict_stale(
+                &mut active, &completed_tx, config.call_ttl, &metrics
+            ),
+            changed = shutdown_rx.changed() => {
+                if changed.is_err() || *shutdown_rx.borrow() { break; }
             }
         }
     }
@@ -129,53 +215,54 @@ fn handle_event(
     active: &mut HashMap<String, ActiveCall>,
     completed_tx: &mpsc::Sender<CompletedCall>,
     event: AmiEvent,
-    dropped_count: &AtomicU64,
+    config: &CallTrackerConfig,
+    metrics: &TrackerMetrics,
 ) {
-    // handle new channel creation
     if let AmiEvent::NewChannel {
-        ref channel,
-        ref unique_id,
-        ref linked_id,
+        channel,
+        unique_id,
+        linked_id,
         ..
-    } = event
+    } = &event
     {
-        let call = ActiveCall {
-            channel: channel.clone(),
-            unique_id: unique_id.clone(),
-            linked_id: linked_id.clone(),
-            start_time: Instant::now(),
-            events: vec![event],
-        };
-        active.insert(call.unique_id.clone(), call);
-        return;
-    }
-
-    // rename — update the tracked channel name before appending
-    if let AmiEvent::Rename {
-        ref unique_id,
-        ref new_name,
-        ..
-    } = event
-    {
-        if let Some(call) = active.get_mut(unique_id.as_str()) {
-            call.channel = new_name.clone();
-            call.events.push(event);
+        if !active.contains_key(unique_id) && active.len() >= config.max_active_calls {
+            if let Some(oldest) = active
+                .iter()
+                .min_by_key(|(_, call)| call.start_time)
+                .map(|(id, _)| id.clone())
+            {
+                active.remove(&oldest);
+                metrics.active_calls_evicted.fetch_add(1, Ordering::Relaxed);
+            }
         }
+        active.insert(
+            unique_id.clone(),
+            ActiveCall {
+                channel: channel.clone(),
+                unique_id: unique_id.clone(),
+                linked_id: linked_id.clone(),
+                start_time: Instant::now(),
+                events: vec![event],
+                events_truncated: 0,
+            },
+        );
+        metrics.active_calls.store(active.len(), Ordering::Relaxed);
         return;
     }
 
-    // handle hangup — finalize the call
+    let Some(unique_id) = event.unique_id().map(str::to_owned) else {
+        return;
+    };
+
     if let AmiEvent::Hangup {
-        ref unique_id,
-        cause,
-        ref cause_txt,
-        ..
-    } = event
+        cause, cause_txt, ..
+    } = &event
     {
-        if let Some(mut call) = active.remove(unique_id.as_str()) {
+        let cause = *cause;
+        let cause_txt = cause_txt.clone();
+        if let Some(mut call) = active.remove(&unique_id) {
+            append_event(&mut call, event, config.max_events_per_call, metrics);
             let end_time = Instant::now();
-            let cause_txt = cause_txt.clone();
-            call.events.push(event);
             let completed = CompletedCall {
                 channel: call.channel,
                 unique_id: call.unique_id,
@@ -186,257 +273,79 @@ fn handle_event(
                 cause,
                 cause_txt,
                 events: call.events,
+                events_truncated: call.events_truncated,
             };
-            // receiver may have been dropped or channel full — drop rather than block the tracker
-            if completed_tx.try_send(completed).is_err() {
-                dropped_count.fetch_add(1, Ordering::Relaxed);
-                tracing::warn!("completed_tx full or closed, dropping completed call");
-            }
+            send_completed(completed_tx, completed, metrics);
+            metrics.active_calls.store(active.len(), Ordering::Relaxed);
         }
         return;
     }
 
-    // for all other events, append to the matching active call if tracked
-    if let Some(uid) = extract_unique_id(&event) {
-        if let Some(call) = active.get_mut(uid) {
-            call.events.push(event);
+    if let Some(call) = active.get_mut(&unique_id) {
+        if let AmiEvent::Rename { new_name, .. } = &event {
+            call.channel.clone_from(new_name);
         }
+        append_event(call, event, config.max_events_per_call, metrics);
     }
 }
 
-/// extract the unique_id field from an event, if present
-fn extract_unique_id(event: &AmiEvent) -> Option<&str> {
-    match event {
-        // variants with a unique_id: String field
-        AmiEvent::NewChannel { unique_id, .. }
-        | AmiEvent::Hangup { unique_id, .. }
-        | AmiEvent::Newstate { unique_id, .. }
-        | AmiEvent::DialBegin { unique_id, .. }
-        | AmiEvent::DialEnd { unique_id, .. }
-        | AmiEvent::DtmfBegin { unique_id, .. }
-        | AmiEvent::DtmfEnd { unique_id, .. }
-        | AmiEvent::BridgeEnter { unique_id, .. }
-        | AmiEvent::BridgeLeave { unique_id, .. }
-        | AmiEvent::Hold { unique_id, .. }
-        | AmiEvent::Unhold { unique_id, .. }
-        | AmiEvent::HangupRequest { unique_id, .. }
-        | AmiEvent::SoftHangupRequest { unique_id, .. }
-        | AmiEvent::NewExten { unique_id, .. }
-        | AmiEvent::NewCallerid { unique_id, .. }
-        | AmiEvent::NewConnectedLine { unique_id, .. }
-        | AmiEvent::NewAccountCode { unique_id, .. }
-        | AmiEvent::Rename { unique_id, .. }
-        | AmiEvent::OriginateResponse { unique_id, .. }
-        | AmiEvent::DialState { unique_id, .. }
-        | AmiEvent::Flash { unique_id, .. }
-        | AmiEvent::Wink { unique_id, .. }
-        | AmiEvent::BridgeInfoChannel { unique_id, .. }
-        | AmiEvent::LocalBridge { unique_id, .. }
-        | AmiEvent::LocalOptimizationBegin { unique_id, .. }
-        | AmiEvent::LocalOptimizationEnd { unique_id, .. }
-        | AmiEvent::Cdr { unique_id, .. }
-        | AmiEvent::Cel { unique_id, .. }
-        | AmiEvent::QueueCallerAbandon { unique_id, .. }
-        | AmiEvent::QueueCallerJoin { unique_id, .. }
-        | AmiEvent::QueueCallerLeave { unique_id, .. }
-        | AmiEvent::QueueEntry { unique_id, .. }
-        | AmiEvent::AgentCalled { unique_id, .. }
-        | AmiEvent::AgentConnect { unique_id, .. }
-        | AmiEvent::AgentComplete { unique_id, .. }
-        | AmiEvent::AgentDump { unique_id, .. }
-        | AmiEvent::AgentLogin { unique_id, .. }
-        | AmiEvent::AgentRingNoAnswer { unique_id, .. }
-        | AmiEvent::ConfbridgeJoin { unique_id, .. }
-        | AmiEvent::ConfbridgeLeave { unique_id, .. }
-        | AmiEvent::ConfbridgeList { unique_id, .. }
-        | AmiEvent::ConfbridgeMute { unique_id, .. }
-        | AmiEvent::ConfbridgeUnmute { unique_id, .. }
-        | AmiEvent::ConfbridgeTalking { unique_id, .. }
-        | AmiEvent::MixMonitorStart { unique_id, .. }
-        | AmiEvent::MixMonitorStop { unique_id, .. }
-        | AmiEvent::MixMonitorMute { unique_id, .. }
-        | AmiEvent::MusicOnHoldStart { unique_id, .. }
-        | AmiEvent::MusicOnHoldStop { unique_id, .. }
-        | AmiEvent::ParkedCall { unique_id, .. }
-        | AmiEvent::ParkedCallGiveUp { unique_id, .. }
-        | AmiEvent::ParkedCallTimeOut { unique_id, .. }
-        | AmiEvent::ParkedCallSwap { unique_id, .. }
-        | AmiEvent::UnParkedCall { unique_id, .. }
-        | AmiEvent::Pickup { unique_id, .. }
-        | AmiEvent::ChanSpyStart { unique_id, .. }
-        | AmiEvent::ChanSpyStop { unique_id, .. }
-        | AmiEvent::ChannelTalkingStart { unique_id, .. }
-        | AmiEvent::ChannelTalkingStop { unique_id, .. }
-        | AmiEvent::RTCPReceived { unique_id, .. }
-        | AmiEvent::RTCPSent { unique_id, .. }
-        | AmiEvent::AsyncAGIStart { unique_id, .. }
-        | AmiEvent::AsyncAGIExec { unique_id, .. }
-        | AmiEvent::AsyncAGIEnd { unique_id, .. }
-        | AmiEvent::AGIExecStart { unique_id, .. }
-        | AmiEvent::AGIExecEnd { unique_id, .. }
-        | AmiEvent::HangupHandlerPush { unique_id, .. }
-        | AmiEvent::HangupHandlerPop { unique_id, .. }
-        | AmiEvent::HangupHandlerRun { unique_id, .. }
-        | AmiEvent::Status { unique_id, .. }
-        | AmiEvent::CoreShowChannel { unique_id, .. }
-        | AmiEvent::AocD { unique_id, .. }
-        | AmiEvent::AocE { unique_id, .. }
-        | AmiEvent::AocS { unique_id, .. }
-        | AmiEvent::FAXStatus { unique_id, .. }
-        | AmiEvent::ReceiveFAX { unique_id, .. }
-        | AmiEvent::SendFAX { unique_id, .. }
-        | AmiEvent::MeetmeJoin { unique_id, .. }
-        | AmiEvent::MeetmeLeave { unique_id, .. }
-        | AmiEvent::MeetmeMute { unique_id, .. }
-        | AmiEvent::MeetmeTalking { unique_id, .. }
-        | AmiEvent::MeetmeTalkRequest { unique_id, .. }
-        | AmiEvent::MeetmeList { unique_id, .. }
-        | AmiEvent::MiniVoiceMail { unique_id, .. }
-        | AmiEvent::FAXSession { unique_id, .. }
-        | AmiEvent::MCID { unique_id, .. } => Some(unique_id.as_str()),
-
-        // transferer_unique_id — not named unique_id but still useful
-        AmiEvent::AttendedTransfer {
-            transferer_unique_id,
-            ..
-        } => Some(transferer_unique_id.as_str()),
-        AmiEvent::BlindTransfer {
-            transferer_unique_id,
-            ..
-        } => Some(transferer_unique_id.as_str()),
-
-        // unique_id is Option<String>
-        AmiEvent::VarSet { unique_id, .. } | AmiEvent::UserEvent { unique_id, .. } => {
-            unique_id.as_deref()
-        }
-        AmiEvent::DAHDIChannel { unique_id, .. } => unique_id.as_deref(),
-
-        // variants without unique_id
-        AmiEvent::FullyBooted { .. }
-        | AmiEvent::PeerStatus { .. }
-        | AmiEvent::BridgeCreate { .. }
-        | AmiEvent::BridgeDestroy { .. }
-        | AmiEvent::BridgeMerge { .. }
-        | AmiEvent::BridgeInfoComplete { .. }
-        | AmiEvent::BridgeVideoSourceUpdate { .. }
-        | AmiEvent::QueueMemberAdded { .. }
-        | AmiEvent::QueueMemberRemoved { .. }
-        | AmiEvent::QueueMemberPause { .. }
-        | AmiEvent::QueueMemberStatus { .. }
-        | AmiEvent::QueueMemberPenalty { .. }
-        | AmiEvent::QueueMemberRinginuse { .. }
-        | AmiEvent::QueueParams { .. }
-        | AmiEvent::AgentLogoff { .. }
-        | AmiEvent::Agents { .. }
-        | AmiEvent::AgentsComplete
-        | AmiEvent::ConfbridgeStart { .. }
-        | AmiEvent::ConfbridgeEnd { .. }
-        | AmiEvent::ConfbridgeRecord { .. }
-        | AmiEvent::ConfbridgeStopRecord { .. }
-        | AmiEvent::ConfbridgeListRooms { .. }
-        | AmiEvent::DeviceStateChange { .. }
-        | AmiEvent::ExtensionStatus { .. }
-        | AmiEvent::PresenceStateChange { .. }
-        | AmiEvent::PresenceStatus { .. }
-        | AmiEvent::ContactStatus { .. }
-        | AmiEvent::Registry { .. }
-        | AmiEvent::MessageWaiting { .. }
-        | AmiEvent::VoicemailPasswordChange { .. }
-        | AmiEvent::FailedACL { .. }
-        | AmiEvent::InvalidAccountID { .. }
-        | AmiEvent::InvalidPassword { .. }
-        | AmiEvent::ChallengeResponseFailed { .. }
-        | AmiEvent::ChallengeSent { .. }
-        | AmiEvent::SuccessfulAuth { .. }
-        | AmiEvent::SessionLimit { .. }
-        | AmiEvent::UnexpectedAddress { .. }
-        | AmiEvent::RequestBadFormat { .. }
-        | AmiEvent::RequestNotAllowed { .. }
-        | AmiEvent::RequestNotSupported { .. }
-        | AmiEvent::InvalidTransport { .. }
-        | AmiEvent::AuthMethodNotAllowed { .. }
-        | AmiEvent::Shutdown { .. }
-        | AmiEvent::Reload { .. }
-        | AmiEvent::Load { .. }
-        | AmiEvent::Unload { .. }
-        | AmiEvent::LogChannel { .. }
-        | AmiEvent::LoadAverageLimit
-        | AmiEvent::MemoryLimit
-        | AmiEvent::StatusComplete { .. }
-        | AmiEvent::CoreShowChannelsComplete { .. }
-        | AmiEvent::CoreShowChannelMapComplete
-        | AmiEvent::Alarm { .. }
-        | AmiEvent::AlarmClear { .. }
-        | AmiEvent::SpanAlarm { .. }
-        | AmiEvent::SpanAlarmClear { .. }
-        | AmiEvent::MeetmeEnd { .. }
-        | AmiEvent::MeetmeListRooms { .. }
-        | AmiEvent::DeviceStateListComplete { .. }
-        | AmiEvent::ExtensionStateListComplete { .. }
-        | AmiEvent::PresenceStateListComplete { .. }
-        | AmiEvent::AorDetail { .. }
-        | AmiEvent::AorList { .. }
-        | AmiEvent::AorListComplete { .. }
-        | AmiEvent::AuthDetail { .. }
-        | AmiEvent::AuthList { .. }
-        | AmiEvent::AuthListComplete { .. }
-        | AmiEvent::ContactList { .. }
-        | AmiEvent::ContactListComplete { .. }
-        | AmiEvent::ContactStatusDetail { .. }
-        | AmiEvent::EndpointDetail { .. }
-        | AmiEvent::EndpointDetailComplete { .. }
-        | AmiEvent::EndpointList { .. }
-        | AmiEvent::EndpointListComplete { .. }
-        | AmiEvent::IdentifyDetail { .. }
-        | AmiEvent::TransportDetail { .. }
-        | AmiEvent::ResourceListDetail { .. }
-        | AmiEvent::InboundRegistrationDetail { .. }
-        | AmiEvent::OutboundRegistrationDetail { .. }
-        | AmiEvent::InboundSubscriptionDetail { .. }
-        | AmiEvent::OutboundSubscriptionDetail { .. }
-        | AmiEvent::MWIGet { .. }
-        | AmiEvent::MWIGetComplete { .. }
-        | AmiEvent::FAXSessionsEntry { .. }
-        | AmiEvent::FAXSessionsComplete { .. }
-        | AmiEvent::FAXStats { .. }
-        | AmiEvent::DNDState { .. }
-        | AmiEvent::DeadlockStart
-        | AmiEvent::Malformed { .. }
-        | AmiEvent::Unknown { .. } => None,
+fn append_event(
+    call: &mut ActiveCall,
+    event: AmiEvent,
+    max_events: usize,
+    metrics: &TrackerMetrics,
+) {
+    if call.events.len() < max_events {
+        call.events.push(event);
+    } else {
+        call.events_truncated = call.events_truncated.saturating_add(1);
+        metrics.truncated_events.fetch_add(1, Ordering::Relaxed);
     }
 }
 
-/// emit completed records for calls that have exceeded the maximum tracked age
-///
-/// called on every incoming event so the sweep cost is proportional to churn, not wall-clock time.
-/// stale calls are emitted with cause 0 and a synthetic cause_txt so callers can distinguish them
-/// from normal hangups.
 fn evict_stale(
     active: &mut HashMap<String, ActiveCall>,
     completed_tx: &mpsc::Sender<CompletedCall>,
     ttl: Duration,
-    dropped_count: &AtomicU64,
+    metrics: &TrackerMetrics,
 ) {
     let now = Instant::now();
-    active.retain(|_, call| {
-        if now.duration_since(call.start_time) <= ttl {
-            return true;
-        }
-        let completed = CompletedCall {
-            channel: call.channel.clone(),
-            unique_id: call.unique_id.clone(),
-            linked_id: call.linked_id.clone(),
-            start_time: call.start_time,
-            end_time: now,
-            duration: now.duration_since(call.start_time),
-            cause: 0,
-            cause_txt: "ttl eviction: no hangup received".to_string(),
-            events: std::mem::take(&mut call.events),
+    let stale: Vec<_> = active
+        .iter()
+        .filter(|(_, call)| now.duration_since(call.start_time) > ttl)
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in stale {
+        let Some(call) = active.remove(&id) else {
+            continue;
         };
-        if completed_tx.try_send(completed).is_err() {
-            dropped_count.fetch_add(1, Ordering::Relaxed);
-            tracing::warn!(unique_id = %call.unique_id, "completed_tx full, dropping stale evicted call");
-        }
-        false
-    });
+        metrics.active_calls_evicted.fetch_add(1, Ordering::Relaxed);
+        send_completed(
+            completed_tx,
+            CompletedCall {
+                channel: call.channel,
+                unique_id: call.unique_id,
+                linked_id: call.linked_id,
+                start_time: call.start_time,
+                end_time: now,
+                duration: now.duration_since(call.start_time),
+                cause: 0,
+                cause_txt: "ttl eviction: no hangup received".into(),
+                events: call.events,
+                events_truncated: call.events_truncated,
+            },
+            metrics,
+        );
+    }
+    metrics.active_calls.store(active.len(), Ordering::Relaxed);
+}
+
+fn send_completed(
+    tx: &mpsc::Sender<CompletedCall>,
+    completed: CompletedCall,
+    metrics: &TrackerMetrics,
+) {
+    if tx.try_send(completed).is_err() {
+        metrics.completed_calls_lost.fetch_add(1, Ordering::Relaxed);
+    }
 }

@@ -3,15 +3,22 @@
 ARI provides full call control through a REST API combined with a WebSocket
 event stream for Stasis applications.
 
+Cleartext HTTP/WebSocket is allowed by default only on loopback. Remote
+cleartext requires `.allow_insecure_remote(true)`; prefer `.secure(true)`.
+Private PKI deployments can add a PEM CA bundle with `.private_ca_pem(...)`,
+which augments platform trust for both HTTPS and WSS.
+
 ## Quick Start
 
 ```rust,ignore
-use asterisk_rs_ari::{AriClient, AriConfig};
+use asterisk_rs_ari::AriClient;
+use asterisk_rs_ari::config::AriConfigBuilder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = AriConfig::builder("my-app")
+    let config = AriConfigBuilder::new("my-app")
         .host("10.0.0.1")
+        .secure(true)
         .username("asterisk")
         .password("secret")
         .build()?;

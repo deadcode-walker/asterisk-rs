@@ -33,4 +33,10 @@ fn test_pbx_error_display() {
         cause_txt: "Normal Clearing".to_owned(),
     };
     assert_eq!(err.to_string(), "call failed: 16 (Normal Clearing)");
+
+    let err = PbxError::EventLoss { missed: 7 };
+    assert_eq!(
+        err.to_string(),
+        "call state invalidated after 7 lost events"
+    );
 }

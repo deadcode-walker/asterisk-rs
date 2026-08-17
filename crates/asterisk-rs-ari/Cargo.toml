@@ -27,6 +27,7 @@ thiserror.workspace = true
 url.workspace = true
 futures-util.workspace = true
 zeroize.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

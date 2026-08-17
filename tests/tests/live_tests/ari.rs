@@ -142,7 +142,7 @@ async fn stasis_event_from_originate() {
     // wait for StasisStart on the ARI event stream
     let event = tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            let msg = sub.recv().await.expect("ari event bus closed");
+            let msg = sub.recv_lossy().await.expect("ari event bus closed");
             tracing::info!(event = ?msg.event, app = %msg.application, "ari event received");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
                 // match our originate by caller id
@@ -206,7 +206,7 @@ async fn channel_answer_and_hangup_via_ari() {
     // wait for StasisStart
     let channel_id = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = sub.recv().await.expect("event bus closed");
+            let msg = sub.recv_lossy().await.expect("event bus closed");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
                 if channel.caller.number == "556" {
                     return channel.id.clone();
@@ -233,7 +233,7 @@ async fn channel_answer_and_hangup_via_ari() {
     // should see StasisEnd event
     let saw_end = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            let msg = sub.recv().await.expect("event bus closed");
+            let msg = sub.recv_lossy().await.expect("event bus closed");
             if let AriEvent::StasisEnd { channel, .. } = &msg.event {
                 if channel.id == channel_id {
                     return true;
@@ -285,7 +285,7 @@ async fn bridge_create_add_channels_destroy() {
     for _ in 0..2 {
         let cid = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
-                let msg = sub.recv().await.expect("event bus closed");
+                let msg = sub.recv_lossy().await.expect("event bus closed");
                 if let AriEvent::StasisStart { channel, .. } = &msg.event {
                     if channel.caller.number == "200" {
                         return channel.id.clone();
@@ -319,7 +319,7 @@ async fn bridge_create_add_channels_destroy() {
     let mut entered_count = 0;
     let _ = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            let msg = sub.recv().await.expect("event bus closed");
+            let msg = sub.recv_lossy().await.expect("event bus closed");
             if let AriEvent::ChannelEnteredBridge { bridge, .. } = &msg.event {
                 if bridge.id == bridge_id {
                     entered_count += 1;
@@ -378,7 +378,7 @@ async fn channel_dtmf_via_ari() {
     // wait for StasisStart
     let channel_id = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = sub.recv().await.expect("event bus closed");
+            let msg = sub.recv_lossy().await.expect("event bus closed");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
                 if channel.caller.number == "100" {
                     return channel.id.clone();
@@ -400,7 +400,7 @@ async fn channel_dtmf_via_ari() {
     let mut digits = Vec::new();
     let _ = tokio::time::timeout(Duration::from_secs(3), async {
         loop {
-            let msg = sub.recv().await.expect("event bus closed");
+            let msg = sub.recv_lossy().await.expect("event bus closed");
             if let AriEvent::ChannelDtmfReceived { channel, digit, .. } = &msg.event {
                 if channel.id == channel_id {
                     digits.push(digit.clone());
@@ -450,7 +450,7 @@ async fn channel_variable_via_ari() {
 
     let channel_id = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = sub.recv().await.expect("event bus closed");
+            let msg = sub.recv_lossy().await.expect("event bus closed");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
                 if channel.caller.number == "777" {
                     return channel.id.clone();
@@ -521,7 +521,7 @@ async fn originate_into_stasis(
 
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = sub.recv().await.expect("event bus closed");
+            let msg = sub.recv_lossy().await.expect("event bus closed");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
                 if channel.caller.number == number {
                     return channel.id.clone();
@@ -742,7 +742,7 @@ async fn channel_ring_start_stop() {
 
     let channel_id = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = sub.recv().await.expect("event bus closed");
+            let msg = sub.recv_lossy().await.expect("event bus closed");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
                 return channel.id.clone();
             }
@@ -794,7 +794,7 @@ async fn channel_continue_to_dialplan() {
     // wait for StasisEnd
     let saw_end = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = sub.recv().await.expect("event bus closed");
+            let msg = sub.recv_lossy().await.expect("event bus closed");
             if let AriEvent::StasisEnd { channel, .. } = &msg.event {
                 if channel.id == channel_id {
                     return true;
@@ -922,7 +922,7 @@ async fn stasis_start_with_args() {
     // and one from the dialplan (Stasis(test-app,hello,world)). look for args.
     let (channel_id, args) = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = sub.recv().await.expect("event bus closed");
+            let msg = sub.recv_lossy().await.expect("event bus closed");
             if let AriEvent::StasisStart { channel, args, .. } = &msg.event {
                 if args.contains(&"hello".to_string()) && args.contains(&"world".to_string()) {
                     return (channel.id.clone(), args.clone());
@@ -1049,7 +1049,7 @@ async fn multiple_stasis_subscribers() {
     // both subscribers should receive StasisStart
     let id1 = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = sub1.recv().await.expect("sub1 event bus closed");
+            let msg = sub1.recv_lossy().await.expect("sub1 event bus closed");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
                 return channel.id.clone();
             }
@@ -1060,7 +1060,7 @@ async fn multiple_stasis_subscribers() {
 
     let id2 = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let msg = sub2.recv().await.expect("sub2 event bus closed");
+            let msg = sub2.recv_lossy().await.expect("sub2 event bus closed");
             if let AriEvent::StasisStart { channel, .. } = &msg.event {
                 return channel.id.clone();
             }
@@ -1147,7 +1147,7 @@ async fn originate_with_custom_channel_id() {
             // wait briefly for StasisStart so we can clean up
             let _ = tokio::time::timeout(Duration::from_secs(5), async {
                 loop {
-                    let msg = sub.recv().await.expect("event bus closed");
+                    let msg = sub.recv_lossy().await.expect("event bus closed");
                     if let AriEvent::StasisStart { channel, .. } = &msg.event {
                         if channel.id == custom_id {
                             return;

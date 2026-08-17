@@ -20,6 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = AriConfigBuilder::new("my-app")
         .host("10.0.0.1")
+        .secure(true)
         .username("asterisk")
         .password("secret")
         .build()?;
@@ -118,6 +119,7 @@ use asterisk_rs_ari::server::AriServer;
 
 let (server, shutdown) = AriServer::builder()
     .bind("0.0.0.0:8765")
+    .allow_external_bind(true)
     .build().await?;
 
 server.run(|session| async move {
@@ -137,7 +139,7 @@ server.
 ```rust,ignore
 use asterisk_rs_ari::media::MediaChannel;
 
-let media = MediaChannel::connect("ws://asterisk:8088/ws").await?;
+let media = MediaChannel::connect("wss://asterisk:8089/media/connection-id").await?;
 media.answer().await?;
 
 while let Some(audio) = media.recv_audio().await? {
@@ -145,6 +147,12 @@ while let Some(audio) = media.recv_audio().await? {
     media.send_audio(audio).await?;
 }
 ```
+
+Cleartext `http://`/`ws://` is accepted by default only for loopback hosts.
+Remote cleartext requires the explicit `allow_insecure_remote(true)` opt-in.
+For private PKI, pass the PEM CA bundle with `AriConfigBuilder::private_ca_pem`;
+the same parsed roots are applied to HTTPS, event WSS, and unified WSS. Use
+`MediaConnectionOptions::private_ca_pem` for a media WSS connection.
 
 ## Capabilities
 

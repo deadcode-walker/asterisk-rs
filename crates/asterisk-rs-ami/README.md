@@ -91,6 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `ping_interval(d)` | disabled | keep-alive `Ping` cadence; set to detect dead connections |
 | `reconnect(policy)` | exponential backoff | `ReconnectPolicy::exponential(min, max)` or `::none()` |
 | `event_capacity(n)` | 1024 | broadcast channel depth; drop events when full if subscribers are slow |
+| `require_challenge(true)` | false | reject plaintext login fallback; recommended at every non-TLS boundary |
 
 ```rust,ignore
 use asterisk_rs_ami::AmiClient;
@@ -117,13 +118,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## TLS boundary
+
+Version 0.8 connects to AMI over plain TCP and does not claim native TLS. For
+non-loopback deployments, terminate TLS in a separately managed, versioned TCP
+proxy (for example a pinned stunnel or HAProxy deployment), authenticate and
+authorize access at that boundary, and connect this client only to the proxy's
+loopback/private listener. Set `require_challenge(true)` as defense in depth.
+Proxy certificate verification, upgrades, and availability remain deployment
+responsibilities; the library never disables certificate verification because
+it does not own that TLS session.
+
 ## Capabilities
 
 - Typed events and actions covering the full Asterisk 23 AMI surface
 - Filtered subscriptions -- receive only events you care about
 - Event-collecting actions -- `send_collecting()` gathers multi-event responses
 - Call tracking with `CallTracker` -- correlates events into `CompletedCall` records
-- MD5 challenge-response and plaintext authentication
+- MD5 challenge-response, with explicitly configurable plaintext fallback
 - Automatic reconnection with re-authentication on every reconnect
 - Command output capture for `Response: Follows` responses
 - Channel variable extraction -- `ChanVariable(name)` headers parsed into a dedicated map

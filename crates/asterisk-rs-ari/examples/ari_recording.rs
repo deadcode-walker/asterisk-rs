@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut events = client.subscribe();
 
-    while let Some(msg) = events.recv().await {
+    while let Some(msg) = events.recv_lossy().await {
         match msg.event {
             AriEvent::StasisStart { channel, .. } => {
                 tracing::info!(channel_id = %channel.id, "stasis start");
@@ -78,7 +78,7 @@ async fn handle_call(
     tracing::info!(%recording_name, "recording initiated");
 
     // wait for Asterisk to confirm the recording has started
-    while let Some(msg) = events.recv().await {
+    while let Some(msg) = events.recv_lossy().await {
         if let AriEvent::RecordingStarted { recording } = msg.event {
             tracing::info!(
                 name = %recording.name,
@@ -92,7 +92,7 @@ async fn handle_call(
     // RecordingFinished arrives when max_duration elapses, silence is detected,
     // or the caller hangs up; a real app would pass terminate_on / max_silence
     // as additional JSON fields to the record request
-    while let Some(msg) = events.recv().await {
+    while let Some(msg) = events.recv_lossy().await {
         if let AriEvent::RecordingFinished { recording } = msg.event {
             tracing::info!(
                 name = %recording.name,

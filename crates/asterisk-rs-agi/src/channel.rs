@@ -9,6 +9,7 @@ use crate::response::AgiResponse;
 
 const MAX_RESPONSE_LINE_BYTES: usize = 8 * 1024;
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// tracks whether a command round-trip is currently in progress
 ///
@@ -43,15 +44,15 @@ impl AgiChannel {
             writer,
             hung_up: false,
             state: ChannelState::Ready,
-            command_timeout: None,
+            command_timeout: Some(DEFAULT_COMMAND_TIMEOUT),
         }
     }
 
     /// set or disable the deadline for each complete command round trip
     ///
-    /// no deadline is configured by default because AGI commands such as
-    /// `WAIT FOR DIGIT -1`, `EXEC Dial`, and recording can legitimately wait
-    /// for an application-controlled amount of time. A finite deadline covers
+    /// A conservative finite deadline is configured by default. Commands such
+    /// as `WAIT FOR DIGIT -1`, `EXEC Dial`, and recording that legitimately wait
+    /// longer can opt into a larger deadline or explicitly disable it. The deadline covers
     /// both the command write and complete response read. If it expires, the
     /// channel is poisoned because the late response cannot be correlated
     /// safely with another command.
@@ -96,6 +97,14 @@ impl AgiChannel {
         {
             return Err(AgiError::InvalidArgument {
                 details: "raw command must contain exactly one trailing newline".to_owned(),
+            });
+        }
+        if command.len() > command::MAX_COMMAND_BYTES {
+            return Err(AgiError::InvalidArgument {
+                details: format!(
+                    "AGI command exceeds the {}-byte limit",
+                    command::MAX_COMMAND_BYTES
+                ),
             });
         }
 

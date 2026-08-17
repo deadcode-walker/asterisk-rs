@@ -212,7 +212,7 @@ async fn full_event_sequence_from_originate() {
 
     let result = tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            let ev = sub.recv().await.expect("event bus closed");
+            let ev = sub.recv_lossy().await.expect("event bus closed");
             collected_events.push(ev.event_name().to_string());
             match ev.event_name() {
                 "Newchannel" => saw_new_channel = true,
@@ -284,7 +284,7 @@ async fn channel_variables_in_originate() {
 
     let _ = tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            let ev = sub.recv().await.expect("event bus closed");
+            let ev = sub.recv_lossy().await.expect("event bus closed");
             if let AmiEvent::VarSet {
                 variable, value, ..
             } = &ev
@@ -345,7 +345,7 @@ async fn originate_busy_extension() {
     // should see Hangup with busy cause (17)
     let found_busy = tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            let ev = sub.recv().await.expect("event bus closed");
+            let ev = sub.recv_lossy().await.expect("event bus closed");
             if let AmiEvent::Hangup { cause, .. } = &ev {
                 if *cause == 17 {
                     return true;
@@ -396,7 +396,7 @@ async fn originate_congestion_extension() {
     // should see Hangup with congestion cause (34)
     let found = tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            let ev = sub.recv().await.expect("event bus closed");
+            let ev = sub.recv_lossy().await.expect("event bus closed");
             if let AmiEvent::Hangup { cause, .. } = &ev {
                 if *cause == 34 || *cause == 21 {
                     return true;
@@ -478,7 +478,7 @@ async fn hangup_live_channel() {
     // wait for NewChannel to get the channel name
     let channel_name = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let ev = sub.recv().await.expect("event bus closed");
+            let ev = sub.recv_lossy().await.expect("event bus closed");
             if let AmiEvent::NewChannel { channel, .. } = &ev {
                 if channel.contains("998") {
                     return channel.clone();
@@ -500,7 +500,7 @@ async fn hangup_live_channel() {
     // verify we see the Hangup event
     let saw_hangup = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            let ev = sub.recv().await.expect("event bus closed");
+            let ev = sub.recv_lossy().await.expect("event bus closed");
             if let AmiEvent::Hangup { channel, .. } = &ev {
                 if *channel == channel_name {
                     return true;
@@ -544,7 +544,7 @@ async fn setvar_getvar_on_live_channel() {
     // wait for channel to be up
     let channel_name = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let ev = sub.recv().await.expect("event bus closed");
+            let ev = sub.recv_lossy().await.expect("event bus closed");
             if let AmiEvent::NewChannel { channel, .. } = &ev {
                 if channel.contains("998") {
                     return channel.clone();
@@ -855,7 +855,7 @@ async fn originate_application_mode() {
     // wait for hangup confirming the call completed
     let saw_hangup = tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            let ev = sub.recv().await.expect("event bus closed");
+            let ev = sub.recv_lossy().await.expect("event bus closed");
             if ev.event_name() == "Hangup" {
                 return true;
             }
@@ -901,7 +901,7 @@ async fn filtered_event_subscription() {
     let mut events = Vec::new();
     let _ = tokio::time::timeout(Duration::from_secs(10), async {
         for _ in 0..5 {
-            if let Some(ev) = filtered.recv().await {
+            if let Some(ev) = filtered.recv_lossy().await {
                 events.push(ev);
             } else {
                 break;
@@ -966,11 +966,11 @@ async fn multiple_concurrent_clients() {
     let _ = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             tokio::select! {
-                ev = sub1.recv() => {
+                ev = sub1.recv_lossy() => {
                     let ev = ev.expect("sub1 bus closed");
                     if ev.event_name() == "Hangup" { saw1 = true; }
                 }
-                ev = sub2.recv() => {
+                ev = sub2.recv_lossy() => {
                     let ev = ev.expect("sub2 bus closed");
                     if ev.event_name() == "Hangup" { saw2 = true; }
                 }
@@ -1090,7 +1090,7 @@ async fn events_action_toggle() {
         .await
         .expect("originate 2 failed");
 
-    let got_event = tokio::time::timeout(Duration::from_secs(10), sub.recv()).await;
+    let got_event = tokio::time::timeout(Duration::from_secs(10), sub.recv_lossy()).await;
     assert!(
         got_event.is_ok(),
         "should receive events after turning mask back on"
@@ -1169,7 +1169,7 @@ async fn originate_with_account_code() {
     let mut found_account = false;
     let _ = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
-            let ev = sub.recv().await.expect("event bus closed");
+            let ev = sub.recv_lossy().await.expect("event bus closed");
             if let AmiEvent::NewAccountCode { account_code, .. } = &ev {
                 if account_code == "test-account" {
                     found_account = true;

@@ -3,6 +3,17 @@
 use std::fmt;
 use tokio::sync::broadcast;
 
+/// Outcome of receiving from an [`EventSubscription`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EventReceive<E> {
+    /// The next event was received.
+    Event(E),
+    /// The subscriber fell behind and this many events were lost.
+    Lagged(u64),
+    /// The event bus was closed after all buffered events were consumed.
+    Closed,
+}
+
 /// marker trait for events that can flow through the event bus
 pub trait Event: Clone + Send + Sync + fmt::Debug + 'static {}
 
@@ -78,21 +89,31 @@ pub struct EventSubscription<E: Event> {
 }
 
 impl<E: Event> EventSubscription<E> {
-    /// receive the next event, waiting until one is available
-    ///
-    /// returns `None` if the bus is dropped and all buffered events are consumed.
-    /// skips over lagged events (slow consumer) with a tracing warning.
-    pub async fn recv(&mut self) -> Option<E> {
+    /// Receive one event-bus outcome without hiding loss.
+    pub async fn recv_outcome(&mut self) -> EventReceive<E> {
+        match self.receiver.recv().await {
+            Ok(event) => EventReceive::Event(event),
+            Err(broadcast::error::RecvError::Lagged(count)) => EventReceive::Lagged(count),
+            Err(broadcast::error::RecvError::Closed) => EventReceive::Closed,
+        }
+    }
+
+    /// Receive the next available event while explicitly accepting event loss.
+    pub async fn recv_lossy(&mut self) -> Option<E> {
         loop {
-            match self.receiver.recv().await {
-                Ok(event) => return Some(event),
-                Err(broadcast::error::RecvError::Lagged(count)) => {
-                    tracing::warn!(count, "event subscription lagged, dropped events");
-                    continue;
+            match self.recv_outcome().await {
+                EventReceive::Event(event) => return Some(event),
+                EventReceive::Lagged(count) => {
+                    tracing::warn!(count, "lossy event subscription dropped events");
                 }
-                Err(broadcast::error::RecvError::Closed) => return None,
+                EventReceive::Closed => return None,
             }
         }
+    }
+
+    /// Receive one event-bus outcome without hiding loss.
+    pub async fn recv(&mut self) -> EventReceive<E> {
+        self.recv_outcome().await
     }
 
     /// add a filter to this subscription, converting it to a filtered subscription
@@ -114,14 +135,36 @@ pub struct FilteredSubscription<E: Event> {
 }
 
 impl<E: Event> FilteredSubscription<E> {
-    /// receive the next event that matches the predicate
-    pub async fn recv(&mut self) -> Option<E> {
+    /// Receive one filtered outcome without hiding loss.
+    pub async fn recv_outcome(&mut self) -> EventReceive<E> {
         loop {
-            let event = self.inner.recv().await?;
-            if (self.predicate)(&event) {
-                return Some(event);
+            match self.inner.recv_outcome().await {
+                EventReceive::Event(event) if (self.predicate)(&event) => {
+                    return EventReceive::Event(event);
+                }
+                EventReceive::Event(_) => {}
+                EventReceive::Lagged(count) => return EventReceive::Lagged(count),
+                EventReceive::Closed => return EventReceive::Closed,
             }
         }
+    }
+
+    /// Receive the next matching event while explicitly accepting event loss.
+    pub async fn recv_lossy(&mut self) -> Option<E> {
+        loop {
+            match self.recv_outcome().await {
+                EventReceive::Event(event) => return Some(event),
+                EventReceive::Lagged(count) => {
+                    tracing::warn!(count, "lossy filtered subscription dropped events");
+                }
+                EventReceive::Closed => return None,
+            }
+        }
+    }
+
+    /// Receive one filtered outcome without hiding loss.
+    pub async fn recv(&mut self) -> EventReceive<E> {
+        self.recv_outcome().await
     }
 }
 

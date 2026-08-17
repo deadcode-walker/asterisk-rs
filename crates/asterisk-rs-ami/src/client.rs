@@ -285,12 +285,11 @@ impl AmiClientBuilder {
         self
     }
 
-    /// allow plaintext login fallback when MD5 challenge auth fails
+    /// require MD5 challenge authentication instead of plaintext login fallback
     ///
-    /// when `true` (the default), login fails if the server does not
-    /// support challenge-response authentication.  set to `false` only
-    /// for connections over a trusted loopback — plaintext login sends
-    /// the secret in cleartext.
+    /// When `true`, login fails if challenge-response is unavailable. The
+    /// default is `false`; use plaintext fallback only inside a separately
+    /// authenticated TLS boundary because native AMI transport is TCP.
     pub fn require_challenge(mut self, require: bool) -> Self {
         self.require_challenge = require;
         self

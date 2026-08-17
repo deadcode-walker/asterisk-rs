@@ -226,6 +226,289 @@ pub enum AriEvent {
     Unknown,
 }
 
+impl AriEvent {
+    /// Return every channel ID carried by this event.
+    ///
+    /// Multi-party and nested transfer events may return more than one ID. The
+    /// match is intentionally exhaustive so newly modeled events must make an
+    /// explicit choice about channel identity.
+    pub fn channel_ids(&self) -> Vec<&str> {
+        fn push_channel<'a>(ids: &mut Vec<&'a str>, channel: &'a Channel) {
+            ids.push(channel.id.as_str());
+        }
+        fn push_optional_channel<'a>(ids: &mut Vec<&'a str>, channel: &'a Option<Channel>) {
+            if let Some(channel) = channel {
+                push_channel(ids, channel);
+            }
+        }
+        let mut ids = Vec::new();
+        match self {
+            Self::StasisStart {
+                channel: primary,
+                replace_channel,
+                ..
+            } => {
+                push_channel(&mut ids, primary);
+                push_optional_channel(&mut ids, replace_channel);
+            }
+            Self::StasisEnd { channel: value }
+            | Self::ChannelCreated { channel: value }
+            | Self::ChannelDestroyed { channel: value, .. }
+            | Self::ChannelStateChange { channel: value }
+            | Self::ChannelDtmfReceived { channel: value, .. }
+            | Self::ChannelHangupRequest { channel: value }
+            | Self::ChannelCallerId { channel: value, .. }
+            | Self::ChannelConnectedLine { channel: value }
+            | Self::ChannelDialplan { channel: value, .. }
+            | Self::ChannelHold { channel: value, .. }
+            | Self::ChannelUnhold { channel: value }
+            | Self::ChannelTalkingStarted { channel: value }
+            | Self::ChannelTalkingFinished { channel: value, .. }
+            | Self::ChannelToneDetected { channel: value }
+            | Self::ChannelEnteredBridge { channel: value, .. }
+            | Self::ChannelLeftBridge { channel: value, .. }
+            | Self::ApplicationMoveFailed { channel: value, .. } => {
+                push_channel(&mut ids, value);
+            }
+            Self::ChannelVarset { channel: value, .. }
+            | Self::ChannelUserevent { channel: value, .. } => {
+                push_optional_channel(&mut ids, value);
+            }
+            Self::ChannelTransfer {
+                channel: primary,
+                refer_to,
+                referred_by,
+                ..
+            } => {
+                push_channel(&mut ids, primary);
+                if let Some(refer_to) = refer_to {
+                    push_optional_channel(&mut ids, &refer_to.destination_channel);
+                    push_optional_channel(&mut ids, &refer_to.connected_channel);
+                }
+                if let Some(referred_by) = referred_by {
+                    push_channel(&mut ids, &referred_by.source_channel);
+                    push_optional_channel(&mut ids, &referred_by.connected_channel);
+                }
+            }
+            Self::Dial {
+                peer,
+                caller,
+                forwarded,
+                ..
+            } => {
+                push_channel(&mut ids, peer);
+                push_optional_channel(&mut ids, caller);
+                push_optional_channel(&mut ids, forwarded);
+            }
+            Self::BridgeAttendedTransfer {
+                transferer_first_leg,
+                transferer_second_leg,
+                transferee,
+                transfer_target,
+                replace_channel,
+                destination_link_first_leg,
+                destination_link_second_leg,
+                destination_threeway_channel,
+                ..
+            } => {
+                push_channel(&mut ids, transferer_first_leg);
+                push_channel(&mut ids, transferer_second_leg);
+                for value in [
+                    transferee,
+                    transfer_target,
+                    replace_channel,
+                    destination_link_first_leg,
+                    destination_link_second_leg,
+                    destination_threeway_channel,
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    push_channel(&mut ids, value);
+                }
+            }
+            Self::BridgeBlindTransfer {
+                channel: primary,
+                transferee,
+                replace_channel,
+                ..
+            } => {
+                push_channel(&mut ids, primary);
+                push_optional_channel(&mut ids, transferee);
+                push_optional_channel(&mut ids, replace_channel);
+            }
+            Self::ContactStatusChange { endpoint, .. }
+            | Self::EndpointStateChange { endpoint }
+            | Self::PeerStatusChange { endpoint, .. } => {
+                ids.extend(endpoint.channel_ids.iter().map(String::as_str));
+            }
+            Self::BridgeCreated { .. }
+            | Self::BridgeDestroyed { .. }
+            | Self::PlaybackStarted { .. }
+            | Self::PlaybackFinished { .. }
+            | Self::RecordingStarted { .. }
+            | Self::RecordingFinished { .. }
+            | Self::BridgeMerged { .. }
+            | Self::BridgeVideoSourceChanged { .. }
+            | Self::DeviceStateChanged { .. }
+            | Self::PlaybackContinuing { .. }
+            | Self::RecordingFailed { .. }
+            | Self::ApplicationRegistered {}
+            | Self::ApplicationReplaced {}
+            | Self::ApplicationUnregistered {}
+            | Self::TextMessageReceived { .. }
+            | Self::RESTResponse { .. }
+            | Self::Unknown => {}
+        }
+        ids
+    }
+
+    /// Return every bridge ID carried by this event, including optional and
+    /// merged-from bridge identities.
+    pub fn bridge_ids(&self) -> Vec<&str> {
+        fn push_bridge<'a>(ids: &mut Vec<&'a str>, bridge: &'a Bridge) {
+            ids.push(bridge.id.as_str());
+        }
+        fn push_optional_bridge<'a>(ids: &mut Vec<&'a str>, bridge: &'a Option<Bridge>) {
+            if let Some(bridge) = bridge {
+                push_bridge(ids, bridge);
+            }
+        }
+        let mut ids = Vec::new();
+        match self {
+            Self::BridgeCreated { bridge: value }
+            | Self::BridgeDestroyed { bridge: value }
+            | Self::ChannelEnteredBridge { bridge: value, .. }
+            | Self::ChannelLeftBridge { bridge: value, .. }
+            | Self::BridgeVideoSourceChanged { bridge: value, .. } => {
+                push_bridge(&mut ids, value);
+            }
+            Self::ChannelUserevent { bridge: value, .. }
+            | Self::BridgeBlindTransfer { bridge: value, .. } => {
+                push_optional_bridge(&mut ids, value);
+            }
+            Self::ChannelTransfer {
+                refer_to,
+                referred_by,
+                ..
+            } => {
+                if let Some(refer_to) = refer_to {
+                    push_optional_bridge(&mut ids, &refer_to.bridge);
+                }
+                if let Some(referred_by) = referred_by {
+                    push_optional_bridge(&mut ids, &referred_by.bridge);
+                }
+            }
+            Self::BridgeAttendedTransfer {
+                transferer_first_leg_bridge,
+                transferer_second_leg_bridge,
+                destination_bridge,
+                destination_threeway_bridge,
+                ..
+            } => {
+                push_optional_bridge(&mut ids, transferer_first_leg_bridge);
+                push_optional_bridge(&mut ids, transferer_second_leg_bridge);
+                if let Some(value) = destination_bridge {
+                    ids.push(value.as_str());
+                }
+                push_optional_bridge(&mut ids, destination_threeway_bridge);
+            }
+            Self::BridgeMerged {
+                bridge: value,
+                bridge_from,
+            } => {
+                push_bridge(&mut ids, value);
+                push_bridge(&mut ids, bridge_from);
+            }
+            Self::StasisStart { .. }
+            | Self::StasisEnd { .. }
+            | Self::ChannelCreated { .. }
+            | Self::ChannelDestroyed { .. }
+            | Self::ChannelStateChange { .. }
+            | Self::ChannelDtmfReceived { .. }
+            | Self::ChannelHangupRequest { .. }
+            | Self::ChannelVarset { .. }
+            | Self::PlaybackStarted { .. }
+            | Self::PlaybackFinished { .. }
+            | Self::RecordingStarted { .. }
+            | Self::RecordingFinished { .. }
+            | Self::ChannelCallerId { .. }
+            | Self::ChannelConnectedLine { .. }
+            | Self::ChannelDialplan { .. }
+            | Self::ChannelHold { .. }
+            | Self::ChannelUnhold { .. }
+            | Self::ChannelTalkingStarted { .. }
+            | Self::ChannelTalkingFinished { .. }
+            | Self::ChannelToneDetected { .. }
+            | Self::Dial { .. }
+            | Self::ContactStatusChange { .. }
+            | Self::DeviceStateChanged { .. }
+            | Self::EndpointStateChange { .. }
+            | Self::PeerStatusChange { .. }
+            | Self::PlaybackContinuing { .. }
+            | Self::RecordingFailed { .. }
+            | Self::ApplicationMoveFailed { .. }
+            | Self::ApplicationRegistered {}
+            | Self::ApplicationReplaced {}
+            | Self::ApplicationUnregistered {}
+            | Self::TextMessageReceived { .. }
+            | Self::RESTResponse { .. }
+            | Self::Unknown => {}
+        }
+        ids
+    }
+
+    /// Return every playback ID carried by this event.
+    pub fn playback_ids(&self) -> Vec<&str> {
+        match self {
+            Self::PlaybackStarted { playback }
+            | Self::PlaybackFinished { playback }
+            | Self::PlaybackContinuing { playback } => vec![playback.id.as_str()],
+            Self::StasisStart { .. }
+            | Self::StasisEnd { .. }
+            | Self::ChannelCreated { .. }
+            | Self::ChannelDestroyed { .. }
+            | Self::ChannelStateChange { .. }
+            | Self::ChannelDtmfReceived { .. }
+            | Self::ChannelHangupRequest { .. }
+            | Self::ChannelVarset { .. }
+            | Self::BridgeCreated { .. }
+            | Self::BridgeDestroyed { .. }
+            | Self::ChannelEnteredBridge { .. }
+            | Self::ChannelLeftBridge { .. }
+            | Self::RecordingStarted { .. }
+            | Self::RecordingFinished { .. }
+            | Self::ChannelCallerId { .. }
+            | Self::ChannelConnectedLine { .. }
+            | Self::ChannelDialplan { .. }
+            | Self::ChannelHold { .. }
+            | Self::ChannelUnhold { .. }
+            | Self::ChannelTalkingStarted { .. }
+            | Self::ChannelTalkingFinished { .. }
+            | Self::ChannelToneDetected { .. }
+            | Self::ChannelTransfer { .. }
+            | Self::ChannelUserevent { .. }
+            | Self::Dial { .. }
+            | Self::BridgeAttendedTransfer { .. }
+            | Self::BridgeBlindTransfer { .. }
+            | Self::BridgeMerged { .. }
+            | Self::BridgeVideoSourceChanged { .. }
+            | Self::ContactStatusChange { .. }
+            | Self::DeviceStateChanged { .. }
+            | Self::EndpointStateChange { .. }
+            | Self::PeerStatusChange { .. }
+            | Self::RecordingFailed { .. }
+            | Self::ApplicationMoveFailed { .. }
+            | Self::ApplicationRegistered {}
+            | Self::ApplicationReplaced {}
+            | Self::ApplicationUnregistered {}
+            | Self::TextMessageReceived { .. }
+            | Self::RESTResponse { .. }
+            | Self::Unknown => Vec::new(),
+        }
+    }
+}
+
 /// an unrecognized ARI event retained for forward-compatible handling
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[non_exhaustive]

@@ -404,10 +404,14 @@ pub(crate) struct HttpTransport {
 
 impl HttpTransport {
     pub(crate) fn new(config: &AriConfig, event_bus: EventBus<AriMessage>) -> Result<Self> {
-        let client = reqwest::Client::builder()
+        let mut client_builder = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .timeout(config.request_timeout())
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::none());
+        for root in &config.tls_trust.reqwest_roots {
+            client_builder = client_builder.add_root_certificate(root.clone());
+        }
+        let client = client_builder
             .build()
             .map_err(|error| AriError::Http(HttpError::new(error)))?;
 
@@ -416,6 +420,7 @@ impl HttpTransport {
             event_bus,
             config.reconnect_policy().clone(),
             config.max_websocket_message_bytes(),
+            &config.tls_trust.rustls_roots,
         )?;
 
         Ok(Self {

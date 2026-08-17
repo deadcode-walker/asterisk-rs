@@ -1309,6 +1309,22 @@ pub enum AmiEvent {
 }
 
 impl AmiEvent {
+    /// Get the AMI ActionID when this event is correlated to an action.
+    pub fn action_id(&self) -> Option<&str> {
+        match self {
+            Self::OriginateResponse { action_id, .. } => action_id.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Get the Asterisk Linkedid when this event establishes a call lineage.
+    pub fn linked_id(&self) -> Option<&str> {
+        match self {
+            Self::NewChannel { linked_id, .. } => Some(linked_id),
+            _ => None,
+        }
+    }
+
     /// parse an AMI event from a raw message
     ///
     /// returns `None` if the message is not an event
