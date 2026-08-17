@@ -140,6 +140,10 @@ exchange, and ARI REST/WebSocket resource lifecycle.
 All five published crates move to 0.8.0 together and require 0.8 protocol/core siblings. This is an
 intentional incompatible baseline rather than a claim that the 0.7 API is preserved:
 
+Release `v0.8.0` was published on 2026-08-17 from exact green commit
+`f1cb2a38141442a2324546559f62cc768ef3d8cb`; all five crates use crates.io trusted publishing from
+the protected GitHub `release` environment.
+
 - `asterisk-rs-ari` replaces the public `AriError::Http(reqwest::Error)` payload with the crate-owned
   `HttpError` wrapper, removing Reqwest's concrete error type from the public API.
 - Callers of `MediaChannel::from_accepted` must move their public tokio-tungstenite/tungstenite stream

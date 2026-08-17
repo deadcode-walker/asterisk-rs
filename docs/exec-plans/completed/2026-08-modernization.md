@@ -464,7 +464,7 @@ Compose journeys on 2026-08-17: smoke passed 4/4 and full passed 73/73.
 - [x] Docs run only after successful exact-SHA main CI; build under contents:read and grant Pages/OIDC
   only to deploy.
 - [x] Release code runs only after successful exact-SHA main CI, checks out that immutable candidate,
-  targets the release environment, uses short-lived GitHub App tokens and crates.io trusted
+  targets the release environment, uses protected GitHub release credentials and crates.io trusted
   publishing, serializes release workflow calls, and uses separate publish/release-PR jobs so a later
   main push cannot cancel an already CI-proven candidate. Retain
   release-plz with corrected commit filters and independent package versions.
@@ -478,9 +478,10 @@ Compose journeys on 2026-08-17: smoke passed 4/4 and full passed 73/73.
   Discussions link.
 - [x] Replace the 14 fragile required contexts with only the GitHub-Actions-scoped `CI` aggregate after
   the new workflow is green; keep strict/up-to-date or merge-queue behavior and conversation resolution.
-- [x] Add the protected release environment and active v* tag ruleset. The repository has no installed
-  release App or App credentials, so the ruleset currently permits only emergency admin bypass and
-  release automation remains disabled; an App bypass must be added before automation is enabled.
+- [x] Add the protected release environment and active v* tag ruleset. The environment requires owner
+  review, the ruleset permits only emergency admin bypass, and each published crate trusts the
+  repository's `release.yml` workflow in that environment. Automatic release-PR processing remains
+  disabled until a dedicated release App replaces the maintainer credential used for the 0.8 release.
 - [x] Configure Dependabot: Cargo patch/minor groups, majors separate, weekly Actions, Docker updates,
   and no unproved auto-merge.
 - [x] Run fresh Rust, security, performance, simplification, test, dependency, and CI exact-diff review.
@@ -551,10 +552,13 @@ selected Actions, has Dependabot security updates/private reporting/Discussions 
 release environment with owner review and main-only deployment, and protects `v*` creation/update/
 deletion/non-fast-forward changes with emergency-admin-only bypass. Main requires the strict,
 GitHub-Actions-scoped aggregate `CI` check plus conversation resolution instead of 14 stale contexts.
-The custom release App is not installed and its secrets do not exist, so release automation remains
-disabled; this is a secure fail-closed state, and the App must be added to the tag ruleset before any
-future enablement. Issues 57/60 and PRs 55/59 are closed with exact-SHA evidence; the repository has
-no remaining open issue or pull request.
+The custom release App is not installed, so automatic release-PR processing remains disabled until
+that dedicated identity can replace the protected maintainer credential. The coordinated manual
+release used crates.io OIDC trusted publishing from the protected `release` environment: all five
+crates published as non-yanked 0.8.0 packages, and GitHub release `v0.8.0` targets exact green commit
+`f1cb2a38141442a2324546559f62cc768ef3d8cb` (release run 31992480920, attempt 2). Issues 57/60 and
+PRs 55/59 are closed with exact-SHA evidence; the repository has no remaining open issue or pull
+request.
 
 The final fresh review found that the live-runner signal traps converted cancellation into success
 and invoked Compose cleanup twice. The runner now maps SIGINT/SIGTERM to 130/143, reserves cleanup
