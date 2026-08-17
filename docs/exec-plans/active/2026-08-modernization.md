@@ -513,12 +513,13 @@ check. No issue, PR, package, tag, or release is deleted merely to make the dash
 
 ## Interfaces and dependencies
 
-This harness correction changes repository guidance and `scripts/check_harness.py`; it does not
-change Rust source, public APIs, Cargo manifests, Cargo.lock, runtime behavior, or the supported
-platform matrix. `AGENTS.md` routes execution, `ARCHITECTURE.md` owns useful paths and dependency
-authority, `docs/README.md` indexes canonical knowledge, `docs/PLANS.md` owns recovery semantics,
-the active plan owns current state, and `just harness` is the mechanical boundary. Cargo remains the
-build/dependency owner and just remains its thin command facade.
+This modernization coordinates the 0.8 public boundary across the core, AMI, AGI, ARI, and umbrella
+crates; Cargo manifests and `Cargo.lock` remain the sole dependency graph, and downstream/semver
+fixtures own compatibility evidence. Tokio protocol actors own bounded I/O, correlation, lifecycle,
+and credential state. The pinned Asterisk JSON/reference inventory owns modeled protocol coverage;
+the digest- and checksum-pinned Asterisk 22 Compose fixture owns live claims. `AGENTS.md`,
+`ARCHITECTURE.md`, `docs/README.md`, and `docs/PLANS.md` route repository knowledge; the justfile owns
+public verification commands; GitHub workflow files own CI/docs/release execution policy.
 
 ## Outcomes and retrospective
 
@@ -541,6 +542,11 @@ and exact container peer; attach mode requires both explicitly, and the listener
 The final secret-lifetime review found that both ARI WebSocket actors immediately converted their
 zeroizing credential URLs back into ordinary long-lived strings. Both actors now own
 `Zeroizing<String>` through shutdown and borrow it only for parsing, redacted logging, and connects.
+The next fresh review found that externally managed attach mode sent Basic ARI credentials to an
+arbitrary cleartext host during preflight and that this interface section still described an obsolete
+harness-only correction. Attach preflight now rejects anything except explicit loopback AMI/ARI IPs
+before constructing authorization, the runner checker proves the rejection, and this section records
+the actual coordinated 0.8 interface and evidence owners.
 
 Accepted bounded tradeoff: AMI outbound frames are prevalidated before actor admission and then
 validated and encoded again at the socket boundary. The duplicate work is bounded by the 64 KiB

@@ -88,12 +88,26 @@ export ASTERISK_TEST_RUN_ID="${ASTERISK_TEST_RUN_ID:-run-${GITHUB_RUN_ID:-local}
 # Refuse mutation before both the durable marker and declared branch match.
 python3 - <<'PY'
 import base64
+import ipaddress
 import json
 import os
 import urllib.parse
 import urllib.request
 
-host = os.environ["ASTERISK_ARI_HOST"]
+def require_loopback(name):
+    host = os.environ[name]
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError as error:
+        raise SystemExit(f"attach-mode {name} must be an explicit loopback IP address") from error
+    if not address.is_loopback:
+        raise SystemExit(
+            f"attach-mode cleartext {name} is restricted to an explicit loopback IP address"
+        )
+    return host
+
+require_loopback("ASTERISK_AMI_HOST")
+host = require_loopback("ASTERISK_ARI_HOST")
 port = os.environ["ASTERISK_ARI_PORT"]
 user = os.environ["ASTERISK_ARI_USERNAME"]
 password = os.environ["ASTERISK_ARI_PASSWORD"]

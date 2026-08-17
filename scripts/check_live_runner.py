@@ -86,11 +86,70 @@ def check_signal(signum: signal.Signals, expected_status: int) -> None:
             raise AssertionError(f"expected exactly one Compose cleanup, observed {recorded!r}")
 
 
+def check_remote_attach_rejected() -> None:
+    with tempfile.TemporaryDirectory(prefix="asterisk-rs-live-attach-") as directory:
+        temp = Path(directory)
+        cargo_started = temp / "cargo-started"
+        write_executable(temp / "docker", "#!/usr/bin/env bash\nexit 0\n")
+        write_executable(
+            temp / "cargo",
+            "#!/usr/bin/env bash\n"
+            ": > \"$LIVE_RUNNER_STARTED\"\n"
+            "exit 0\n",
+        )
+
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "PATH": f"{temp}:{environment['PATH']}",
+                "LIVE_RUNNER_STARTED": str(cargo_started),
+                "ASTERISK_TEST_ALLOW_MUTATION": "1",
+                "ASTERISK_TEST_INSTANCE_MARKER": "owned-fixture",
+                "ASTERISK_TEST_BRANCH": "22",
+                "ASTERISK_AMI_HOST": "127.0.0.1",
+                "ASTERISK_AMI_PORT": "5038",
+                "ASTERISK_AMI_USERNAME": "user",
+                "ASTERISK_AMI_SECRET": "secret",
+                "ASTERISK_ARI_HOST": "127.0.0.1",
+                "ASTERISK_ARI_PORT": "8088",
+                "ASTERISK_ARI_USERNAME": "user",
+                "ASTERISK_ARI_PASSWORD": "secret",
+                "ASTERISK_ARI_APP": "app",
+                "ASTERISK_TEST_MEDIA_BIND": "127.0.0.1",
+                "ASTERISK_TEST_MEDIA_PEER": "127.0.0.1",
+            }
+        )
+        for host_name in ("ASTERISK_AMI_HOST", "ASTERISK_ARI_HOST"):
+            environment[host_name] = "192.0.2.10"
+            result = subprocess.run(
+                [str(ROOT / "scripts/run-live-tests.sh"), "smoke", "attach"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            environment[host_name] = "127.0.0.1"
+            if result.returncode == 0:
+                raise AssertionError(f"remote cleartext {host_name} attach unexpectedly succeeded")
+            if "restricted to an explicit loopback IP address" not in result.stderr:
+                raise AssertionError(f"unexpected remote-attach failure: {result.stderr!r}")
+            if cargo_started.exists():
+                raise AssertionError(
+                    "remote attach reached Cargo after credential preflight rejection"
+                )
+
+
 
 def main() -> None:
     check_signal(signal.SIGINT, 130)
     check_signal(signal.SIGTERM, 143)
-    print("live runner preserves signal failures and performs cleanup exactly once")
+    check_remote_attach_rejected()
+    print(
+        "live runner preserves signal failures, performs cleanup exactly once, "
+        "and rejects remote cleartext attach"
+    )
 
 
 if __name__ == "__main__":

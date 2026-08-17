@@ -39,7 +39,9 @@ the same Asterisk instance.
   durable instance marker, run ID, AMI/ARI endpoints and credentials, and ARI application. The
   preflight reads the marker and Asterisk version before test mutation. External fixtures also name
   the exact host bind address and expected Asterisk peer IP for the media-schema listener; the
-  repository Compose runner derives both from the selected container.
+  repository Compose runner derives both from the selected container. Because this harness uses
+  cleartext AMI/ARI, attach mode accepts only explicit loopback AMI and ARI IPs; expose a remote fixture
+  through a locally authenticated TLS tunnel rather than sending repository credentials remotely.
 - Mutable smoke resources use the run ID in their Asterisk names. Exhaustive live tests remain
   serial, use the same typed configuration, and must clean up resources rather than turn missing
   fixture capabilities into warning-based passes.
