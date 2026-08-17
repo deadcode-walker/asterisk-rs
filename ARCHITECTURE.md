@@ -53,7 +53,7 @@ enforces peer-dependency, unsafe-lint, instruction, plan, link, and external-tes
 Untrusted wire data is parsed at codec/request/serde boundaries before effects. Protocol APIs own
 their errors. Credentials remain redacted and zeroized where stored. Existing bounded lifecycle
 controls are owned by their protocol actors; unresolved cross-protocol gaps remain explicit in the
-active modernization plan. Rustdoc owns the exhaustive public API inventory. The mdBook explains
+completed modernization plan. Rustdoc owns the exhaustive public API inventory. The mdBook explains
 behavior and links to rustdoc; do not create a competing handwritten or regex-generated table.
 
 ## Toolchain and evidence authority

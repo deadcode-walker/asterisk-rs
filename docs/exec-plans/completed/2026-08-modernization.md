@@ -210,6 +210,12 @@ is either a green local harness commit or a concrete authority/external-state bl
   from the checksum-verified matching Asterisk 22.10.1 source and installs a deterministic voicemail
   mailbox. On that exact fixture, `just live-smoke-ci` passed 4/4 and `just live-full-ci` passed
   73/73, closing the local live matrix.
+- [x] 2026-08-17: pushed final implementation SHA `88d7a94d86da27dafa6b1f460abe2244e13b15ef`.
+  GitHub run [31991200559](https://github.com/deadcode-walker/asterisk-rs/actions/runs/31991200559)
+  passed aggregate CI, Linux Quality, Rust 1.86 MSRV, semver, coverage, macOS, Windows, four live
+  smoke tests, 73 live full tests, documentation build, and Pages deployment. Release automation
+  remained deliberately disabled/skipped. Issues 57 and 60 were closed with exact-SHA evidence;
+  already-closed PRs 55 and 59 received supersession comments. No open issue or pull request remains.
 
 ## Surprises and discoveries
 
@@ -462,25 +468,26 @@ Compose journeys on 2026-08-17: smoke passed 4/4 and full passed 73/73.
   publishing, serializes release workflow calls, and uses separate publish/release-PR jobs so a later
   main push cannot cancel an already CI-proven candidate. Retain
   release-plz with corrected commit filters and independent package versions.
-- [ ] Configure and verify the external protected release environment and `v*` tag ruleset before
+- [x] Configure and verify the external protected release environment and `v*` tag ruleset before
   enabling release automation.
 
 ### Slice 8: repository settings and external closure
 
-- [ ] Default GITHUB_TOKEN to read-only, disable Actions PR approval, enforce full-SHA/action allowlist,
+- [x] Default GITHUB_TOKEN to read-only, disable Actions PR approval, enforce full-SHA/action allowlist,
   enable Dependabot security updates and private vulnerability reporting, and fix the disabled
   Discussions link.
-- [ ] Replace the 14 fragile required contexts with only the GitHub-Actions-scoped `CI` aggregate after
+- [x] Replace the 14 fragile required contexts with only the GitHub-Actions-scoped `CI` aggregate after
   the new workflow is green; keep strict/up-to-date or merge-queue behavior and conversation resolution.
-- [ ] Add the protected release environment and v* tag ruleset with only the release App plus emergency
-  admin bypass.
-- [ ] Configure Dependabot: Cargo patch/minor groups, majors separate, weekly Actions, Docker updates,
+- [x] Add the protected release environment and active v* tag ruleset. The repository has no installed
+  release App or App credentials, so the ruleset currently permits only emergency admin bypass and
+  release automation remains disabled; an App bypass must be added before automation is enabled.
+- [x] Configure Dependabot: Cargo patch/minor groups, majors separate, weekly Actions, Docker updates,
   and no unproved auto-merge.
-- [ ] Run fresh Rust, security, performance, simplification, test, dependency, and CI exact-diff review.
+- [x] Run fresh Rust, security, performance, simplification, test, dependency, and CI exact-diff review.
   Resolve every valid critical through informational finding or record a concrete evidence-based reject.
-- [ ] Commit only coherent green batches; push origin; monitor every GitHub check; fix forward and repeat
+- [x] Commit only coherent green batches; push origin; monitor every GitHub check; fix forward and repeat
   review until the exact pushed SHA is green.
-- [ ] Close issue 60 only with its pushed wire-format proof; close issue 57 only with patched lock and
+- [x] Close issue 60 only with its pushed wire-format proof; close issue 57 only with patched lock and
   security evidence; close PRs 55 and 59 only after commenting that the pushed modernization supersedes
   them. Close any additional issue/PR only with equivalent evidence.
 
@@ -531,14 +538,23 @@ public verification commands; GitHub workflow files own CI/docs/release executio
 
 ## Outcomes and retrospective
 
-Local implementation is complete through Slice 6 and the repository-owned live portion of Slice 7.
-The current candidate passes 951 unit tests, 288 mock tests, four smoke tests, and 73 serial
-live-Asterisk tests, plus exact Rust 1.86, strict Clippy, generated documentation, cargo-deny,
-cargo-shear, actionlint, zizmor, and coordinated 0.8 semver checks. Fresh reviews found and drove
-repairs for protocol loss, lifecycle, disclosure, test-observability, documentation-ratchet, live
-cleanup, and fixture reproducibility defects. The remaining work is external: push and monitor the
-exact candidate, verify cross-platform GitHub evidence, configure repository/release protections,
-close superseded records with links, and then finalize this retrospective and move the plan.
+The modernization is complete. Final implementation SHA `88d7a94d86da27dafa6b1f460abe2244e13b15ef`
+passed the complete exact-SHA GitHub matrix in run 31991200559, including aggregate CI, Windows,
+macOS, Quality, coverage, MSRV, semver, both isolated live-Asterisk suites, docs build, and Pages
+deployment. Local proof passed 951 unit tests, 288 mock tests, four smoke tests, and 73 serial live
+tests plus strict Clippy, cargo-deny, cargo-shear, actionlint, zizmor, documentation, harness, and
+compatibility checks. Fresh reviews drove repairs for protocol loss, lifecycle, disclosure,
+test-observability, documentation-ratchet, live cleanup, fixture reproducibility, and task ownership.
+
+GitHub now defaults workflow tokens to read-only, disallows Actions PR approval, requires full-SHA
+selected Actions, has Dependabot security updates/private reporting/Discussions enabled, protects the
+release environment with owner review and main-only deployment, and protects `v*` creation/update/
+deletion/non-fast-forward changes with emergency-admin-only bypass. Main requires the strict,
+GitHub-Actions-scoped aggregate `CI` check plus conversation resolution instead of 14 stale contexts.
+The custom release App is not installed and its secrets do not exist, so release automation remains
+disabled; this is a secure fail-closed state, and the App must be added to the tag ruleset before any
+future enablement. Issues 57/60 and PRs 55/59 are closed with exact-SHA evidence; the repository has
+no remaining open issue or pull request.
 
 The final fresh review found that the live-runner signal traps converted cancellation into success
 and invoked Compose cleanup twice. The runner now maps SIGINT/SIGTERM to 130/143, reserves cleanup
@@ -590,6 +606,8 @@ made their exact H2 structures mechanical. The main agent inspected the exact di
 passed; the owner explicitly waived delegates and reviewers for this correction. This documentation
 and checker change did not require new live-Asterisk evidence and made no external change.
 
-Complete the retrospective only after the pushed candidate and external records are settled. Record
-reviewer yields, late defects, duplicated work, and harness changes here, then move this file to
-`completed/`.
+Reusable lessons: cold hosted runners expose timing and ANSI assumptions that warm local caches do
+not; fixture teardown must own and join every task without depending on TLS close alerts; aggregate
+checks make branch protection durable; and live claims stay trustworthy only when the repository owns
+the exact fixture and cleanup. The owner explicitly waived another reviewer after the final narrow
+Windows fixture-deadline adjustment and directed immediate CI; the exact hosted matrix then proved it.

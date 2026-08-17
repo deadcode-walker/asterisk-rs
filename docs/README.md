@@ -24,7 +24,7 @@ authority, owner, status, and freshness trigger.
 | [`RELIABILITY.md`](RELIABILITY.md) | failure, bounds, recovery, and shutdown model | protocol maintainers | active | lifecycle or concurrency behavior changes |
 | [`SECURITY.md`](SECURITY.md) | code, dependency, automation, and evidence trust boundaries | security maintainer | active | threat, dependency, workflow, or authority boundaries change |
 | [`references/index.md`](references/index.md) | pinned external knowledge required offline or repeatedly | maintainers | active | upstream contract or pinned reference changes |
-| [`exec-plans/active/2026-08-modernization.md`](exec-plans/active/2026-08-modernization.md) | current modernization objective, authority, exact state, evidence, risks, and next action | plan owner | active | every material stopping point or context boundary |
+| [`exec-plans/completed/2026-08-modernization.md`](exec-plans/completed/2026-08-modernization.md) | completed modernization decisions, evidence, and retrospective | plan owner | completed | immutable historical record |
 | [`exec-plans/tech-debt-tracker.md`](exec-plans/tech-debt-tracker.md) | accepted deferred debt with owner and reconsideration trigger | maintainers | active | debt is accepted, resolved, or reclassified |
 | [`../SECURITY.md`](../SECURITY.md) | public vulnerability-reporting policy | security maintainer | public | reporting channel or support policy changes |
 | `crates/*/CHANGELOG.md` | released package history generated and updated by release-plz | release maintainer | release output | release PR generation or correction |

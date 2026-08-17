@@ -14,5 +14,5 @@ evidence, not test volume.
 | Supply chain | B+ | Cargo.lock, cargo-deny, advisory workflow, rustls, no unsafe | immutable Actions pins and current lockfile required |
 | Release operations | B | release-plz configuration and consolidated release ownership | publication remains externally credentialed and cannot be fully proved locally |
 
-The active modernization plan owns current gaps. Resolved items are removed rather than accumulated
+The completed modernization plan owns its historical gaps. Resolved items are removed rather than accumulated
 as a permanent wish list.

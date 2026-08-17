@@ -684,12 +684,12 @@ def main() -> int:
     active_plans = (
         sorted(active_directory.glob("*.md")) if active_directory.is_dir() else []
     )
-    if len(active_plans) != 1:
+    if len(active_plans) > 1:
         errors.append(
-            "expected exactly one active ExecPlan; found "
+            "expected at most one active ExecPlan; found "
             f"{len(active_plans)} under docs/exec-plans/active"
         )
-    else:
+    elif active_plans:
         active_relative = active_plans[0].relative_to(ROOT).as_posix()
         if knowledge_index is not None and active_relative not in index_targets:
             errors.append(
