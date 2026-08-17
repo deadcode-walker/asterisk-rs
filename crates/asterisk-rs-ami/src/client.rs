@@ -25,7 +25,6 @@ const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct AmiClient {
     connection: Arc<ConnectionManager>,
     event_bus: EventBus<AmiEvent>,
-    credentials: Credentials,
     timeout: Duration,
 }
 
@@ -206,7 +205,6 @@ impl std::fmt::Debug for AmiClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AmiClient")
             .field("state", &self.connection.state())
-            .field("credentials", &self.credentials)
             .finish()
     }
 }
@@ -352,7 +350,7 @@ impl AmiClientBuilder {
 
         let (connection, startup_rx) = ConnectionManager::spawn(
             address,
-            credentials.clone(),
+            credentials,
             event_bus.clone(),
             self.reconnect_policy,
             self.ping_interval,
@@ -375,7 +373,6 @@ impl AmiClientBuilder {
         Ok(AmiClient {
             connection: Arc::new(connection),
             event_bus,
-            credentials,
             timeout: self.timeout,
         })
     }

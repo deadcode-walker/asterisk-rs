@@ -1,8 +1,95 @@
 //! typed AMI event types
 
-use crate::codec::RawAmiMessage;
-use serde::Serialize;
+use crate::codec::{REDACTED_HEADER_VALUE, RawAmiMessage, redacted_header_value};
+use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
 use std::collections::HashMap;
+use std::ops::Deref;
+use zeroize::Zeroizing;
+
+/// A protocol value that applications may explicitly inspect but which is
+/// redacted from `Debug` and serialization output.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SensitiveValue(Zeroizing<String>);
+
+impl SensitiveValue {
+    /// Expose the sensitive plaintext value to code that explicitly needs it.
+    pub fn expose_secret(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for SensitiveValue {
+    fn from(value: String) -> Self {
+        Self(Zeroizing::new(value))
+    }
+}
+
+impl std::fmt::Debug for SensitiveValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
+
+impl Serialize for SensitiveValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(REDACTED_HEADER_VALUE)
+    }
+}
+
+/// AMI headers retained for explicit application access while redacting
+/// credential-like values from `Debug` and serialization output.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct SensitiveHeaders(HashMap<String, String>);
+
+impl SensitiveHeaders {
+    /// Consume the wrapper and return the unredacted header map.
+    pub fn into_inner(self) -> HashMap<String, String> {
+        self.0
+    }
+}
+
+impl From<HashMap<String, String>> for SensitiveHeaders {
+    fn from(headers: HashMap<String, String>) -> Self {
+        Self(headers)
+    }
+}
+
+impl Deref for SensitiveHeaders {
+    type Target = HashMap<String, String>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for SensitiveHeaders {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map()
+            .entries(
+                self.0
+                    .iter()
+                    .map(|(key, value)| (key, redacted_header_value(key, value))),
+            )
+            .finish()
+    }
+}
+
+impl Serialize for SensitiveHeaders {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (key, value) in &self.0 {
+            map.serialize_entry(key, redacted_header_value(key, value))?;
+        }
+        map.end()
+    }
+}
 
 /// all known AMI event types
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -208,7 +295,7 @@ pub enum AmiEvent {
         channel: Option<String>,
         unique_id: Option<String>,
         user_event: String,
-        headers: HashMap<String, String>,
+        headers: SensitiveHeaders,
     },
 
     // ── transfer ──
@@ -728,7 +815,7 @@ pub enum AmiEvent {
     VoicemailPasswordChange {
         context: String,
         mailbox: String,
-        new_password: String,
+        new_password: SensitiveValue,
     },
 
     // ── rtcp ──
@@ -1304,7 +1391,7 @@ pub enum AmiEvent {
     /// unrecognized event — carries all raw headers
     Unknown {
         event_name: String,
-        headers: HashMap<String, String>,
+        headers: SensitiveHeaders,
     },
 }
 
@@ -1338,7 +1425,7 @@ impl AmiEvent {
                     field: $field.to_string(),
                     value: raw
                         .get($field)
-                        .map(|value| redact_header_value($field, value)),
+                        .map(|value| redacted_header_value($field, value).to_owned()),
                     headers: redacted_headers(raw),
                 })
             };
@@ -1520,7 +1607,7 @@ impl AmiEvent {
                 channel: raw.get("Channel").map(|s| s.to_string()),
                 unique_id: raw.get("Uniqueid").map(|s| s.to_string()),
                 user_event: required_string!("UserEvent"),
-                headers: raw.to_map(),
+                headers: raw.to_map().into(),
             },
 
             // transfer
@@ -1944,7 +2031,7 @@ impl AmiEvent {
             "VoicemailPasswordChange" => Self::VoicemailPasswordChange {
                 context: required_string!("Context"),
                 mailbox: required_string!("Mailbox"),
-                new_password: required_string!("NewPassword"),
+                new_password: required_string!("NewPassword").into(),
             },
 
             // rtcp
@@ -2410,7 +2497,7 @@ impl AmiEvent {
 
             _ => Self::Unknown {
                 event_name: event_name.to_string(),
-                headers: raw.to_map(),
+                headers: raw.to_map().into(),
             },
         };
 
@@ -2628,11 +2715,12 @@ impl AmiEvent {
             | Self::EndpointListComplete { .. }
             | Self::MWIGetComplete { .. }
             | Self::FAXSessionsComplete { .. } => true,
-            Self::Malformed { headers, .. } | Self::Unknown { headers, .. } => {
-                headers.iter().any(|(key, value)| {
-                    key.eq_ignore_ascii_case("EventList") && value.eq_ignore_ascii_case("complete")
-                })
-            }
+            Self::Malformed { headers, .. } => headers.iter().any(|(key, value)| {
+                key.eq_ignore_ascii_case("EventList") && value.eq_ignore_ascii_case("complete")
+            }),
+            Self::Unknown { headers, .. } => headers.iter().any(|(key, value)| {
+                key.eq_ignore_ascii_case("EventList") && value.eq_ignore_ascii_case("complete")
+            }),
             _ => false,
         }
     }
@@ -2838,35 +2926,9 @@ impl AmiEvent {
 // AmiEvent works with the core EventBus
 impl asterisk_rs_core::event::Event for AmiEvent {}
 
-const REDACTED_HEADER_VALUE: &str = "[REDACTED]";
-
 fn redacted_headers(raw: &RawAmiMessage) -> HashMap<String, String> {
     raw.headers
         .iter()
-        .map(|(key, value)| (key.clone(), redact_header_value(key, value)))
+        .map(|(key, value)| (key.clone(), redacted_header_value(key, value).to_owned()))
         .collect()
-}
-
-fn redact_header_value(key: &str, value: &str) -> String {
-    let normalized: String = key
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect();
-    if normalized.contains("password")
-        || normalized.contains("passwd")
-        || normalized.contains("secret")
-        || normalized == "md5cred"
-        || normalized.contains("credential")
-        || normalized.contains("token")
-        || normalized.contains("authorization")
-        || normalized.contains("apikey")
-        || normalized.contains("privatekey")
-        || normalized.contains("accesskey")
-        || normalized.contains("cookie")
-    {
-        REDACTED_HEADER_VALUE.to_owned()
-    } else {
-        value.to_owned()
-    }
 }

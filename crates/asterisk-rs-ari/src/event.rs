@@ -227,6 +227,55 @@ pub enum AriEvent {
 }
 
 impl AriEvent {
+    fn known_event_type(&self) -> Option<&'static str> {
+        Some(match self {
+            Self::StasisStart { .. } => "StasisStart",
+            Self::StasisEnd { .. } => "StasisEnd",
+            Self::ChannelCreated { .. } => "ChannelCreated",
+            Self::ChannelDestroyed { .. } => "ChannelDestroyed",
+            Self::ChannelStateChange { .. } => "ChannelStateChange",
+            Self::ChannelDtmfReceived { .. } => "ChannelDtmfReceived",
+            Self::ChannelHangupRequest { .. } => "ChannelHangupRequest",
+            Self::ChannelVarset { .. } => "ChannelVarset",
+            Self::BridgeCreated { .. } => "BridgeCreated",
+            Self::BridgeDestroyed { .. } => "BridgeDestroyed",
+            Self::ChannelEnteredBridge { .. } => "ChannelEnteredBridge",
+            Self::ChannelLeftBridge { .. } => "ChannelLeftBridge",
+            Self::PlaybackStarted { .. } => "PlaybackStarted",
+            Self::PlaybackFinished { .. } => "PlaybackFinished",
+            Self::RecordingStarted { .. } => "RecordingStarted",
+            Self::RecordingFinished { .. } => "RecordingFinished",
+            Self::ChannelCallerId { .. } => "ChannelCallerId",
+            Self::ChannelConnectedLine { .. } => "ChannelConnectedLine",
+            Self::ChannelDialplan { .. } => "ChannelDialplan",
+            Self::ChannelHold { .. } => "ChannelHold",
+            Self::ChannelUnhold { .. } => "ChannelUnhold",
+            Self::ChannelTalkingStarted { .. } => "ChannelTalkingStarted",
+            Self::ChannelTalkingFinished { .. } => "ChannelTalkingFinished",
+            Self::ChannelToneDetected { .. } => "ChannelToneDetected",
+            Self::ChannelTransfer { .. } => "ChannelTransfer",
+            Self::ChannelUserevent { .. } => "ChannelUserevent",
+            Self::Dial { .. } => "Dial",
+            Self::BridgeAttendedTransfer { .. } => "BridgeAttendedTransfer",
+            Self::BridgeBlindTransfer { .. } => "BridgeBlindTransfer",
+            Self::BridgeMerged { .. } => "BridgeMerged",
+            Self::BridgeVideoSourceChanged { .. } => "BridgeVideoSourceChanged",
+            Self::ContactStatusChange { .. } => "ContactStatusChange",
+            Self::DeviceStateChanged { .. } => "DeviceStateChanged",
+            Self::EndpointStateChange { .. } => "EndpointStateChange",
+            Self::PeerStatusChange { .. } => "PeerStatusChange",
+            Self::PlaybackContinuing { .. } => "PlaybackContinuing",
+            Self::RecordingFailed { .. } => "RecordingFailed",
+            Self::ApplicationMoveFailed { .. } => "ApplicationMoveFailed",
+            Self::ApplicationRegistered { .. } => "ApplicationRegistered",
+            Self::ApplicationReplaced { .. } => "ApplicationReplaced",
+            Self::ApplicationUnregistered { .. } => "ApplicationUnregistered",
+            Self::TextMessageReceived { .. } => "TextMessageReceived",
+            Self::RESTResponse { .. } => "RESTResponse",
+            Self::Unknown => return None,
+        })
+    }
+
     /// Return every channel ID carried by this event.
     ///
     /// Multi-party and nested transfer events may return more than one ID. The
@@ -545,6 +594,14 @@ pub struct AriMessage {
     pub event: AriEvent,
     /// original type and payload when [`Self::event`] is [`AriEvent::Unknown`]
     pub unknown: Option<UnknownAriEvent>,
+}
+
+impl AriMessage {
+    /// Return the canonical event classification without exposing untrusted
+    /// unknown type names or payload data.
+    pub fn event_type(&self) -> &'static str {
+        self.event.known_event_type().unwrap_or("Unknown")
+    }
 }
 
 impl Serialize for AriMessage {

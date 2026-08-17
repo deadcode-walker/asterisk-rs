@@ -1,3 +1,5 @@
+use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use asterisk_rs_ari::config::{AriConfigBuilder, TransportMode};
@@ -6,6 +8,40 @@ use asterisk_rs_core::config::ReconnectPolicy;
 
 use asterisk_rs_tests::helpers::{assert_server_ok, init_tracing};
 use asterisk_rs_tests::mock::ari_server::MockAriServerBuilder;
+
+#[derive(Clone, Default)]
+struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+struct CapturedLogWriter(Arc<Mutex<Vec<u8>>>);
+
+impl Write for CapturedLogWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .expect("captured log lock")
+            .extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> tracing_subscriber::fmt::MakeWriter<'writer> for CapturedLogs {
+    type Writer = CapturedLogWriter;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        CapturedLogWriter(Arc::clone(&self.0))
+    }
+}
+
+impl CapturedLogs {
+    fn contents(&self) -> String {
+        String::from_utf8(self.0.lock().expect("captured log lock").clone())
+            .expect("tracing output should be UTF-8")
+    }
+}
 
 /// build an ARI client pointed at the mock server
 async fn connect_to_mock(port: u16) -> AriClient {
@@ -937,6 +973,111 @@ async fn websocket_events() {
     server.shutdown().await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn websocket_event_logs_allowlisted_metadata_without_payload() {
+    let logs = CapturedLogs::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(logs.clone())
+        .finish();
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+
+    let server = MockAriServerBuilder::new().start().await;
+    let client = connect_to_mock(server.port()).await;
+    let mut events = client.subscribe();
+    server.wait_for_ws_client().await;
+
+    let malformed_secret = "malformed-payload-secret-9f1d";
+    let malformed = format!(r#"{{"type":"{malformed_secret}""#);
+    server.send_event(&malformed);
+
+    let type_error_secret = "known-type-error-secret-4d7e";
+    let type_error_event = format!(
+        r#"{{
+            "type":"StasisStart",
+            "application":"test-app",
+            "channel":{{
+                "id":"invalid-channel",
+                "name":"PJSIP/invalid",
+                "state":"Ring",
+                "caller":{{"name":"","number":""}},
+                "connected":{{"name":"","number":""}},
+                "dialplan":{{"context":"default","exten":"1","priority":"{type_error_secret}"}}
+            }},
+            "args":[]
+        }}"#
+    );
+    server.send_event(&type_error_event);
+
+    let unknown_type_secret = "unknown-type-secret-61a0";
+    let unknown_payload_secret = "unknown-payload-secret-33c8";
+    let unknown_event =
+        format!(r#"{{"type":"{unknown_type_secret}","private":"{unknown_payload_secret}"}}"#);
+    server.send_event(&unknown_event);
+
+    let caller_secret = "caller-secret-7b42";
+    let event_json = format!(
+        r#"{{
+            "type": "StasisStart",
+            "application": "test-app",
+            "timestamp": "2024-01-01T00:00:00.000+0000",
+            "channel": {{
+                "id": "safe-channel-id",
+                "name": "PJSIP/private-endpoint",
+                "state": "Ring",
+                "caller": {{ "name": "{caller_secret}", "number": "private-number" }},
+                "connected": {{ "name": "", "number": "" }},
+                "dialplan": {{ "context": "private-context", "exten": "private-extension", "priority": 1 }}
+            }},
+            "args": ["private-argument"]
+        }}"#
+    );
+    let event_bytes = event_json.len();
+    server.send_event(&event_json);
+
+    for _ in 0..2 {
+        tokio::time::timeout(Duration::from_secs(5), events.recv_lossy())
+            .await
+            .expect("timed out waiting for event")
+            .expect("event subscription closed");
+    }
+
+    client.disconnect();
+    server.shutdown().await;
+
+    let output = logs.contents();
+    assert!(output.contains("event_type=\"StasisStart\""), "{output}");
+    assert!(output.contains("event_type=\"Unknown\""), "{output}");
+    assert!(output.contains("safe-channel-id"), "{output}");
+    assert!(
+        output.contains(&format!("payload_bytes={event_bytes}")),
+        "{output}"
+    );
+    for secret in [
+        caller_secret,
+        malformed_secret,
+        type_error_secret,
+        unknown_type_secret,
+        unknown_payload_secret,
+        "private-number",
+        "private-endpoint",
+        "private-context",
+        "private-extension",
+        "private-argument",
+    ] {
+        assert!(
+            !output.contains(secret),
+            "log output exposed {secret}: {output}"
+        );
+    }
+    assert!(
+        output.contains(&format!("payload_bytes={}", malformed.len())),
+        "{output}"
+    );
+}
+
 #[tokio::test]
 async fn unregistered_route_returns_404() {
     init_tracing();
@@ -1686,17 +1827,41 @@ async fn channel_handle_external_media() {
     let client = connect_to_mock(server.port()).await;
     let handle = asterisk_rs_ari::resources::channel::ChannelHandle::new("ch-1", client.clone());
 
-    let params = asterisk_rs_ari::resources::channel::ExternalMediaParams::new(
+    let params = asterisk_rs_ari::resources::channel::ExternalMediaParams::websocket_json(
         "test-app",
-        "192.168.1.1:10000",
+        "connection-id",
         "ulaw",
-    );
+    )
+    .data("stasis-args");
     let chan = handle
         .external_media(&params)
         .await
         .expect("external_media failed");
 
     assert_eq!(chan.id, "ext-1");
+
+    server.wait_for_requests(1).await;
+    let request = server
+        .requests()
+        .into_iter()
+        .find(|request| request.path == "/ari/channels/externalMedia")
+        .expect("external-media request should be captured");
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.content_type.as_deref(), Some("application/json"));
+    assert_eq!(request.content_length, request.body.len());
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&request.body)
+            .expect("external-media body should be JSON"),
+        serde_json::json!({
+            "app": "test-app",
+            "external_host": "connection-id",
+            "format": "ulaw",
+            "encapsulation": "none",
+            "transport": "websocket",
+            "transport_data": "f(json)",
+            "data": "stasis-args"
+        })
+    );
 
     client.disconnect();
     server.shutdown().await;

@@ -132,12 +132,21 @@ server.run(|session| async move {
 
 ## Media Channel
 
-`MediaChannel` provides raw audio exchange via `chan_websocket`. Use it to
-stream audio directly to/from an Asterisk channel without a separate media
-server.
+`MediaChannel` provides raw audio exchange through chan_websocket's JSON control
+protocol. Asterisk defaults chan_websocket to plaintext, so create the external
+media channel with `ExternalMediaParams::websocket_json`; it selects
+`encapsulation=none`, `transport=websocket`, and `transport_data=f(json)`.
 
 ```rust,ignore
 use asterisk_rs_ari::media::MediaChannel;
+use asterisk_rs_ari::resources::channel::ExternalMediaParams;
+
+let params = ExternalMediaParams::websocket_json(
+    "my-stasis-app",
+    "connection-id",
+    "ulaw",
+);
+let channel = asterisk_rs_ari::resources::channel::external_media(&ari, &params).await?;
 
 let media = MediaChannel::connect("wss://asterisk:8089/media/connection-id").await?;
 media.answer().await?;

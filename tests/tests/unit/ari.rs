@@ -2325,6 +2325,8 @@ fn external_media_params_builder() {
         .transport("udp")
         .connection_type("client")
         .direction("both")
+        .data("stasis-args")
+        .transport_data("custom-transport-data")
         .channel_id("chan-123")
         .variables(vars.clone());
     let json = serde_json::to_value(params).expect("serialize");
@@ -2332,8 +2334,29 @@ fn external_media_params_builder() {
     assert_eq!(json["transport"], "udp");
     assert_eq!(json["connection_type"], "client");
     assert_eq!(json["direction"], "both");
+    assert_eq!(json["data"], "stasis-args");
+    assert_eq!(json["transport_data"], "custom-transport-data");
     assert_eq!(json["channelId"], "chan-123");
     assert_eq!(json["variables"]["key"], vars["key"]);
+}
+
+#[test]
+fn external_media_websocket_json_selects_exact_control_contract() {
+    let params =
+        ExternalMediaParams::websocket_json("app", "connection-id", "slin16").data("stasis-args");
+
+    assert_eq!(
+        serde_json::to_value(params).expect("serialize JSON WebSocket params"),
+        serde_json::json!({
+            "app": "app",
+            "external_host": "connection-id",
+            "format": "slin16",
+            "encapsulation": "none",
+            "transport": "websocket",
+            "transport_data": "f(json)",
+            "data": "stasis-args"
+        })
+    );
 }
 
 #[test]

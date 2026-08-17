@@ -19,7 +19,7 @@ const MAX_MESSAGE_SIZE: usize = 64 * 1024;
 const MAX_HEADERS: usize = 512;
 
 /// raw AMI message as parsed from the wire
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct RawAmiMessage {
     /// ordered key-value headers
     pub headers: Vec<(String, String)>,
@@ -27,6 +27,83 @@ pub struct RawAmiMessage {
     pub output: Vec<String>,
     /// channel variables extracted from ChanVariable(name) headers
     pub channel_variables: HashMap<String, String>,
+}
+
+impl std::fmt::Debug for RawAmiMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawAmiMessage")
+            .field("headers", &RedactedHeaderPairs(&self.headers))
+            .field("output_lines", &self.output.len())
+            .field(
+                "output_bytes",
+                &self.output.iter().map(String::len).sum::<usize>(),
+            )
+            .field(
+                "channel_variables",
+                &RedactedHeaderMap(&self.channel_variables),
+            )
+            .finish()
+    }
+}
+
+pub(crate) const REDACTED_HEADER_VALUE: &str = "[REDACTED]";
+
+pub(crate) fn is_sensitive_header(key: &str) -> bool {
+    let normalized: String = key
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    normalized.contains("password")
+        || normalized.contains("passwd")
+        || normalized.contains("secret")
+        || normalized == "md5cred"
+        || normalized.contains("credential")
+        || normalized.contains("token")
+        || normalized.contains("authorization")
+        || normalized.contains("apikey")
+        || normalized.contains("privatekey")
+        || normalized.contains("accesskey")
+        || normalized.contains("cookie")
+        || normalized == "pin"
+        || normalized.ends_with("pin")
+        || normalized.contains("pincode")
+}
+
+pub(crate) fn redacted_header_value<'a>(key: &str, value: &'a str) -> &'a str {
+    if is_sensitive_header(key) {
+        REDACTED_HEADER_VALUE
+    } else {
+        value
+    }
+}
+
+pub(crate) struct RedactedHeaderPairs<'a>(pub(crate) &'a [(String, String)]);
+
+impl std::fmt::Debug for RedactedHeaderPairs<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries(
+                self.0
+                    .iter()
+                    .map(|(key, value)| (key, redacted_header_value(key, value))),
+            )
+            .finish()
+    }
+}
+
+pub(crate) struct RedactedHeaderMap<'a>(pub(crate) &'a HashMap<String, String>);
+
+impl std::fmt::Debug for RedactedHeaderMap<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map()
+            .entries(
+                self.0
+                    .iter()
+                    .map(|(key, value)| (key, redacted_header_value(key, value))),
+            )
+            .finish()
+    }
 }
 
 impl RawAmiMessage {

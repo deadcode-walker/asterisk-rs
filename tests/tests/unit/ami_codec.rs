@@ -99,6 +99,35 @@ fn encode_action() {
 }
 
 #[test]
+fn raw_message_debug_redacts_headers_and_payloads() {
+    let msg = RawAmiMessage {
+        headers: vec![
+            ("Action".into(), "Login".into()),
+            ("Secret".into(), "raw-secret-sentinel".into()),
+        ],
+        output: vec!["command-output-secret-sentinel".into()],
+        channel_variables: HashMap::from([(
+            "AccountPassword".into(),
+            "variable-secret-sentinel".into(),
+        )]),
+    };
+
+    let debug = format!("{msg:?}");
+    assert!(debug.contains("[REDACTED]"));
+    assert!(debug.contains("output_lines: 1"));
+    for sentinel in [
+        "raw-secret-sentinel",
+        "command-output-secret-sentinel",
+        "variable-secret-sentinel",
+    ] {
+        assert!(
+            !debug.contains(sentinel),
+            "Debug leaked {sentinel}: {debug}"
+        );
+    }
+}
+
+#[test]
 fn reject_oversized_message() {
     let mut codec = AmiCodec::new();
     // feed banner first so codec advances past it

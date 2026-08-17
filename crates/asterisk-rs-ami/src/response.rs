@@ -1,6 +1,6 @@
 //! AMI response types and ActionID correlation
 
-use crate::codec::RawAmiMessage;
+use crate::codec::{RawAmiMessage, RedactedHeaderMap};
 use crate::error::{AmiError, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -70,7 +70,7 @@ enum ResponseSender {
 }
 
 /// parsed AMI response
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct AmiResponse {
     /// the ActionID this response corresponds to
     pub action_id: String,
@@ -86,6 +86,27 @@ pub struct AmiResponse {
     pub output: Vec<String>,
     /// channel variables extracted from ChanVariable(name) headers
     pub channel_variables: HashMap<String, String>,
+}
+
+impl std::fmt::Debug for AmiResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AmiResponse")
+            .field("action_id", &self.action_id)
+            .field("success", &self.success)
+            .field("response_type", &self.response_type)
+            .field("message", &self.message)
+            .field("headers", &RedactedHeaderMap(&self.headers))
+            .field("output_lines", &self.output.len())
+            .field(
+                "output_bytes",
+                &self.output.iter().map(String::len).sum::<usize>(),
+            )
+            .field(
+                "channel_variables",
+                &RedactedHeaderMap(&self.channel_variables),
+            )
+            .finish()
+    }
 }
 
 impl AmiResponse {
@@ -639,14 +660,17 @@ fn event_list_terminal(event: &crate::event::AmiEvent) -> EventListTerminal {
     if event.is_event_list_complete() {
         return EventListTerminal::Complete;
     }
-    if let crate::event::AmiEvent::Malformed { headers, .. }
-    | crate::event::AmiEvent::Unknown { headers, .. } = event
-    {
-        if headers.iter().any(|(key, value)| {
+    let cancelled = match event {
+        crate::event::AmiEvent::Malformed { headers, .. } => headers.iter().any(|(key, value)| {
             key.eq_ignore_ascii_case("EventList") && value.eq_ignore_ascii_case("Cancelled")
-        }) {
-            return EventListTerminal::Cancelled;
-        }
+        }),
+        crate::event::AmiEvent::Unknown { headers, .. } => headers.iter().any(|(key, value)| {
+            key.eq_ignore_ascii_case("EventList") && value.eq_ignore_ascii_case("Cancelled")
+        }),
+        _ => false,
+    };
+    if cancelled {
+        return EventListTerminal::Cancelled;
     }
     EventListTerminal::Continue
 }

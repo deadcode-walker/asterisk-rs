@@ -1,7 +1,10 @@
 //! WebSocket media channel driver for exchanging audio with Asterisk.
 //!
-//! provides a typed interface to chan_websocket for sending and receiving
-//! raw audio frames, DTMF events, and media control commands.
+//! provides a typed interface to chan_websocket's JSON control protocol for
+//! sending and receiving raw audio frames, DTMF events, and media commands.
+//! Create the channel with
+//! [`crate::resources::channel::ExternalMediaParams::websocket_json`] so
+//! Asterisk selects `transport_data=f(json)` instead of its plaintext default.
 //!
 //! requires Asterisk 20.16.0+ / 22.6.0+ / 23.0.0+
 
@@ -198,9 +201,11 @@ pub enum MediaCommand {
 
 /// connection to an Asterisk WebSocket media channel
 ///
-/// exchanges raw audio frames and control commands with Asterisk's
-/// chan_websocket channel driver. splits incoming traffic: text frames
-/// become [`MediaEvent`]s, binary frames become raw audio buffers.
+/// exchanges raw audio frames and JSON control commands with Asterisk's
+/// chan_websocket channel driver. The Asterisk channel must be created with
+/// [`crate::resources::channel::ExternalMediaParams::websocket_json`]. Splits
+/// incoming traffic: text frames become [`MediaEvent`]s, binary frames become
+/// raw audio buffers.
 ///
 /// the connection runs in a background task; dropping the channel
 /// shuts it down.
@@ -230,7 +235,7 @@ type OutboundWsStream =
 type AcceptedWsStream = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
 
 impl MediaChannel {
-    /// connect to an Asterisk media websocket endpoint
+    /// connect to an Asterisk JSON-control media websocket endpoint
     ///
     /// url should be the full websocket URL including the connection_id path,
     /// e.g. `ws://asterisk:8088/media/32966726-4388-456b-a333-fdf5dbecc60d`
@@ -271,7 +276,7 @@ impl MediaChannel {
         Ok(Self::spawn_outbound(ws_stream))
     }
 
-    /// create from an already-accepted websocket stream over raw TCP
+    /// create from an already-accepted JSON-control websocket stream over raw TCP
     ///
     /// useful when running a media server that accepts incoming connections
     /// The accepting server remains responsible for configuring frame, message,
@@ -317,7 +322,7 @@ impl MediaChannel {
         })
     }
 
-    /// accept a raw TCP connection as a bounded media WebSocket
+    /// accept a raw TCP connection as a bounded JSON-control media WebSocket
     ///
     /// This is preferred to [`Self::from_accepted`] because frame and message
     /// limits are installed during the WebSocket handshake.

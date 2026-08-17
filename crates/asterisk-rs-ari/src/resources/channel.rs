@@ -131,6 +131,10 @@ pub struct ExternalMediaParams {
     connection_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     direction: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transport_data: Option<String>,
     #[serde(rename = "channelId", skip_serializing_if = "Option::is_none")]
     channel_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -152,9 +156,26 @@ impl ExternalMediaParams {
             transport: None,
             connection_type: None,
             direction: None,
+            data: None,
+            transport_data: None,
             channel_id: None,
             variables: None,
         }
+    }
+
+    /// create params for chan_websocket's JSON control protocol
+    ///
+    /// Asterisk defaults chan_websocket control messages to plaintext. This
+    /// constructor selects the JSON protocol required by [`crate::media::MediaChannel`].
+    pub fn websocket_json(
+        app: impl Into<String>,
+        external_host: impl Into<String>,
+        format: impl Into<String>,
+    ) -> Self {
+        Self::new(app, external_host, format)
+            .encapsulation("none")
+            .transport("websocket")
+            .transport_data("f(json)")
     }
 
     /// set the encapsulation type (e.g. `rtp`)
@@ -178,6 +199,20 @@ impl ExternalMediaParams {
     /// set the media direction (e.g. `both`, `in`, `out`)
     pub fn direction(mut self, direction: impl Into<String>) -> Self {
         self.direction = Some(direction.into());
+        self
+    }
+
+    /// set the arbitrary data passed to the external-media channel
+    pub fn data(mut self, data: impl Into<String>) -> Self {
+        self.data = Some(data.into());
+        self
+    }
+
+    /// set transport-specific dial-string data
+    ///
+    /// For chan_websocket, use `f(json)` to select JSON control messages.
+    pub fn transport_data(mut self, transport_data: impl Into<String>) -> Self {
+        self.transport_data = Some(transport_data.into());
         self
     }
 

@@ -128,9 +128,10 @@ pub(crate) fn route_text_message(
                 event_bus.publish(msg);
             }
         }
-        Err(error) => {
-            tracing::warn!(error = %error, payload_bytes = text.len(), "failed to deserialize ARI message")
-        }
+        Err(_) => tracing::warn!(
+            payload_bytes = text.len(),
+            "failed to deserialize ARI message"
+        ),
     }
 }
 

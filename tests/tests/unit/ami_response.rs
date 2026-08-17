@@ -11,7 +11,7 @@ fn complete_event(name: &str) -> AmiEvent {
     headers.insert("EventList".into(), "Complete".into());
     AmiEvent::Unknown {
         event_name: name.into(),
-        headers,
+        headers: headers.into(),
     }
 }
 
@@ -46,6 +46,36 @@ fn parse_error_response() {
     let resp = AmiResponse::from_raw(&raw).expect("should parse error response");
     assert!(!resp.success);
     assert_eq!(resp.message.as_deref(), Some("Permission denied"));
+}
+
+#[test]
+fn response_debug_redacts_headers_and_payloads() {
+    let raw = RawAmiMessage {
+        headers: vec![
+            ("Response".into(), "Success".into()),
+            ("Secret".into(), "response-secret-sentinel".into()),
+        ],
+        output: vec!["response-output-sentinel".into()],
+        channel_variables: HashMap::from([(
+            "AccessToken".into(),
+            "response-variable-sentinel".into(),
+        )]),
+    };
+    let response = AmiResponse::from_raw(&raw).expect("response should parse");
+
+    let debug = format!("{response:?}");
+    assert!(debug.contains("[REDACTED]"));
+    assert!(debug.contains("output_lines: 1"));
+    for sentinel in [
+        "response-secret-sentinel",
+        "response-output-sentinel",
+        "response-variable-sentinel",
+    ] {
+        assert!(
+            !debug.contains(sentinel),
+            "Debug leaked {sentinel}: {debug}"
+        );
+    }
 }
 
 #[test]
@@ -131,7 +161,7 @@ fn event_list_lifecycle() {
     // deliver intermediate event
     let event = AmiEvent::Unknown {
         event_name: "Status".into(),
-        headers: HashMap::new(),
+        headers: HashMap::new().into(),
     };
     assert!(pending.deliver_event_list_event("100", event));
 
@@ -152,7 +182,7 @@ fn event_list_does_not_steal_unrelated_events() {
 
     let event = AmiEvent::Unknown {
         event_name: "Hangup".into(),
-        headers: HashMap::new(),
+        headers: HashMap::new().into(),
     };
     // action_id doesn't match
     assert!(!pending.deliver_event_list_event("999", event));
@@ -373,7 +403,7 @@ fn event_list_intermediate_events_accumulate() {
     for i in 0..5 {
         let event = AmiEvent::Unknown {
             event_name: format!("QueueMember{i}"),
-            headers: HashMap::new(),
+            headers: HashMap::new().into(),
         };
         assert!(pending.deliver_event_list_event("400", event));
     }
@@ -383,7 +413,7 @@ fn event_list_intermediate_events_accumulate() {
     complete_headers.insert("EventList".into(), "Complete".into());
     let complete = AmiEvent::Unknown {
         event_name: "QueueMemberComplete".into(),
-        headers: complete_headers,
+        headers: complete_headers.into(),
     };
     assert!(pending.deliver_event_list_event("400", complete));
 
@@ -434,7 +464,7 @@ fn deliver_event_list_event_to_unknown_action_returns_false() {
     headers.insert("EventList".into(), "Complete".into());
     let event = AmiEvent::Unknown {
         event_name: "StatusComplete".into(),
-        headers,
+        headers: headers.into(),
     };
     assert!(!pending.deliver_event_list_event("nonexistent", event));
 }
@@ -461,7 +491,7 @@ fn user_event_named_complete_does_not_close_event_list() {
     // deliver a user event whose name ends in "Complete" but has no EventList header
     let fake_complete = AmiEvent::Unknown {
         event_name: "ProcessComplete".into(),
-        headers: HashMap::new(),
+        headers: HashMap::new().into(),
     };
     assert!(pending.deliver_event_list_event("500", fake_complete));
 
@@ -474,7 +504,7 @@ fn user_event_named_complete_does_not_close_event_list() {
     complete_headers.insert("EventList".into(), "Complete".into());
     let real_complete = AmiEvent::Unknown {
         event_name: "StatusComplete".into(),
-        headers: complete_headers,
+        headers: complete_headers.into(),
     };
     assert!(pending.deliver_event_list_event("500", real_complete));
 
@@ -538,7 +568,7 @@ fn event_list_cap_drops_after_max_events() {
     for i in 0..MAX_EVENT_LIST_EVENTS {
         let event = AmiEvent::Unknown {
             event_name: format!("Event{i}"),
-            headers: HashMap::new(),
+            headers: HashMap::new().into(),
         };
         assert!(pending.deliver_event_list_event("600", event));
     }
@@ -546,7 +576,7 @@ fn event_list_cap_drops_after_max_events() {
     // the next event should trigger the cap and drop the entry
     let overflow = AmiEvent::Unknown {
         event_name: "EventOverflow".into(),
-        headers: HashMap::new(),
+        headers: HashMap::new().into(),
     };
     assert!(pending.deliver_event_list_event("600", overflow));
 

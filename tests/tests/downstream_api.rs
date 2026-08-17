@@ -21,6 +21,9 @@ fn downstream_uses_owned_builders_and_future_facing_matches() {
     let external = ExternalMediaParams::new("example", "127.0.0.1:9000", "ulaw")
         .transport("udp")
         .variables(variables);
+    let websocket_external =
+        ExternalMediaParams::websocket_json("example", "connection-id", "ulaw")
+            .data("example-args");
     let config = AriConfigBuilder::new("example")
         .username("example")
         .password("redacted")
@@ -28,7 +31,7 @@ fn downstream_uses_owned_builders_and_future_facing_matches() {
         .expect("fixture config is valid");
     let tuple = ConfigTuple::new("type", "friend");
 
-    let _ = (originate, external, config, tuple);
+    let _ = (originate, external, websocket_external, config, tuple);
 
     #[allow(clippy::single_match)]
     fn accept_event(event: AriEvent) {

@@ -159,6 +159,20 @@ is either a green local harness commit or a concrete authority/external-state bl
   certificates with the already-owned AWS-LC provider, leaving no vulnerable dependency or reusable
   key. The repaired exact tree passed `just ci`, `just msrv`, and `just semver` with 982 unit and 274
   mock tests before commit.
+- [x] 2026-08-17: completed Slice 4's exact JSON chan_websocket and disclosure boundary. External
+  media now carries the official `data` and `transport_data` fields, with a JSON-WebSocket
+  constructor that mechanically selects `encapsulation=none`, `transport=websocket`, and
+  `transport_data=f(json)`. Production ARI event logging records only canonical event type,
+  resource IDs, and payload byte count; captured-log tests prove raw known, unknown, and malformed
+  payload values are absent. AMI voicemail PINs and arbitrary event headers retain explicit
+  application access while redacting Debug and serialization; raw messages and responses redact
+  credential-like headers and omit output payloads from Debug. The redundant client credential copy
+  was removed and credential-bearing ARI URL temporaries are zeroized. Focused evidence passed 521
+  AMI unit tests, 60 AMI mock tests, exact external-media request/serialization tests, downstream
+  compilation, and strict cross-crate Clippy before frozen review. Review found that Serde error text
+  could still echo an attacker-controlled value from a structurally valid event with a type-invalid
+  field. Both ARI message paths now omit parse-error detail and log only byte counts; the captured-log
+  proof includes that exact known-event mismatch sentinel.
 
 ## Surprises and discoveries
 
@@ -307,14 +321,14 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
 
 ### Slice 4: exact chan_websocket and REST behavior
 
-- [ ] Support both default plaintext and JSON control formats, or make JSON an explicit construction
+- [x] Support both default plaintext and JSON control formats, or make JSON an explicit construction
   contract and carry `data`/`transport_data=f(json)` through external-media creation.
 - [x] Match every official JSON event: channel IDs, DTMF, queue length/watermarks/full state, bulk and
   pause state, buffering/mark correlation, and queue-drained identity.
 - [x] Match every command: parameterless HANGUP, correlated MARK_MEDIA, STOP buffering correlation,
   typed SET_MEDIA_DIRECTION, and documented passthrough restrictions.
-- [ ] Remove full payload logging; log allowlisted event types, IDs, and byte counts only.
-- [ ] Redact AMI secrets and PIN-bearing fields from Debug/serialization, minimize credential copies,
+- [x] Remove full payload logging; log allowlisted event types, IDs, and byte counts only.
+- [x] Redact AMI secrets and PIN-bearing fields from Debug/serialization, minimize credential copies,
   zeroize credential-bearing URLs where practical, and add captured-log non-disclosure tests.
 
 ### Slice 5: rebuild tests around observable behavior

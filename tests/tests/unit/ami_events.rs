@@ -3,6 +3,24 @@
 use asterisk_rs_ami::codec::RawAmiMessage;
 use asterisk_rs_ami::event::AmiEvent;
 use std::collections::HashMap;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+
+struct SharedLogWriter(Arc<Mutex<Vec<u8>>>);
+
+impl Write for SharedLogWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .expect("log buffer lock poisoned")
+            .extend(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 /// build a raw message from header pairs
 fn raw(headers: &[(&str, &str)]) -> RawAmiMessage {
@@ -2089,7 +2107,12 @@ fn parse_voicemail_password_change() {
             ..
         } => {
             assert_eq!(mailbox, "100");
-            assert_eq!(new_password, "1234");
+            assert_eq!(new_password.expose_secret(), "1234");
+            assert!(!format!("{new_password:?}").contains("1234"));
+            assert_eq!(
+                serde_json::to_string(&new_password).expect("sensitive value should serialize"),
+                "\"[REDACTED]\""
+            );
         }
         other => panic!("expected VoicemailPasswordChange, got {other:?}"),
     }
@@ -3829,6 +3852,70 @@ fn parse_unknown_event() {
     let event = AmiEvent::from_raw(&msg).expect("should parse");
     assert!(matches!(event, AmiEvent::Unknown { .. }));
     assert_eq!(event.event_name(), "SomeWeirdEvent");
+}
+
+#[test]
+fn user_and_unknown_event_output_redacts_sensitive_headers() {
+    for event in [
+        AmiEvent::from_raw(&raw(&[
+            ("Event", "UserEvent"),
+            ("UserEvent", "CredentialsRotated"),
+            ("Password", "user-event-password-sentinel"),
+            ("Visible", "safe-value"),
+        ]))
+        .expect("user event should parse"),
+        AmiEvent::from_raw(&raw(&[
+            ("Event", "VendorSpecificEvent"),
+            ("Authorization", "unknown-event-token-sentinel"),
+            ("Visible", "safe-value"),
+        ]))
+        .expect("unknown event should parse"),
+    ] {
+        let debug = format!("{event:?}");
+        let json = serde_json::to_string(&event).expect("event should serialize");
+        for sentinel in [
+            "user-event-password-sentinel",
+            "unknown-event-token-sentinel",
+        ] {
+            assert!(
+                !debug.contains(sentinel),
+                "Debug leaked {sentinel}: {debug}"
+            );
+            assert!(!json.contains(sentinel), "JSON leaked {sentinel}: {json}");
+        }
+        assert!(debug.contains("safe-value"));
+        assert!(json.contains("safe-value"));
+    }
+}
+
+#[test]
+fn captured_event_log_does_not_disclose_sensitive_values() {
+    let event = AmiEvent::from_raw(&raw(&[
+        ("Event", "UserEvent"),
+        ("UserEvent", "CredentialsRotated"),
+        ("Password", "captured-log-password-sentinel"),
+        ("Visible", "captured-safe-value"),
+    ]))
+    .expect("user event should parse");
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let writer_bytes = Arc::clone(&bytes);
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(move || SharedLogWriter(Arc::clone(&writer_bytes)))
+        .finish();
+
+    tracing::subscriber::with_default(subscriber, || {
+        tracing::debug!(?event, "received AMI event");
+    });
+
+    let captured = String::from_utf8(bytes.lock().expect("log buffer lock poisoned").clone())
+        .expect("captured logs should be UTF-8");
+    assert!(captured.contains("UserEvent"));
+    assert!(captured.contains("captured-safe-value"));
+    assert!(captured.contains("[REDACTED]"));
+    assert!(!captured.contains("captured-log-password-sentinel"));
 }
 
 #[test]

@@ -403,12 +403,18 @@ fn handle_message(
     match message {
         Message::Text(text) => match serde_json::from_str::<AriMessage>(&text) {
             Ok(event) => {
-                tracing::debug!(?event, "received ARI event");
+                tracing::debug!(
+                    event_type = event.event_type(),
+                    channel_ids = ?event.event.channel_ids(),
+                    bridge_ids = ?event.event.bridge_ids(),
+                    playback_ids = ?event.event.playback_ids(),
+                    payload_bytes = text.len(),
+                    "received ARI event"
+                );
                 event_bus.publish(event);
             }
-            Err(e) => {
+            Err(_) => {
                 tracing::warn!(
-                    error = %e,
                     payload_bytes = text.len(),
                     "failed to deserialize ARI event"
                 );

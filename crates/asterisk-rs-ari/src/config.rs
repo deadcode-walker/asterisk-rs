@@ -368,17 +368,19 @@ impl AriConfigBuilder {
 
         // ws url includes api_key for authentication — percent-encode
         // query values so special chars (&, =, #, spaces) don't break the url
-        let query = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("app", &self.app_name)
-            .append_pair(
-                "api_key",
-                &format!("{}:{}", self.username, self.password.as_str()),
-            )
-            .finish();
-        let ws_url_str = format!(
-            "{ws_scheme}://{}:{}/ari/events?{query}",
-            url_host, self.port
+        let api_key = Zeroizing::new(format!("{}:{}", self.username, self.password.as_str()));
+        let query = Zeroizing::new(
+            url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("app", &self.app_name)
+                .append_pair("api_key", &api_key)
+                .finish(),
         );
+        let ws_url_str = Zeroizing::new(format!(
+            "{ws_scheme}://{}:{}/ari/events?{}",
+            url_host,
+            self.port,
+            query.as_str()
+        ));
         let ws_url = Url::parse(&ws_url_str).map_err(|e| AriError::InvalidUrl(e.to_string()))?;
 
         let credentials = Credentials::new(self.username, &*self.password);
