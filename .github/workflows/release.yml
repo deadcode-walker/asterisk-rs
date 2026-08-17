@@ -43,7 +43,10 @@ jobs:
       - name: Verify the reviewed candidate
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+        run: |
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git checkout -B main "$CANDIDATE_SHA"
+          git branch --set-upstream-to=origin/main main
       - name: Install exact Rust toolchain
         run: |
           rustup toolchain install 1.97.1 --profile minimal
@@ -75,7 +78,10 @@ jobs:
       - name: Verify the reviewed candidate
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+        run: |
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git checkout -B main "$CANDIDATE_SHA"
+          git branch --set-upstream-to=origin/main main
       - name: Install exact Rust toolchain
         run: |
           rustup toolchain install 1.97.1 --profile minimal
