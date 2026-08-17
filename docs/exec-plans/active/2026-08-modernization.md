@@ -518,6 +518,10 @@ cleanup, and fixture reproducibility defects. The remaining work is external: pu
 exact candidate, verify cross-platform GitHub evidence, configure repository/release protections,
 close superseded records with links, and then finalize this retrospective and move the plan.
 
+The final fresh review found that the live-runner signal traps converted cancellation into success
+and invoked Compose cleanup twice. The runner now maps SIGINT/SIGTERM to 130/143, reserves cleanup
+for the EXIT trap, and `just harness` executes a subprocess proof that cleanup occurs exactly once.
+
 Accepted bounded tradeoff: AMI outbound frames are prevalidated before actor admission and then
 validated and encoded again at the socket boundary. The duplicate work is bounded by the 64 KiB
 frame limit. Keep it for this candidate; an encode-once validated-frame design is deferred to later

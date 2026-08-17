@@ -18,7 +18,9 @@ cleanup() {
     fi
     exit "$status"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 select_repository_fixture() {
     export ASTERISK_TEST_ALLOW_MUTATION=1

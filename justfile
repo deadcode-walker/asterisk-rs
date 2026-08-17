@@ -90,6 +90,7 @@ docs:
 harness:
     python3 scripts/check_harness.py
     python3 scripts/check_protocol_contracts.py
+    python3 scripts/check_live_runner.py
 
 # verify pinned protocol artifacts against the exact upstream Asterisk commit
 protocol-contracts-upstream:
