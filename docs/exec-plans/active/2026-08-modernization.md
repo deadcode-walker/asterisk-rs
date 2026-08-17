@@ -91,6 +91,14 @@ is either a green local harness commit or a concrete authority/external-state bl
   `just ci`, `just msrv`, `just semver`, `just live-smoke-ci` (4/4), and `just live-full-ci`
   (73/73). Fresh review then found stale umbrella rustdoc package coordinates and this absent exact
   checkpoint; the following candidate corrects both and makes the coordinates part of docs proof.
+- [x] 2026-08-17: froze and reviewed commit `321e8389bf2543eed2ef27d32a5aa6b98c0b1796`
+  (tree `2175877b3ab324a6a88e2315b425c6c7bef49b4a`) with a clean worktree. The
+  preceding exact-tree gate passed `just ci`, `just msrv`, `just semver`, `just live-smoke-ci` (4/4),
+  and `just live-full-ci` (73/73); after the final attach-mode symmetry refinement, `just harness`,
+  `just docs-check`, the live-runner subprocess proof, shell syntax, and diff integrity passed.
+  Harness review found no code/runtime defect and requested only this missing recovery checkpoint.
+  The enclosing documentation commit is the final local checkpoint, avoiding an impossible
+  self-reference; its next action is push, exact-SHA CI monitoring, then authorized settings/closure.
 - [x] 2026-08-17: completed the pinned-contract and unknown-ARI-event portion of Slice 1. Pinned the official
   Asterisk `22.9.0` ARI documents and chan_websocket implementation at peeled commit
   `da123773c723ed1263ff74569544f7ee84626c1a`, recorded their SHA-256 identities and upstream
