@@ -1166,6 +1166,7 @@ fn default_matches_exponential_1s_60s() {
     assert_eq!(default.backoff_factor, 2.0);
     assert!(default.jitter);
     assert!(default.max_retries.is_none());
+    assert_eq!(default.stability_window, Duration::from_secs(30));
 }
 
 #[test]
@@ -1602,6 +1603,7 @@ fn reconnect_policy_zero_initial_delay() {
         backoff_factor: 2.0,
         jitter: false,
         max_retries: None,
+        stability_window: Duration::from_secs(30),
     };
 
     // 0 * anything = 0
@@ -1620,6 +1622,35 @@ fn reconnect_policy_attempt_at_max_retries_returns_zero() {
 
     // attempt below max_retries returns non-zero
     assert_ne!(policy.delay_for_attempt(2), Duration::ZERO);
+}
+
+#[test]
+fn reconnect_policy_rejects_hot_loop_and_invalid_arithmetic() {
+    let invalid = [
+        ReconnectPolicy::fixed(Duration::ZERO),
+        ReconnectPolicy::exponential(Duration::from_secs(2), Duration::from_secs(1)),
+        ReconnectPolicy {
+            backoff_factor: f64::NAN,
+            ..ReconnectPolicy::default()
+        },
+        ReconnectPolicy::default().with_stability_window(Duration::ZERO),
+    ];
+
+    for policy in invalid {
+        assert!(
+            policy.validate().is_err(),
+            "policy should be rejected: {policy:?}"
+        );
+    }
+    assert!(ReconnectPolicy::none().validate().is_ok());
+}
+
+#[test]
+fn reconnect_policy_jitter_never_exceeds_max_delay() {
+    let policy = ReconnectPolicy::exponential(Duration::from_secs(10), Duration::from_secs(10));
+    for _ in 0..100 {
+        assert!(policy.delay_for_attempt(0) <= Duration::from_secs(10));
+    }
 }
 
 // =============================================================================

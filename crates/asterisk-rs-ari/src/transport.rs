@@ -1,11 +1,16 @@
 //! REST transport abstraction for HTTP and WebSocket modes.
 
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
+use tokio::sync::{oneshot, watch};
+use tokio::time::Instant;
+
 use crate::config::AriConfig;
 use crate::error::{AriError, HttpError, Result};
-use crate::event::AriMessage;
+use crate::event::{AriEvent, AriMessage};
 use crate::websocket::WsEventListener;
 use crate::ws_transport::WsTransport;
 use asterisk_rs_core::auth::Credentials;
@@ -17,6 +22,149 @@ const REQUEST_WRITTEN: u8 = 2;
 const REQUEST_CANCELLED: u8 = 3;
 static HTTP_REQUEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 pub(crate) const REST_COMMAND_CAPACITY: usize = 64;
+
+pub(crate) struct RestCommand {
+    pub request_id: String,
+    pub method: String,
+    pub uri: String,
+    pub content_type: Option<String>,
+    pub message_body: Option<String>,
+    pub deadline: Instant,
+    pub lifecycle: Arc<RequestLifecycle>,
+    pub response_tx: oneshot::Sender<Result<TransportResponse>>,
+}
+
+pub(crate) struct PendingResponse {
+    pub deadline: Instant,
+    pub request_id: String,
+    pub method: String,
+    pub uri: String,
+    pub lifecycle: Arc<RequestLifecycle>,
+    pub response_tx: oneshot::Sender<Result<TransportResponse>>,
+}
+
+pub(crate) fn fail_pending(pending: &mut HashMap<String, PendingResponse>, details: &str) {
+    for (_, response) in pending.drain() {
+        let error = write_error(
+            &response.method,
+            &response.uri,
+            &response.request_id,
+            &response.lifecycle,
+            || details.to_owned(),
+        );
+        let _ = response.response_tx.send(Err(error));
+    }
+}
+
+pub(crate) fn purge_expired(pending: &mut HashMap<String, PendingResponse>) {
+    let now = Instant::now();
+    let expired: Vec<_> = pending
+        .iter()
+        .filter(|(_, response)| response.response_tx.is_closed() || response.deadline <= now)
+        .map(|(request_id, _)| request_id.clone())
+        .collect();
+    for request_id in expired {
+        let Some(response) = pending.remove(&request_id) else {
+            continue;
+        };
+        if response.response_tx.is_closed() {
+            tracing::debug!(%request_id, "discarding cancelled REST response correlation");
+            continue;
+        }
+        let error = deadline_error(
+            &response.method,
+            &response.uri,
+            &response.request_id,
+            &response.lifecycle,
+        );
+        let _ = response.response_tx.send(Err(error));
+    }
+}
+
+pub(crate) fn route_text_message(
+    text: &str,
+    event_bus: &EventBus<AriMessage>,
+    pending: &mut HashMap<String, PendingResponse>,
+    max_response_body_bytes: usize,
+) {
+    match serde_json::from_str::<AriMessage>(text) {
+        Ok(msg) => {
+            if let AriEvent::RESTResponse {
+                ref request_id,
+                status_code,
+                ref reason_phrase,
+                ref message_body,
+                ..
+            } = msg.event
+            {
+                if let Some(response) = pending.remove(request_id) {
+                    if let Some(body) = message_body {
+                        if body.len() > max_response_body_bytes {
+                            let _ = response.response_tx.send(Err(AriError::ResponseTooLarge {
+                                limit: max_response_body_bytes,
+                                received: u64::try_from(body.len()).unwrap_or(u64::MAX),
+                            }));
+                            return;
+                        }
+                    }
+                    let result = u16::try_from(status_code)
+                        .map_err(|_| {
+                            AriError::WebSocket(format!(
+                                "invalid REST response status code: {status_code}"
+                            ))
+                        })
+                        .and_then(|status| {
+                            TransportResponse {
+                                status,
+                                body: message_body.clone(),
+                            }
+                            .require_success_with_fallback(
+                                (!reason_phrase.is_empty()).then(|| reason_phrase.clone()),
+                            )
+                        });
+                    let _ = response.response_tx.send(result);
+                }
+            } else {
+                event_bus.publish(msg);
+            }
+        }
+        Err(error) => {
+            tracing::warn!(error = %error, payload_bytes = text.len(), "failed to deserialize ARI message")
+        }
+    }
+}
+
+/// Observable lifecycle of the ARI event WebSocket.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AriConnectionState {
+    Connecting,
+    Ready,
+    Reconnecting,
+    Terminal { details: String },
+    Disconnected,
+}
+
+pub(crate) async fn wait_until_ready(
+    state: &mut watch::Receiver<AriConnectionState>,
+    deadline: tokio::time::Instant,
+) -> Result<()> {
+    tokio::time::timeout_at(deadline, async {
+        loop {
+            match state.borrow().clone() {
+                AriConnectionState::Ready => return Ok(()),
+                AriConnectionState::Terminal { details } => {
+                    return Err(AriError::WebSocket(details));
+                }
+                AriConnectionState::Disconnected => return Err(AriError::Disconnected),
+                AriConnectionState::Connecting | AriConnectionState::Reconnecting => {}
+            }
+            state.changed().await.map_err(|_| AriError::Disconnected)?;
+        }
+    })
+    .await
+    .map_err(|_| AriError::WebSocket("initial websocket readiness timed out".to_owned()))?
+}
 
 /// shared state that makes caller timeout and actor write admission atomic
 #[derive(Debug, Default)]
@@ -198,6 +346,25 @@ pub(crate) enum TransportInner {
 }
 
 impl TransportInner {
+    pub(crate) fn connection_state(&self) -> AriConnectionState {
+        match self {
+            Self::Http(t) => t.ws_listener.connection_state(),
+            Self::WebSocket(t) => t.connection_state(),
+        }
+    }
+
+    pub(crate) fn subscribe_connection_state(&self) -> watch::Receiver<AriConnectionState> {
+        match self {
+            Self::Http(t) => t.ws_listener.subscribe_connection_state(),
+            Self::WebSocket(t) => t.subscribe_connection_state(),
+        }
+    }
+
+    pub(crate) async fn wait_ready(&self, timeout: Duration) -> Result<()> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut state = self.subscribe_connection_state();
+        wait_until_ready(&mut state, deadline).await
+    }
     pub(crate) async fn request(
         &self,
         method: &str,

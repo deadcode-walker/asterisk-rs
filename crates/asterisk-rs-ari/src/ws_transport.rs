@@ -20,10 +20,11 @@ use asterisk_rs_core::event::EventBus;
 
 use crate::config::AriConfig;
 use crate::error::{AriError, Result};
-use crate::event::{AriEvent, AriMessage};
+use crate::event::AriMessage;
 use crate::transport::{
-    REST_COMMAND_CAPACITY, RequestLifecycle, TransportResponse, deadline_error,
-    outbound_message_limit_error, poll_wire_write, write_error,
+    AriConnectionState, PendingResponse, REST_COMMAND_CAPACITY, RequestLifecycle, RestCommand,
+    TransportResponse, deadline_error, fail_pending, outbound_message_limit_error, poll_wire_write,
+    purge_expired, route_text_message, write_error,
 };
 use crate::util::redact_url;
 use crate::websocket::{OwnedTask, connector_for_url, websocket_config};
@@ -39,27 +40,6 @@ fn next_request_id() -> String {
     format!("wsreq-{id}")
 }
 
-/// internal command sent from request() to the background task
-struct RestCommand {
-    request_id: String,
-    method: String,
-    uri: String,
-    content_type: Option<String>,
-    message_body: Option<String>,
-    deadline: Instant,
-    lifecycle: Arc<RequestLifecycle>,
-    response_tx: oneshot::Sender<Result<TransportResponse>>,
-}
-
-struct PendingResponse {
-    deadline: Instant,
-    request_id: String,
-    method: String,
-    uri: String,
-    lifecycle: Arc<RequestLifecycle>,
-    response_tx: oneshot::Sender<Result<TransportResponse>>,
-}
-
 const CANCELLED_REQUEST_CLEANUP_INTERVAL: Duration = Duration::from_secs(1);
 
 struct WsLoopConfig {
@@ -73,6 +53,7 @@ struct WsLoopConfig {
 pub(crate) struct WsTransport {
     command_tx: mpsc::Sender<RestCommand>,
     shutdown_tx: watch::Sender<bool>,
+    state_rx: watch::Receiver<AriConnectionState>,
     task: OwnedTask,
     request_timeout: Duration,
 }
@@ -88,6 +69,7 @@ impl WsTransport {
             max_websocket_message_bytes: config.max_websocket_message_bytes(),
         };
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let (state_tx, state_rx) = watch::channel(AriConnectionState::Connecting);
         let (command_tx, command_rx) = mpsc::channel(REST_COMMAND_CAPACITY);
 
         let task = tokio::spawn(ws_loop(
@@ -97,14 +79,24 @@ impl WsTransport {
             loop_config,
             command_rx,
             shutdown_rx,
+            state_tx,
         ));
 
         Ok(Self {
             command_tx,
             shutdown_tx,
+            state_rx,
             task: OwnedTask::new(task),
             request_timeout: config.request_timeout(),
         })
+    }
+
+    pub(crate) fn connection_state(&self) -> AriConnectionState {
+        self.state_rx.borrow().clone()
+    }
+
+    pub(crate) fn subscribe_connection_state(&self) -> watch::Receiver<AriConnectionState> {
+        self.state_rx.clone()
     }
 
     /// send a REST request over the websocket and wait for the response
@@ -114,6 +106,12 @@ impl WsTransport {
         path: &str,
         body: Option<String>,
     ) -> Result<TransportResponse> {
+        if self.connection_state() != AriConnectionState::Ready {
+            return Err(AriError::RequestNotSent {
+                method: method.to_owned(),
+                uri: path.strip_prefix('/').unwrap_or(path).to_owned(),
+            });
+        }
         let deadline = Instant::now()
             .checked_add(self.request_timeout)
             .ok_or_else(|| {
@@ -189,14 +187,21 @@ async fn ws_loop(
     config: WsLoopConfig,
     mut command_rx: mpsc::Receiver<RestCommand>,
     mut shutdown_rx: watch::Receiver<bool>,
+    state_tx: watch::Sender<AriConnectionState>,
 ) {
     let mut attempt: u32 = 0;
 
     loop {
         if *shutdown_rx.borrow() {
+            state_tx.send_replace(AriConnectionState::Disconnected);
             tracing::debug!("ws transport shutting down");
             return;
         }
+        state_tx.send_replace(if attempt == 0 {
+            AriConnectionState::Connecting
+        } else {
+            AriConnectionState::Reconnecting
+        });
 
         tracing::info!(url = %redact_url(&ws_url), attempt, "connecting to ARI websocket (unified mode)");
 
@@ -210,13 +215,17 @@ async fn ws_loop(
             ),
         );
         tokio::pin!(connection);
-        let connection_result = tokio::select! {
-            biased;
-            _ = wait_for_shutdown(&mut shutdown_rx) => {
-                tracing::debug!("ws transport shutting down during connection attempt");
-                return;
+        let connection_result = loop {
+            tokio::select! {
+                biased;
+                _ = wait_for_shutdown(&mut shutdown_rx) => {
+                    state_tx.send_replace(AriConnectionState::Disconnected);
+                    tracing::debug!("ws transport shutting down during connection attempt");
+                    return;
+                }
+                command = command_rx.recv() => match command { Some(command) => reject_unready(command), None => return },
+                result = &mut connection => break result,
             }
-            result = &mut connection => result,
         };
 
         match connection_result {
@@ -225,7 +234,8 @@ async fn ws_loop(
             }
             Ok(Ok((ws_stream, _response))) => {
                 tracing::info!("ARI websocket connected (unified mode)");
-                attempt = 0;
+                state_tx.send_replace(AriConnectionState::Ready);
+                let connected_at = Instant::now();
 
                 if let Err(should_exit) = handle_connection(
                     ws_stream,
@@ -238,16 +248,22 @@ async fn ws_loop(
                 .await
                 {
                     if should_exit {
+                        state_tx.send_replace(AriConnectionState::Disconnected);
                         return;
                     }
                 }
 
                 tracing::warn!("ARI websocket disconnected (unified mode)");
+                if connected_at.elapsed() >= config.reconnect.stability_window {
+                    attempt = 0;
+                }
             }
             Ok(Err(e)) => {
                 tracing::warn!(error = %e, attempt, "ARI websocket connection failed");
             }
         }
+
+        state_tx.send_replace(AriConnectionState::Reconnecting);
 
         if config
             .reconnect
@@ -258,26 +274,45 @@ async fn ws_loop(
                 attempt,
                 "max reconnection attempts reached, stopping ws transport"
             );
+            state_tx.send_replace(AriConnectionState::Terminal {
+                details: format!(
+                    "unified websocket connection terminated after {attempt} reconnection attempts"
+                ),
+            });
             return;
         }
 
         let delay = config.reconnect.delay_for_attempt(attempt);
         if delay > Duration::ZERO {
             tracing::info!(?delay, attempt, "waiting before reconnection");
-            tokio::select! {
-                biased;
-                changed = shutdown_rx.changed() => {
-                    if changed.is_err() || *shutdown_rx.borrow() {
-                        tracing::debug!("ws transport shutting down during backoff");
-                        return;
+            let sleep = tokio::time::sleep(delay);
+            tokio::pin!(sleep);
+            loop {
+                tokio::select! {
+                    biased;
+                    changed = shutdown_rx.changed() => {
+                        if changed.is_err() || *shutdown_rx.borrow() {
+                            state_tx.send_replace(AriConnectionState::Disconnected);
+                            tracing::debug!("ws transport shutting down during backoff");
+                            return;
+                        }
                     }
+                    command = command_rx.recv() => match command { Some(command) => reject_unready(command), None => return },
+                    _ = &mut sleep => break,
                 }
-                _ = tokio::time::sleep(delay) => {}
             }
         }
 
         attempt = attempt.saturating_add(1);
     }
+}
+
+fn reject_unready(command: RestCommand) {
+    command.lifecycle.cancel_unsent();
+    let _ = command.response_tx.send(Err(AriError::RequestNotSent {
+        method: command.method,
+        uri: command.uri,
+    }));
 }
 
 /// handle a single active websocket connection — multiplexes REST
@@ -517,104 +552,6 @@ async fn wait_for_shutdown(shutdown_rx: &mut watch::Receiver<bool>) {
         }
         if shutdown_rx.changed().await.is_err() {
             return;
-        }
-    }
-}
-
-fn fail_pending(pending: &mut HashMap<String, PendingResponse>, details: &str) {
-    for (_, response) in pending.drain() {
-        let error = write_error(
-            &response.method,
-            &response.uri,
-            &response.request_id,
-            &response.lifecycle,
-            || details.to_owned(),
-        );
-        let _ = response.response_tx.send(Err(error));
-    }
-}
-
-fn purge_expired(pending: &mut HashMap<String, PendingResponse>) {
-    let now = Instant::now();
-    let expired: Vec<_> = pending
-        .iter()
-        .filter(|(_, response)| response.response_tx.is_closed() || response.deadline <= now)
-        .map(|(request_id, _)| request_id.clone())
-        .collect();
-    for request_id in expired {
-        let Some(response) = pending.remove(&request_id) else {
-            continue;
-        };
-        if response.response_tx.is_closed() {
-            tracing::debug!(%request_id, "discarding cancelled REST response correlation");
-            continue;
-        }
-        let error = deadline_error(
-            &response.method,
-            &response.uri,
-            &response.request_id,
-            &response.lifecycle,
-        );
-        let _ = response.response_tx.send(Err(error));
-    }
-}
-
-/// route an incoming text websocket message — REST responses go to
-/// pending callers, everything else is published as an ARI event
-fn route_text_message(
-    text: &str,
-    event_bus: &EventBus<AriMessage>,
-    pending: &mut HashMap<String, PendingResponse>,
-    max_response_body_bytes: usize,
-) {
-    match serde_json::from_str::<AriMessage>(text) {
-        Ok(msg) => {
-            if let AriEvent::RESTResponse {
-                ref request_id,
-                status_code,
-                ref reason_phrase,
-                ref message_body,
-                ..
-            } = msg.event
-            {
-                if let Some(response) = pending.remove(request_id) {
-                    if let Some(body) = message_body {
-                        if body.len() > max_response_body_bytes {
-                            let _ = response.response_tx.send(Err(AriError::ResponseTooLarge {
-                                limit: max_response_body_bytes,
-                                received: u64::try_from(body.len()).unwrap_or(u64::MAX),
-                            }));
-                            return;
-                        }
-                    }
-                    let result = u16::try_from(status_code)
-                        .map_err(|_| {
-                            AriError::WebSocket(format!(
-                                "invalid REST response status code: {status_code}"
-                            ))
-                        })
-                        .and_then(|status| {
-                            TransportResponse {
-                                status,
-                                body: message_body.clone(),
-                            }
-                            .require_success_with_fallback(
-                                (!reason_phrase.is_empty()).then(|| reason_phrase.clone()),
-                            )
-                        });
-                    let _ = response.response_tx.send(result);
-                }
-            } else {
-                tracing::debug!(?msg, "received ARI event");
-                event_bus.publish(msg);
-            }
-        }
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                payload_bytes = text.len(),
-                "failed to deserialize ARI message"
-            );
         }
     }
 }

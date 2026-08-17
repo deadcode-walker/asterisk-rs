@@ -22,3 +22,4 @@ pub use config::{AriConfig, TransportMode};
 pub use error::AriError;
 pub use event::{AriEvent, AriMessage, UnknownAriEvent};
 pub use pending::{PendingBridge, PendingChannel, PendingPlayback};
+pub use transport::AriConnectionState;

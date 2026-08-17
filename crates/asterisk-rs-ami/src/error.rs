@@ -2,6 +2,41 @@
 
 use asterisk_rs_core::error::{AuthError, ConnectionError, ProtocolError, TimeoutError};
 
+/// Cloneable terminal connection cause retained after the background actor exits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AmiTerminalError {
+    pub kind: AmiTerminalErrorKind,
+    pub details: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AmiTerminalErrorKind {
+    Authentication,
+    Connection,
+    Timeout,
+    Protocol,
+    Io,
+    Other,
+}
+
+impl AmiTerminalError {
+    pub(crate) fn from_error(error: &AmiError) -> Self {
+        let kind = match error {
+            AmiError::Auth(_) => AmiTerminalErrorKind::Authentication,
+            AmiError::Connection(_) => AmiTerminalErrorKind::Connection,
+            AmiError::Timeout(_) => AmiTerminalErrorKind::Timeout,
+            AmiError::Protocol(_) => AmiTerminalErrorKind::Protocol,
+            AmiError::Io(_) => AmiTerminalErrorKind::Io,
+            _ => AmiTerminalErrorKind::Other,
+        };
+        Self {
+            kind,
+            details: error.to_string(),
+        }
+    }
+}
+
 /// errors specific to AMI operations
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]

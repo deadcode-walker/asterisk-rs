@@ -1,3 +1,5 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,7 +14,11 @@ use crate::handler::AgiHandler;
 use crate::request::AgiRequest;
 
 const DEFAULT_MAX_CONNECTIONS: usize = 256;
+const DEFAULT_PRELUDE_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
+type AdmissionFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
+type AdmissionHook = dyn Fn(std::net::SocketAddr, AgiRequest) -> AdmissionFuture + Send + Sync;
 
 /// handle for signaling an [`AgiServer`] to shut down
 #[derive(Clone)]
@@ -31,7 +37,9 @@ impl ShutdownHandle {
 pub struct AgiServer<H: AgiHandler> {
     listener: TcpListener,
     handler: Arc<H>,
+    admission_hook: Option<Arc<AdmissionHook>>,
     max_connections: usize,
+    prelude_timeout: Duration,
     shutdown_timeout: Duration,
     shutdown_rx: watch::Receiver<bool>,
 }
@@ -41,7 +49,9 @@ pub struct AgiServer<H: AgiHandler> {
 pub struct AgiServerBuilder<H> {
     bind_addr: String,
     handler: Option<H>,
+    admission_hook: Option<Arc<AdmissionHook>>,
     max_connections: usize,
+    prelude_timeout: Duration,
     shutdown_timeout: Duration,
     allow_external_bind: bool,
 }
@@ -52,7 +62,9 @@ impl<H: AgiHandler> AgiServer<H> {
         AgiServerBuilder {
             bind_addr: "127.0.0.1:4573".to_owned(),
             handler: None,
+            admission_hook: None,
             max_connections: DEFAULT_MAX_CONNECTIONS,
+            prelude_timeout: DEFAULT_PRELUDE_TIMEOUT,
             shutdown_timeout: DEFAULT_SHUTDOWN_TIMEOUT,
             allow_external_bind: false,
         }
@@ -69,6 +81,7 @@ impl<H: AgiHandler> AgiServer<H> {
     pub async fn run(mut self) -> Result<()> {
         let semaphore = Arc::new(Semaphore::new(self.max_connections));
         let mut sessions = JoinSet::new();
+        let mut task_failure = None;
 
         loop {
             let permit = tokio::select! {
@@ -98,10 +111,18 @@ impl<H: AgiHandler> AgiServer<H> {
                     tracing::debug!(%peer, "new AGI connection");
 
                     let handler = Arc::clone(&self.handler);
+                    let admission_hook = self.admission_hook.clone();
+                    let prelude_timeout = self.prelude_timeout;
                     sessions.spawn(async move {
                         let _permit = permit;
 
-                        if let Err(err) = handle_connection(handler, stream, peer).await {
+                        if let Err(err) = handle_connection(
+                            handler,
+                            admission_hook,
+                            prelude_timeout,
+                            stream,
+                            peer,
+                        ).await {
                             tracing::warn!(%peer, %err, "AGI session error");
                         }
                     });
@@ -114,6 +135,10 @@ impl<H: AgiHandler> AgiServer<H> {
                 Some(result) = sessions.join_next(), if !sessions.is_empty() => {
                     if let Err(error) = result {
                         tracing::error!(%error, "AGI session task failed");
+                        task_failure = Some(AgiError::SessionTaskFailed {
+                            details: error.to_string(),
+                        });
+                        break;
                     }
                 }
             }
@@ -124,6 +149,11 @@ impl<H: AgiHandler> AgiServer<H> {
             while let Some(result) = sessions.join_next().await {
                 if let Err(error) = result {
                     tracing::error!(%error, "AGI session task failed during shutdown");
+                    if task_failure.is_none() {
+                        task_failure = Some(AgiError::SessionTaskFailed {
+                            details: error.to_string(),
+                        });
+                    }
                 }
             }
         };
@@ -135,35 +165,41 @@ impl<H: AgiHandler> AgiServer<H> {
             sessions.abort_all();
             while sessions.join_next().await.is_some() {}
         }
-        Ok(())
+        match task_failure {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 }
 
 /// process a single AGI connection: read environment, create channel, dispatch to handler
 async fn handle_connection<H: AgiHandler>(
     handler: Arc<H>,
+    admission_hook: Option<Arc<AdmissionHook>>,
+    prelude_timeout: Duration,
     stream: tokio::net::TcpStream,
     peer: std::net::SocketAddr,
 ) -> Result<()> {
     let (read_half, write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
 
-    // 30s deadline prevents slow/malicious clients from holding a connection slot indefinitely
-    let mut request = match tokio::time::timeout(
-        Duration::from_secs(30),
-        AgiRequest::parse_from_reader(&mut reader),
-    )
-    .await
-    {
-        Ok(result) => result?,
-        Err(_elapsed) => {
-            tracing::warn!("AGI prelude read timed out after 30s");
-            return Err(AgiError::RequestTimeout {
-                elapsed: Duration::from_secs(30),
-            });
-        }
-    };
+    let mut request =
+        match tokio::time::timeout(prelude_timeout, AgiRequest::parse_from_reader(&mut reader))
+            .await
+        {
+            Ok(result) => result?,
+            Err(_elapsed) => {
+                tracing::warn!(?prelude_timeout, %peer, "AGI prelude read timed out");
+                return Err(AgiError::RequestTimeout {
+                    elapsed: prelude_timeout,
+                });
+            }
+        };
     request.set_peer_addr(peer);
+
+    if let Some(admit) = admission_hook {
+        admit(peer, request.clone()).await?;
+    }
 
     let channel = AgiChannel::new(reader, write_half);
     handler.handle(request, channel).await
@@ -182,9 +218,27 @@ impl<H: AgiHandler> AgiServerBuilder<H> {
         self
     }
 
+    /// inspect and authenticate a peer and its parsed request before dispatch
+    ///
+    /// returning an error rejects that session without invoking the handler.
+    pub fn admission_hook<F, Fut>(mut self, hook: F) -> Self
+    where
+        F: Fn(std::net::SocketAddr, AgiRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        self.admission_hook = Some(Arc::new(move |peer, request| Box::pin(hook(peer, request))));
+        self
+    }
+
     /// set the maximum number of concurrent connections
     pub fn max_connections(mut self, n: usize) -> Self {
         self.max_connections = n;
+        self
+    }
+
+    /// set the deadline for receiving the complete AGI request prelude
+    pub fn prelude_timeout(mut self, timeout: Duration) -> Self {
+        self.prelude_timeout = timeout;
         self
     }
 
@@ -215,6 +269,11 @@ impl<H: AgiHandler> AgiServerBuilder<H> {
                 details: "max_connections must be greater than zero".to_owned(),
             });
         }
+        if self.prelude_timeout.is_zero() {
+            return Err(AgiError::InvalidConfig {
+                details: "prelude_timeout must be greater than zero".to_owned(),
+            });
+        }
         if self.shutdown_timeout.is_zero() {
             return Err(AgiError::InvalidConfig {
                 details: "shutdown_timeout must be greater than zero".to_owned(),
@@ -237,7 +296,9 @@ impl<H: AgiHandler> AgiServerBuilder<H> {
         let server = AgiServer {
             listener,
             handler: Arc::new(handler),
+            admission_hook: self.admission_hook,
             max_connections: self.max_connections,
+            prelude_timeout: self.prelude_timeout,
             shutdown_timeout: self.shutdown_timeout,
             shutdown_rx,
         };

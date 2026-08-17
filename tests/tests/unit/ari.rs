@@ -126,10 +126,11 @@ async fn client_transport_modes_construct_explicit_tls_configuration() {
             .reconnect(ReconnectPolicy::none())
             .build()
             .expect("config should build");
-        let client = AriClient::connect(config)
-            .await
-            .expect("explicit AWS-LC platform-verifier configuration should construct");
-        client.disconnect();
+        let result = AriClient::connect(config).await;
+        assert!(
+            matches!(result, Err(AriError::WebSocket(_))),
+            "TLS configuration must construct before the expected unreachable-server failure: {result:?}"
+        );
     }
 }
 

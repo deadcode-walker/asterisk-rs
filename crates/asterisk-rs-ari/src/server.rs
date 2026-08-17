@@ -27,10 +27,11 @@ use crate::config::{
     DEFAULT_MAX_RESPONSE_BODY_BYTES, DEFAULT_MAX_WEBSOCKET_MESSAGE_BYTES, DEFAULT_REQUEST_TIMEOUT,
 };
 use crate::error::{AriError, Result};
-use crate::event::{AriEvent, AriMessage};
+use crate::event::AriMessage;
 use crate::transport::{
-    REST_COMMAND_CAPACITY, RequestLifecycle, TransportResponse, deadline_error,
-    outbound_message_limit_error, poll_wire_write, write_error,
+    PendingResponse, REST_COMMAND_CAPACITY, RequestLifecycle, RestCommand, TransportResponse,
+    deadline_error, fail_pending, outbound_message_limit_error, poll_wire_write, purge_expired,
+    route_text_message, write_error,
 };
 use crate::websocket::websocket_config;
 use crate::ws_proto::WsRestRequest;
@@ -62,27 +63,6 @@ struct ConnectionConfig {
     max_websocket_message_bytes: usize,
 }
 
-/// internal command sent from request methods to the session background task
-struct SessionCommand {
-    request_id: String,
-    method: String,
-    uri: String,
-    content_type: Option<String>,
-    message_body: Option<String>,
-    deadline: Instant,
-    lifecycle: Arc<RequestLifecycle>,
-    response_tx: oneshot::Sender<Result<TransportResponse>>,
-}
-
-struct PendingResponse {
-    deadline: Instant,
-    request_id: String,
-    method: String,
-    uri: String,
-    lifecycle: Arc<RequestLifecycle>,
-    response_tx: oneshot::Sender<Result<TransportResponse>>,
-}
-
 // --- public types ---
 
 /// handle for controlling the ARI server lifecycle
@@ -107,7 +87,7 @@ impl ShutdownHandle {
 #[derive(Debug, Clone)]
 pub struct AriSession {
     event_bus: EventBus<AriMessage>,
-    command_tx: mpsc::Sender<SessionCommand>,
+    command_tx: mpsc::Sender<RestCommand>,
     shutdown_tx: Arc<watch::Sender<bool>>,
     shutdown_rx: watch::Receiver<bool>,
     peer_addr: SocketAddr,
@@ -118,7 +98,7 @@ impl AriSession {
     fn new(
         peer_addr: SocketAddr,
         request_timeout: Duration,
-    ) -> (Self, mpsc::Receiver<SessionCommand>, watch::Receiver<bool>) {
+    ) -> (Self, mpsc::Receiver<RestCommand>, watch::Receiver<bool>) {
         let event_bus = EventBus::new(256);
         let (command_tx, command_rx) = mpsc::channel(REST_COMMAND_CAPACITY);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -255,7 +235,7 @@ impl AriSession {
         let lifecycle = Arc::new(RequestLifecycle::default());
         let uri = path.strip_prefix('/').unwrap_or(path).to_owned();
 
-        let cmd = SessionCommand {
+        let cmd = RestCommand {
             request_id: request_id.clone(),
             method: method.to_owned(),
             uri: uri.clone(),
@@ -307,6 +287,7 @@ pub struct AriServer {
     request_timeout: Duration,
     max_response_body_bytes: usize,
     max_websocket_message_bytes: usize,
+    admission_hook: Arc<dyn Fn(SocketAddr) -> bool + Send + Sync>,
 }
 
 impl std::fmt::Debug for AriServer {
@@ -360,7 +341,7 @@ impl AriServer {
                         }
                     }
                     result = tasks.join_next() => {
-                        report_connection_result(result);
+                        report_connection_result(result)?;
                     }
                 }
                 continue;
@@ -374,7 +355,7 @@ impl AriServer {
                     }
                 }
                 result = tasks.join_next(), if !tasks.is_empty() => {
-                    report_connection_result(result);
+                    report_connection_result(result)?;
                 }
                 result = self.listener.accept() => {
                     let (stream, addr) = match result {
@@ -385,6 +366,10 @@ impl AriServer {
                             continue;
                         }
                     };
+                    if !(self.admission_hook)(addr) {
+                        tracing::warn!(%addr, "rejected incoming ARI websocket connection");
+                        continue;
+                    }
                     tracing::info!(%addr, "accepted incoming ARI websocket connection");
 
                     let handler = handler.clone();
@@ -515,16 +500,24 @@ async fn wait_for_shutdown(shutdown_rx: &mut watch::Receiver<bool>) {
     }
 }
 
-fn report_connection_result(result: Option<std::result::Result<(), tokio::task::JoinError>>) {
+fn report_connection_result(
+    result: Option<std::result::Result<(), tokio::task::JoinError>>,
+) -> Result<()> {
     if let Some(Err(error)) = result {
         tracing::error!(error = %error, "ARI connection task failed");
+        if error.is_panic() {
+            return Err(AriError::SessionTaskFailed {
+                details: format!("ARI connection task panicked: {error}"),
+            });
+        }
     }
+    Ok(())
 }
 
 async fn drain_connections(tasks: &mut JoinSet<()>, timeout: Duration) {
     let drain = async {
         while let Some(result) = tasks.join_next().await {
-            report_connection_result(Some(result));
+            let _ = report_connection_result(Some(result));
         }
     };
 
@@ -536,7 +529,7 @@ async fn drain_connections(tasks: &mut JoinSet<()>, timeout: Duration) {
         );
         tasks.abort_all();
         while let Some(result) = tasks.join_next().await {
-            report_connection_result(Some(result));
+            let _ = report_connection_result(Some(result));
         }
     }
 }
@@ -544,7 +537,7 @@ async fn drain_connections(tasks: &mut JoinSet<()>, timeout: Duration) {
 // --- AriServerBuilder ---
 
 /// builder for [`AriServer`]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[must_use]
 pub struct AriServerBuilder {
     bind_addr: SocketAddr,
@@ -554,6 +547,26 @@ pub struct AriServerBuilder {
     request_timeout: Duration,
     max_response_body_bytes: usize,
     max_websocket_message_bytes: usize,
+    allow_external_bind: bool,
+    admission_hook: Arc<dyn Fn(SocketAddr) -> bool + Send + Sync>,
+}
+
+impl std::fmt::Debug for AriServerBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AriServerBuilder")
+            .field("bind_addr", &self.bind_addr)
+            .field("max_connections", &self.max_connections)
+            .field("handshake_timeout", &self.handshake_timeout)
+            .field("shutdown_timeout", &self.shutdown_timeout)
+            .field("request_timeout", &self.request_timeout)
+            .field("max_response_body_bytes", &self.max_response_body_bytes)
+            .field(
+                "max_websocket_message_bytes",
+                &self.max_websocket_message_bytes,
+            )
+            .field("allow_external_bind", &self.allow_external_bind)
+            .finish_non_exhaustive()
+    }
 }
 
 impl AriServerBuilder {
@@ -567,12 +580,29 @@ impl AriServerBuilder {
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             max_response_body_bytes: DEFAULT_MAX_RESPONSE_BODY_BYTES,
             max_websocket_message_bytes: DEFAULT_MAX_WEBSOCKET_MESSAGE_BYTES,
+            allow_external_bind: false,
+            admission_hook: Arc::new(|_| true),
         }
     }
 
     /// set the address to listen on (default `127.0.0.1:8765`)
     pub fn bind(mut self, addr: SocketAddr) -> Self {
         self.bind_addr = addr;
+        self
+    }
+
+    /// Explicitly permit an external bind after the caller supplies a network auth boundary.
+    pub fn allow_external_bind(mut self, allow: bool) -> Self {
+        self.allow_external_bind = allow;
+        self
+    }
+
+    /// Admit or reject a peer before spending work on its WebSocket handshake.
+    pub fn admission_hook(
+        mut self,
+        hook: impl Fn(SocketAddr) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.admission_hook = Arc::new(hook);
         self
     }
 
@@ -614,6 +644,12 @@ impl AriServerBuilder {
 
     /// bind the TCP listener and return the server + shutdown handle
     pub async fn build(self) -> Result<(AriServer, ShutdownHandle)> {
+        if !self.bind_addr.ip().is_loopback() && !self.allow_external_bind {
+            return Err(AriError::InvalidConfig(
+                "external bind requires allow_external_bind(true) and a network authentication boundary"
+                    .to_owned(),
+            ));
+        }
         if self.max_connections == 0 {
             return Err(AriError::InvalidConfig(
                 "max_connections must be greater than zero".to_owned(),
@@ -668,6 +704,7 @@ impl AriServerBuilder {
             request_timeout: self.request_timeout,
             max_response_body_bytes: self.max_response_body_bytes,
             max_websocket_message_bytes: self.max_websocket_message_bytes,
+            admission_hook: self.admission_hook,
         };
         let handle = ShutdownHandle {
             shutdown_tx: Arc::new(shutdown_tx),
@@ -690,7 +727,7 @@ impl Default for AriServerBuilder {
 async fn session_loop(
     ws_stream: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
     event_bus: EventBus<AriMessage>,
-    mut command_rx: mpsc::Receiver<SessionCommand>,
+    mut command_rx: mpsc::Receiver<RestCommand>,
     mut shutdown_rx: watch::Receiver<bool>,
     max_response_body_bytes: usize,
     max_websocket_message_bytes: usize,
@@ -732,7 +769,7 @@ async fn session_loop(
             msg = read.next() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
-                        route_message(
+                        route_text_message(
                             &text,
                             &event_bus,
                             &mut pending,
@@ -917,103 +954,6 @@ async fn session_loop(
                     }
                 }
             }
-        }
-    }
-}
-
-fn fail_pending(pending: &mut HashMap<String, PendingResponse>, details: &str) {
-    for (_, response) in pending.drain() {
-        let error = write_error(
-            &response.method,
-            &response.uri,
-            &response.request_id,
-            &response.lifecycle,
-            || details.to_owned(),
-        );
-        let _ = response.response_tx.send(Err(error));
-    }
-}
-
-fn purge_expired(pending: &mut HashMap<String, PendingResponse>) {
-    let now = Instant::now();
-    let expired: Vec<_> = pending
-        .iter()
-        .filter(|(_, response)| response.response_tx.is_closed() || response.deadline <= now)
-        .map(|(request_id, _)| request_id.clone())
-        .collect();
-    for request_id in expired {
-        let Some(response) = pending.remove(&request_id) else {
-            continue;
-        };
-        if response.response_tx.is_closed() {
-            tracing::debug!(%request_id, "discarding cancelled session response correlation");
-            continue;
-        }
-        let error = deadline_error(
-            &response.method,
-            &response.uri,
-            &response.request_id,
-            &response.lifecycle,
-        );
-        let _ = response.response_tx.send(Err(error));
-    }
-}
-
-/// route an incoming text message — REST responses go to pending callers,
-/// everything else is published as an ARI event
-fn route_message(
-    text: &str,
-    event_bus: &EventBus<AriMessage>,
-    pending: &mut HashMap<String, PendingResponse>,
-    max_response_body_bytes: usize,
-) {
-    match serde_json::from_str::<AriMessage>(text) {
-        Ok(msg) => {
-            if let AriEvent::RESTResponse {
-                ref request_id,
-                status_code,
-                ref reason_phrase,
-                ref message_body,
-                ..
-            } = msg.event
-            {
-                if let Some(response) = pending.remove(request_id) {
-                    if let Some(body) = message_body {
-                        if body.len() > max_response_body_bytes {
-                            let _ = response.response_tx.send(Err(AriError::ResponseTooLarge {
-                                limit: max_response_body_bytes,
-                                received: u64::try_from(body.len()).unwrap_or(u64::MAX),
-                            }));
-                            return;
-                        }
-                    }
-                    let result = u16::try_from(status_code)
-                        .map_err(|_| {
-                            AriError::WebSocket(format!(
-                                "invalid REST response status code: {status_code}"
-                            ))
-                        })
-                        .and_then(|status| {
-                            TransportResponse {
-                                status,
-                                body: message_body.clone(),
-                            }
-                            .require_success_with_fallback(
-                                (!reason_phrase.is_empty()).then(|| reason_phrase.clone()),
-                            )
-                        });
-                    let _ = response.response_tx.send(result);
-                }
-            } else {
-                event_bus.publish(msg);
-            }
-        }
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                payload_bytes = text.len(),
-                "failed to deserialize ARI message in session"
-            );
         }
     }
 }

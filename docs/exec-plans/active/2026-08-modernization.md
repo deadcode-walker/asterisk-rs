@@ -125,6 +125,22 @@ is either a green local harness commit or a concrete authority/external-state bl
   both were repaired, and final re-review found no actionable finding. Frozen proof passed
   `just ci`, `just msrv`, and `just semver` with 966 current/MSRV unit tests and 252 current/MSRV mock
   tests. Live proof remains in the final plan-wide isolated-Asterisk gate.
+- [x] 2026-08-17: completed Slice 2's bounded actor and lifecycle policy. Reconnect policies now
+  validate finite non-hot-loop parameters, cap post-jitter delays, saturate extreme attempts, and
+  reset AMI/ARI retry budgets only after a stability window. AMI retains a typed terminal cause;
+  both outbound ARI modes await initial WebSocket readiness and publish reconnect/terminal state;
+  unified requests are rejected as definitely unsent while disconnected, and accepted-session plus
+  unified response correlation share one private command/pending/expiry/router engine. AGI and ARI
+  servers have finite validated admission, handshake/prelude and shutdown bounds, peer-aware hooks,
+  explicit external-bind opt-in, and observable task panics. Media uses independent priority control
+  and audio queues, bounded writes, nonblocking event delivery, and retained XON/XOFF state while its
+  send APIs explicitly promise queue admission only. Focused lifecycle, saturation, flow-control,
+  admission, panic, and stability tests pass; the integrated `just check` candidate passes 968 unit
+  and 263 mock tests. Frozen `just ci`, `just msrv`, and `just semver` proof passed. The bounded
+  read-only review found that both ARI transports retained `Ready` during reconnect backoff; the
+  candidate now publishes `Reconnecting` immediately after socket loss, with external tests for
+  both modes. The repaired exact tree passed `just ci`, `just msrv`, and `just semver` with 968 unit
+  and 264 mock tests before commit.
 
 ## Surprises and discoveries
 
@@ -233,23 +249,23 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
 
 ### Slice 2: one bounded actor and lifecycle policy
 
-- [ ] Apply one policy to AMI, ARI, media, AGI, trackers, and servers: absolute admission-to-response
+- [x] Apply one policy to AMI, ARI, media, AGI, trackers, and servers: absolute admission-to-response
   deadlines, cancellation state, bounded in-flight work, bounded writes, explicit readiness/terminal
   error, owned JoinSet tasks, cooperative shutdown, bounded drain, then forced cancellation.
-- [ ] AMI: definitive auth failures terminate startup with their typed cause; transient failures obey
+- [x] AMI: definitive auth failures terminate startup with their typed cause; transient failures obey
   reconnect policy; retry budgets reset only after a stability window.
 - [x] AMI: exact Ping ActionID and explicit pong deadline, skipped missed ticks, bounded Ping writes,
   fair reader/command scheduling, closed/deadline pending cleanup, and a maximum in-flight limit.
 - [x] AMI collecting actions: resolve initial Error immediately, model Complete and Cancelled terminal
   states, and enforce aggregate byte plus event-count bounds.
-- [ ] ARI: initial WebSocket readiness is observable; reconnect/backoff drains or expires commands;
+- [x] ARI: initial WebSocket readiness is observable; reconnect/backoff drains or expires commands;
   session and unified correlations share one private engine where that removes proven divergence.
-- [ ] AGI/ARI servers: finite connection defaults, zero-value validation, handshake/prelude timeouts,
+- [x] AGI/ARI servers: finite connection defaults, zero-value validation, handshake/prelude timeouts,
   peer identity, explicit external-bind opt-in, admission/authentication hook, task panic observation,
   and bounded graceful shutdown.
-- [ ] Media: separate priority control from bounded audio, make flow-control state non-lossy, keep the
+- [x] Media: separate priority control from bounded audio, make flow-control state non-lossy, keep the
   socket actor nonblocking, and make enqueue-versus-transmit semantics explicit.
-- [ ] Validate `ReconnectPolicy`, cap jitter after calculation, avoid zero-delay hot loops, and use
+- [x] Validate `ReconnectPolicy`, cap jitter after calculation, avoid zero-delay hot loops, and use
   saturating arithmetic for extreme attempts/durations.
 
 ### Slice 3: loss-aware state and resource bounds

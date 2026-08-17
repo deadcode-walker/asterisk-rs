@@ -2297,6 +2297,120 @@ async fn definitive_auth_failure_is_not_retried() {
 }
 
 #[tokio::test]
+async fn unstable_reconnect_does_not_reset_retry_budget() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let server_attempts = attempts.clone();
+    let (handle, ready) = server.accept_loop(move |mut conn, _index| {
+        let attempts = server_attempts.clone();
+        async move {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            handle_login(&mut conn).await;
+            // Closing immediately after login keeps the connection below the
+            // configured stability window.
+        }
+    });
+    ready.notified().await;
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(
+            ReconnectPolicy::fixed(Duration::from_millis(10))
+                .with_max_retries(1)
+                .with_stability_window(Duration::from_secs(1)),
+        )
+        .connect_timeout(Duration::from_secs(2))
+        .build()
+        .await
+        .expect("initial connection should succeed");
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while client.connection_state() != ConnectionState::Disconnected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("retry budget should be exhausted after the unstable reconnect");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        attempts.load(Ordering::SeqCst),
+        2,
+        "an unstable reconnect must not restore the consumed retry"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn stable_reconnect_resets_retry_budget() {
+    init_tracing();
+
+    let server = MockAmiServer::start().await;
+    let port = server.port();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let server_attempts = attempts.clone();
+    let (handle, ready) = server.accept_loop(move |mut conn, index| {
+        let attempts = server_attempts.clone();
+        async move {
+            attempts.fetch_add(1, Ordering::SeqCst);
+            handle_login(&mut conn).await;
+            if index == 1 {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            } else if index >= 2 {
+                while conn.read_message().await.is_some() {}
+            }
+        }
+    });
+    ready.notified().await;
+
+    let client = AmiClient::builder()
+        .host("127.0.0.1")
+        .port(port)
+        .credentials("admin", "secret")
+        .reconnect(
+            ReconnectPolicy::fixed(Duration::from_millis(10))
+                .with_max_retries(1)
+                .with_stability_window(Duration::from_millis(50)),
+        )
+        .connect_timeout(Duration::from_secs(2))
+        .build()
+        .await
+        .expect("initial connection should succeed");
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while attempts.load(Ordering::SeqCst) < 3
+            || client.connection_state() != ConnectionState::Connected
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("a stable connection should restore one retry");
+
+    client
+        .disconnect()
+        .await
+        .expect("disconnect should succeed");
+    handle.abort();
+}
+
+#[tokio::test]
+async fn builder_rejects_invalid_reconnect_policy() {
+    let result = AmiClient::builder()
+        .credentials("admin", "secret")
+        .reconnect(ReconnectPolicy::fixed(Duration::ZERO))
+        .build()
+        .await;
+
+    assert!(matches!(result, Err(AmiError::InvalidConfig { .. })));
+}
+
+#[tokio::test]
 async fn initial_connection_timeout_bounds_builder() {
     init_tracing();
 

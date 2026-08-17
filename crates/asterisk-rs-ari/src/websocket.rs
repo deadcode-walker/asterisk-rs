@@ -12,6 +12,7 @@ use tokio::sync::watch;
 
 use crate::error::{AriError, Result};
 use crate::event::AriMessage;
+use crate::transport::AriConnectionState;
 use crate::util::redact_url;
 
 const TASK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
@@ -159,6 +160,7 @@ pub(crate) fn websocket_config(
 /// deserializes events, and publishes them to an event bus
 pub(crate) struct WsEventListener {
     shutdown_tx: watch::Sender<bool>,
+    state_rx: watch::Receiver<AriConnectionState>,
     task: OwnedTask,
 }
 
@@ -172,6 +174,7 @@ impl WsEventListener {
     ) -> Result<Self> {
         let tls_connector = connector_for_url(&ws_url)?;
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let (state_tx, state_rx) = watch::channel(AriConnectionState::Connecting);
 
         let task_handle = tokio::spawn(ws_loop(
             ws_url,
@@ -180,12 +183,22 @@ impl WsEventListener {
             tls_connector,
             max_websocket_message_bytes,
             shutdown_rx,
+            state_tx,
         ));
 
         Ok(Self {
             shutdown_tx,
+            state_rx,
             task: OwnedTask::new(task_handle),
         })
+    }
+
+    pub(crate) fn connection_state(&self) -> AriConnectionState {
+        self.state_rx.borrow().clone()
+    }
+
+    pub(crate) fn subscribe_connection_state(&self) -> watch::Receiver<AriConnectionState> {
+        self.state_rx.clone()
     }
 
     /// signal the background task to shut down
@@ -216,14 +229,22 @@ async fn ws_loop(
     tls_connector: tokio_tungstenite::Connector,
     max_websocket_message_bytes: usize,
     mut shutdown_rx: watch::Receiver<bool>,
+    state_tx: watch::Sender<AriConnectionState>,
 ) {
     let mut attempt: u32 = 0;
 
     loop {
         if *shutdown_rx.borrow() {
+            state_tx.send_replace(AriConnectionState::Disconnected);
             tracing::debug!("websocket listener shutting down");
             return;
         }
+
+        state_tx.send_replace(if attempt == 0 {
+            AriConnectionState::Connecting
+        } else {
+            AriConnectionState::Reconnecting
+        });
 
         tracing::info!(url = %redact_url(&ws_url), attempt, "connecting to ARI websocket");
 
@@ -246,20 +267,26 @@ async fn ws_loop(
             }
             Ok(Ok((ws_stream, _response))) => {
                 tracing::info!("ARI websocket connected");
-                // reset attempt counter on successful connection
-                attempt = 0;
+                state_tx.send_replace(AriConnectionState::Ready);
+                let connected_at = tokio::time::Instant::now();
 
                 if let Err(should_exit) =
                     read_messages(ws_stream, &event_bus, &mut shutdown_rx).await
                 {
                     if should_exit {
+                        state_tx.send_replace(AriConnectionState::Disconnected);
                         return;
                     }
                 }
 
                 tracing::warn!("ARI websocket disconnected");
+                if connected_at.elapsed() >= reconnect.stability_window {
+                    attempt = 0;
+                }
             }
         }
+
+        state_tx.send_replace(AriConnectionState::Reconnecting);
 
         // check if we've exhausted retries
         if reconnect.max_retries.is_some_and(|max| attempt >= max) {
@@ -267,6 +294,11 @@ async fn ws_loop(
                 attempt,
                 "max reconnection attempts reached, stopping websocket listener"
             );
+            state_tx.send_replace(AriConnectionState::Terminal {
+                details: format!(
+                    "websocket connection terminated after {attempt} reconnection attempts"
+                ),
+            });
             return;
         }
 
@@ -279,6 +311,7 @@ async fn ws_loop(
                 biased;
                 changed = shutdown_rx.changed() => {
                     if changed.is_err() || *shutdown_rx.borrow() {
+                        state_tx.send_replace(AriConnectionState::Disconnected);
                         tracing::debug!("websocket listener shutting down during backoff");
                         return;
                     }

@@ -2,7 +2,7 @@
 
 use crate::action::{AmiAction, ChallengeAction, ChallengeLoginAction, LoginAction, PingAction};
 use crate::codec::{AmiCodec, RawAmiMessage};
-use crate::error::{AmiError, Result};
+use crate::error::{AmiError, AmiTerminalError, Result};
 use crate::event::AmiEvent;
 use crate::response::{
     AmiResponse, EventListTerminal, MAX_IN_FLIGHT_ACTIONS, MAX_IN_FLIGHT_EVENT_LISTS,
@@ -50,6 +50,7 @@ pub(crate) enum ConnectionCommand {
 pub(crate) struct ConnectionManager {
     command_tx: mpsc::Sender<ConnectionCommand>,
     state_rx: watch::Receiver<ConnectionState>,
+    terminal_rx: watch::Receiver<Option<AmiTerminalError>>,
     task: tokio::task::AbortHandle,
 }
 
@@ -65,6 +66,7 @@ impl ConnectionManager {
     ) -> (Self, oneshot::Receiver<Result<()>>) {
         let (command_tx, command_rx) = mpsc::channel(256);
         let (state_tx, state_rx) = watch::channel(ConnectionState::Disconnected);
+        let (terminal_tx, terminal_rx) = watch::channel(None);
         let (startup_tx, startup_rx) = oneshot::channel();
 
         let task = tokio::spawn(connection_task(
@@ -73,6 +75,7 @@ impl ConnectionManager {
             command_rx,
             event_bus,
             state_tx,
+            terminal_tx,
             startup_tx,
             reconnect_policy,
             ping_interval,
@@ -84,6 +87,7 @@ impl ConnectionManager {
             Self {
                 command_tx,
                 state_rx,
+                terminal_rx,
                 task,
             },
             startup_rx,
@@ -112,6 +116,10 @@ impl ConnectionManager {
         *self.state_rx.borrow()
     }
 
+    pub(crate) fn terminal_error(&self) -> Option<AmiTerminalError> {
+        self.terminal_rx.borrow().clone()
+    }
+
     /// shut down the connection
     pub(crate) async fn shutdown(&self) {
         let _ = self.command_tx.send(ConnectionCommand::Shutdown).await;
@@ -131,6 +139,7 @@ async fn connection_task(
     mut command_rx: mpsc::Receiver<ConnectionCommand>,
     event_bus: EventBus<AmiEvent>,
     state_tx: watch::Sender<ConnectionState>,
+    terminal_tx: watch::Sender<Option<AmiTerminalError>>,
     startup_tx: oneshot::Sender<Result<()>>,
     reconnect_policy: ReconnectPolicy,
     ping_interval: Option<Duration>,
@@ -158,6 +167,7 @@ async fn connection_task(
                     &mut startup_tx,
                     &mut pending,
                     &mut attempt,
+                    reconnect_policy.stability_window,
                     ping_interval,
                     require_challenge,
                 )
@@ -190,6 +200,7 @@ async fn connection_task(
             }
             ConnectionExit::Fatal(error) => {
                 pending.fail_all_unknown();
+                terminal_tx.send_replace(Some(AmiTerminalError::from_error(&error)));
                 report_startup_error(&mut startup_tx, error);
                 let _ = state_tx.send(ConnectionState::Disconnected);
                 return;
@@ -206,6 +217,7 @@ async fn connection_task(
             .is_some_and(|max| attempt >= max)
         {
             tracing::error!(error = %last_error, "max reconnection attempts reached, giving up");
+            terminal_tx.send_replace(Some(AmiTerminalError::from_error(&last_error)));
             report_startup_error(&mut startup_tx, last_error);
             let _ = state_tx.send(ConnectionState::Disconnected);
             return;
@@ -230,7 +242,7 @@ async fn connection_task(
                 drain_backoff_commands(&mut command_rx, &state_tx);
             }
         }
-        attempt += 1;
+        attempt = attempt.saturating_add(1);
     }
 }
 
@@ -255,6 +267,7 @@ async fn run_connected(
     startup_tx: &mut Option<oneshot::Sender<Result<()>>>,
     pending: &mut PendingActions,
     attempt: &mut u32,
+    stability_window: Duration,
     ping_interval: Option<Duration>,
     require_challenge: bool,
 ) -> ConnectionExit {
@@ -288,7 +301,6 @@ async fn run_connected(
     }
 
     tracing::info!("AMI login successful");
-    *attempt = 0;
     let _ = state_tx.send(ConnectionState::Connected);
     if let Some(tx) = startup_tx.take() {
         if tx.send(Ok(())).is_err() {
@@ -305,6 +317,9 @@ async fn run_connected(
         timer.tick().await;
     }
     let mut pending_ping: Option<PendingPing> = None;
+    let mut stability_deadline = (*attempt > 0)
+        .then(|| Instant::now().checked_add(stability_window))
+        .flatten();
 
     loop {
         let next_deadline = pending.next_deadline();
@@ -488,7 +503,19 @@ async fn run_connected(
                 pending_ping = Some(PendingPing { action_id, deadline });
                 tracing::trace!("keep-alive ping sent");
             }
+            () = wait_for_stability(stability_deadline) => {
+                tracing::debug!(attempt = *attempt, "AMI connection stable; resetting retry budget");
+                *attempt = 0;
+                stability_deadline = None;
+            }
         }
+    }
+}
+
+async fn wait_for_stability(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline).await,
+        None => std::future::pending().await,
     }
 }
 

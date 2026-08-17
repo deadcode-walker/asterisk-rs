@@ -1858,6 +1858,149 @@ async fn server_builder_rejects_zero_shutdown_timeout() {
 }
 
 #[tokio::test]
+async fn server_builder_rejects_zero_prelude_timeout() {
+    let result = AgiServer::builder()
+        .bind("127.0.0.1:0")
+        .handler(AnswerAndHangup)
+        .prelude_timeout(Duration::ZERO)
+        .build()
+        .await;
+    assert!(matches!(result, Err(AgiError::InvalidConfig { .. })));
+}
+
+#[tokio::test]
+async fn prelude_timeout_closes_slow_session_without_running_handler() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct CountingHandler(Arc<AtomicUsize>);
+
+    impl AgiHandler for CountingHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            _channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (server, shutdown) = AgiServer::builder()
+        .bind("127.0.0.1:0")
+        .handler(CountingHandler(Arc::clone(&calls)))
+        .prelude_timeout(Duration::from_millis(50))
+        .build()
+        .await
+        .expect("server should build");
+    let addr = server.local_addr().expect("bound address");
+    let handle = tokio::spawn(server.run());
+
+    let mut stream = tokio::net::TcpStream::connect(addr)
+        .await
+        .expect("tcp connect");
+    stream
+        .write_all(b"agi_channel: SIP/100-00000001\n")
+        .await
+        .expect("partial prelude write");
+    let mut byte = [0_u8; 1];
+    let read = tokio::time::timeout(Duration::from_secs(1), stream.read(&mut byte))
+        .await
+        .expect("server should enforce configured prelude timeout")
+        .expect("socket read");
+    assert_eq!(read, 0, "timed-out session should be closed");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    shutdown.shutdown();
+    handle
+        .await
+        .expect("server task should not panic")
+        .expect("server should stop cleanly");
+}
+
+#[tokio::test]
+async fn admission_hook_sees_peer_and_request_and_can_reject_before_handler() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct CountingHandler(Arc<AtomicUsize>);
+
+    impl AgiHandler for CountingHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            _channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (server, shutdown) = AgiServer::builder()
+        .bind("127.0.0.1:0")
+        .handler(CountingHandler(Arc::clone(&calls)))
+        .admission_hook(|peer, request| async move {
+            assert!(peer.ip().is_loopback());
+            assert_eq!(request.unique_id(), Some("1234567890.1"));
+            Err(AgiError::InvalidRequest {
+                details: "peer is not authorized".to_owned(),
+            })
+        })
+        .build()
+        .await
+        .expect("server should build");
+    let addr = server.local_addr().expect("bound address");
+    let handle = tokio::spawn(server.run());
+
+    let mut client = MockAgiClient::connect(addr, &standard_env()).await;
+    let closed = tokio::time::timeout(Duration::from_secs(1), client.read_command())
+        .await
+        .expect("rejected connection should close");
+    assert!(closed.is_none());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    shutdown.shutdown();
+    handle
+        .await
+        .expect("server task should not panic")
+        .expect("admission rejection should not stop server");
+}
+
+#[tokio::test]
+async fn handler_panic_is_returned_by_server_run() {
+    struct PanickingHandler;
+
+    impl AgiHandler for PanickingHandler {
+        async fn handle(
+            &self,
+            _request: AgiRequest,
+            _channel: AgiChannel,
+        ) -> asterisk_rs_agi::error::Result<()> {
+            panic!("intentional AGI handler panic")
+        }
+    }
+
+    let (server, _shutdown) = AgiServer::builder()
+        .bind("127.0.0.1:0")
+        .handler(PanickingHandler)
+        .build()
+        .await
+        .expect("server should build");
+    let addr = server.local_addr().expect("bound address");
+    let handle = tokio::spawn(server.run());
+    let _client = MockAgiClient::connect(addr, &standard_env()).await;
+
+    let result = tokio::time::timeout(Duration::from_secs(1), handle)
+        .await
+        .expect("server should observe handler panic")
+        .expect("server task itself should not panic");
+    assert!(matches!(result, Err(AgiError::SessionTaskFailed { .. })));
+}
+
+#[tokio::test]
 async fn server_binds_to_specified_address() {
     init_tracing();
 

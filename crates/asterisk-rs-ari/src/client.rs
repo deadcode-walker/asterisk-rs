@@ -6,6 +6,7 @@ use asterisk_rs_core::event::{EventBus, EventSubscription};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::AriConnectionState;
 use crate::config::{AriConfig, TransportMode};
 use crate::error::{AriError, Result};
 use crate::event::AriMessage;
@@ -52,11 +53,26 @@ impl AriClient {
             }
         };
 
-        Ok(Self {
+        let client = Self {
             transport: Arc::new(transport),
             config: Arc::new(config),
             event_bus,
-        })
+        };
+        client
+            .transport
+            .wait_ready(client.config.request_timeout())
+            .await?;
+        Ok(client)
+    }
+
+    /// Current state of the event WebSocket used by this client.
+    pub fn connection_state(&self) -> AriConnectionState {
+        self.transport.connection_state()
+    }
+
+    /// Subscribe to event WebSocket lifecycle changes, including terminal failure.
+    pub fn subscribe_connection_state(&self) -> tokio::sync::watch::Receiver<AriConnectionState> {
+        self.transport.subscribe_connection_state()
     }
 
     /// send a GET request to the given ARI path

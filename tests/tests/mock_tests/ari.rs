@@ -28,6 +28,22 @@ async fn connect_to_mock_with_response_limit(port: u16, limit: usize) -> AriClie
         .expect("failed to connect ari client")
 }
 
+async fn connect_then_remove_server() -> AriClient {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("temporary listener should bind");
+    let port = listener.local_addr().expect("listener address").port();
+    let connect = tokio::spawn(async move { connect_to_mock(port).await });
+    let (stream, _) = listener.accept().await.expect("websocket TCP accept");
+    let websocket = tokio_tungstenite::accept_async(stream)
+        .await
+        .expect("websocket handshake");
+    let client = connect.await.expect("connect task should not panic");
+    drop(websocket);
+    drop(listener);
+    client
+}
+
 /// build a unified REST-over-WebSocket client pointed at the mock server
 async fn connect_unified_to_mock(port: u16) -> AriClient {
     connect_unified_to_mock_with_timeout(port, Duration::from_secs(30)).await
@@ -62,6 +78,50 @@ async fn connect_unified_to_mock_with_limits(
         .expect("failed to create unified ari client")
 }
 
+async fn assert_disconnect_enters_reconnecting(transport: TransportMode) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind should succeed");
+    let port = listener.local_addr().expect("listener address").port();
+    let config = AriConfigBuilder::new("test-app")
+        .host("127.0.0.1")
+        .port(port)
+        .username("testuser")
+        .password("testpass")
+        .transport(transport)
+        .reconnect(ReconnectPolicy::fixed(Duration::from_secs(5)).with_max_retries(2))
+        .request_timeout(Duration::from_secs(1))
+        .build()
+        .expect("config should be valid");
+    let connect = tokio::spawn(async move { AriClient::connect(config).await });
+    let (stream, _) = listener.accept().await.expect("TCP accept");
+    let websocket = tokio_tungstenite::accept_async(stream)
+        .await
+        .expect("handshake");
+    let client = connect
+        .await
+        .expect("connect task")
+        .expect("client should become ready");
+    let mut states = client.subscribe_connection_state();
+
+    drop(websocket);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if *states.borrow_and_update() == asterisk_rs_ari::AriConnectionState::Reconnecting {
+                break;
+            }
+            states
+                .changed()
+                .await
+                .expect("state publisher should remain live");
+        }
+    })
+    .await
+    .expect("disconnect must publish reconnecting before the five-second backoff elapses");
+
+    client.disconnect_and_wait().await;
+}
+
 #[tokio::test]
 async fn connect_and_disconnect() {
     init_tracing();
@@ -70,6 +130,35 @@ async fn connect_and_disconnect() {
     let client = connect_to_mock(server.port()).await;
     client.disconnect_and_wait().await;
     server.shutdown().await;
+}
+
+#[tokio::test]
+async fn initial_websocket_failure_is_reported_in_both_transport_modes() {
+    init_tracing();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("temporary listener should bind");
+    let port = listener.local_addr().expect("listener address").port();
+    drop(listener);
+
+    for mode in [TransportMode::Http, TransportMode::WebSocket] {
+        let config = AriConfigBuilder::new("test-app")
+            .host("127.0.0.1")
+            .port(port)
+            .username("testuser")
+            .password("testpass")
+            .transport(mode)
+            .reconnect(ReconnectPolicy::none())
+            .request_timeout(Duration::from_secs(1))
+            .build()
+            .expect("config should build");
+        let result = AriClient::connect(config).await;
+        assert!(
+            matches!(result, Err(AriError::WebSocket(_))),
+            "connect must surface terminal websocket failure for {mode:?}: {result:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -196,27 +285,7 @@ async fn http_transport_error_preserves_stable_source() {
 
     init_tracing();
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("temporary listener should bind");
-    let port = listener
-        .local_addr()
-        .expect("temporary listener should have an address")
-        .port();
-    drop(listener);
-
-    let config = AriConfigBuilder::new("test-app")
-        .host("127.0.0.1")
-        .port(port)
-        .username("testuser")
-        .password("testpass")
-        .reconnect(ReconnectPolicy::none())
-        .request_timeout(Duration::from_secs(1))
-        .build()
-        .expect("config should build");
-    let client = AriClient::connect(config)
-        .await
-        .expect("client transport should construct");
+    let client = connect_then_remove_server().await;
 
     let result = client.get::<serde_json::Value>("unreachable").await;
     match result {
@@ -238,15 +307,7 @@ async fn http_transport_error_preserves_stable_source() {
 async fn http_mutation_connect_failure_is_definitely_not_sent() {
     init_tracing();
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("temporary listener should bind");
-    let port = listener
-        .local_addr()
-        .expect("temporary listener should have an address")
-        .port();
-    drop(listener);
-    let client = connect_to_mock(port).await;
+    let client = connect_then_remove_server().await;
 
     let result = client.post_empty("channels/not-sent").await;
     assert!(
@@ -634,9 +695,7 @@ async fn unified_pending_requests_are_count_bounded() {
 }
 
 #[tokio::test]
-async fn unified_transport_discards_cancelled_request_queued_during_handshake() {
-    use futures_util::StreamExt;
-
+async fn unified_connect_waits_for_initial_websocket_readiness() {
     init_tracing();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -646,38 +705,37 @@ async fn unified_transport_discards_cancelled_request_queued_during_handshake() 
         .local_addr()
         .expect("listener should have an address")
         .port();
-    let client = connect_unified_to_mock_with_timeout(port, Duration::from_millis(50)).await;
-
-    let result = tokio::time::timeout(
-        Duration::from_secs(1),
-        client.post_empty("channels/must-not-run"),
-    )
-    .await
-    .expect("the configured request deadline must be bounded");
+    let connect = tokio::spawn(async move {
+        connect_unified_to_mock_with_timeout(port, Duration::from_secs(1)).await
+    });
+    tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(
-        matches!(
-            &result,
-            Err(AriError::RequestNotSent { method, uri })
-                if method == "POST" && uri == "channels/must-not-run"
-        ),
-        "a queued timeout must report that the mutation was definitely not sent: {result:?}"
+        !connect.is_finished(),
+        "connect must wait for the handshake"
     );
 
     let (stream, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
         .await
         .expect("client should connect")
         .expect("TCP accept should succeed");
-    let mut websocket = tokio_tungstenite::accept_async(stream)
+    let websocket = tokio_tungstenite::accept_async(stream)
         .await
         .expect("websocket handshake should succeed");
-
-    let message = tokio::time::timeout(Duration::from_millis(250), websocket.next()).await;
-    assert!(
-        message.is_err(),
-        "a request cancelled while queued must not execute after connection"
+    let client = connect.await.expect("connect task should not panic");
+    assert_eq!(
+        client.connection_state(),
+        asterisk_rs_ari::AriConnectionState::Ready
     );
-
     client.disconnect();
+    drop(websocket);
+}
+
+#[tokio::test]
+async fn websocket_transports_publish_reconnecting_immediately_after_disconnect() {
+    init_tracing();
+
+    assert_disconnect_enters_reconnecting(TransportMode::Http).await;
+    assert_disconnect_enters_reconnecting(TransportMode::WebSocket).await;
 }
 
 #[tokio::test]
@@ -688,23 +746,22 @@ async fn unified_shutdown_before_first_wire_poll_is_definitely_unsent() {
         .await
         .expect("bind should succeed");
     let port = listener.local_addr().expect("listener address").port();
-    let client = connect_unified_to_mock_with_timeout(port, Duration::from_secs(5)).await;
-    let request_client = client.clone();
-    let request_task = tokio::spawn(async move {
-        request_client
-            .post_empty("channels/shutdown-before-poll")
-            .await
+    let connect = tokio::spawn(async move {
+        connect_unified_to_mock_with_timeout(port, Duration::from_secs(5)).await
     });
-
-    // The TCP listener is present but the peer never accepts or completes the
-    // WebSocket handshake, so the actor cannot poll the request's sink write.
-    tokio::time::sleep(Duration::from_millis(20)).await;
-    client.disconnect_and_wait().await;
-
-    let result = tokio::time::timeout(Duration::from_secs(1), request_task)
+    let (stream, _) = listener.accept().await.expect("TCP accept");
+    let websocket = tokio_tungstenite::accept_async(stream)
         .await
-        .expect("owned actor shutdown should be bounded")
-        .expect("request task should not panic");
+        .expect("handshake");
+    let client = connect.await.expect("connect task");
+    drop(websocket);
+    for _ in 0..50 {
+        if client.connection_state() != asterisk_rs_ari::AriConnectionState::Ready {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let result = client.post_empty("channels/shutdown-before-poll").await;
     assert!(
         matches!(
             result,
@@ -714,7 +771,7 @@ async fn unified_shutdown_before_first_wire_poll_is_definitely_unsent() {
         "shutdown before the first sink poll must remain definitely unsent: {result:?}"
     );
 
-    drop(listener);
+    client.disconnect_and_wait().await;
 }
 
 #[tokio::test]
@@ -730,7 +787,9 @@ async fn unified_mutation_timeout_after_write_reports_unknown_outcome() {
         .local_addr()
         .expect("listener should have an address")
         .port();
-    let client = connect_unified_to_mock_with_timeout(port, Duration::from_millis(100)).await;
+    let connect = tokio::spawn(async move {
+        connect_unified_to_mock_with_timeout(port, Duration::from_millis(100)).await
+    });
     let (stream, _) = tokio::time::timeout(Duration::from_secs(1), listener.accept())
         .await
         .expect("client should connect")
@@ -738,6 +797,7 @@ async fn unified_mutation_timeout_after_write_reports_unknown_outcome() {
     let mut websocket = tokio_tungstenite::accept_async(stream)
         .await
         .expect("websocket handshake should succeed");
+    let client = connect.await.expect("connect task should not panic");
 
     let request_client = client.clone();
     let request_task =
@@ -790,7 +850,9 @@ async fn unified_shutdown_does_not_drop_inflight_mutation_outcome() {
         .local_addr()
         .expect("listener should have an address")
         .port();
-    let client = connect_unified_to_mock_with_timeout(port, Duration::from_secs(5)).await;
+    let connect = tokio::spawn(async move {
+        connect_unified_to_mock_with_timeout(port, Duration::from_secs(5)).await
+    });
     let (stream, _) = tokio::time::timeout(Duration::from_secs(1), listener.accept())
         .await
         .expect("client should connect")
@@ -798,6 +860,7 @@ async fn unified_shutdown_does_not_drop_inflight_mutation_outcome() {
     let mut websocket = tokio_tungstenite::accept_async(stream)
         .await
         .expect("websocket handshake should succeed");
+    let client = connect.await.expect("connect task should not panic");
 
     let request_client = client.clone();
     let request_task =
@@ -4551,7 +4614,7 @@ async fn media_channel_connect_and_disconnect() {
 }
 
 #[tokio::test]
-async fn media_sync_disconnect_aborts_an_event_blocked_actor() {
+async fn media_event_backpressure_retains_flow_state_and_does_not_block_control() {
     use futures_util::{SinkExt, StreamExt};
 
     init_tracing();
@@ -4578,43 +4641,74 @@ async fn media_sync_disconnect_aborts_an_event_blocked_actor() {
         })
         .to_string();
 
-        for _ in 0..65 {
+        for _ in 0..64 {
             ws.send(tokio_tungstenite::tungstenite::Message::Text(
                 event.clone().into(),
             ))
             .await
-            .expect("critical media event should be sent");
+            .expect("media event should be sent");
+        }
+        for event in ["MEDIA_XOFF", "MEDIA_XON"] {
+            ws.send(tokio_tungstenite::tungstenite::Message::Text(
+                serde_json::json!({"event": event, "channel_id": "blocked-media"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("flow-control event should be sent");
         }
         events_sent_tx
             .send(())
             .expect("test should still await the event burst");
 
-        match tokio::time::timeout(Duration::from_secs(2), ws.next()).await {
-            Ok(None | Some(Err(_))) => true,
-            Ok(Some(Ok(_))) | Err(_) => false,
+        while let Some(message) = ws.next().await {
+            match message.expect("client frame should be valid") {
+                tokio_tungstenite::tungstenite::Message::Text(text) => {
+                    return serde_json::from_str::<serde_json::Value>(&text)
+                        .expect("control frame should be JSON")["command"]
+                        == "ANSWER";
+                }
+                tokio_tungstenite::tungstenite::Message::Close(_) => return false,
+                _ => {}
+            }
         }
+        false
     });
 
     let url = format!("ws://{addr}");
-    let media = asterisk_rs_ari::media::MediaChannel::connect(&url)
+    let mut media = asterisk_rs_ari::media::MediaChannel::connect(&url)
         .await
         .expect("media channel connect should succeed");
     events_sent_rx
         .await
         .expect("server should send enough events to fill the bounded receiver");
-    for _ in 0..8 {
-        tokio::task::yield_now().await;
-    }
+    let flow = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let state = media
+                .flow_control_changed()
+                .await
+                .expect("media actor should remain connected");
+            if state == asterisk_rs_ari::media::MediaFlowControl::Flowing {
+                break state;
+            }
+        }
+    })
+    .await
+    .expect("latest flow-control state should remain observable");
+    assert_eq!(flow, media.flow_control());
 
-    media.disconnect();
-
-    let peer_terminated = tokio::time::timeout(Duration::from_secs(3), server_task)
+    media
+        .send_command(asterisk_rs_ari::media::MediaCommand::Answer)
         .await
-        .expect("synchronous disconnect should terminate the peer connection")
+        .expect("control queue should accept a command while events are full");
+
+    let control_received = tokio::time::timeout(Duration::from_secs(3), server_task)
+        .await
+        .expect("control transmission should not wait for event consumption")
         .expect("server task should not panic");
     assert!(
-        peer_terminated,
-        "synchronous disconnect must abort an actor blocked on event delivery"
+        control_received,
+        "the socket actor must transmit control after its bounded event queue fills"
     );
 }
 

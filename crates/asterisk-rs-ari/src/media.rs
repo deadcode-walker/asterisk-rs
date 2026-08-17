@@ -15,6 +15,7 @@ use crate::error::{AriError, Result};
 use crate::websocket::OwnedTask;
 
 const MEDIA_CLOSE_TIMEOUT: Duration = Duration::from_millis(500);
+const MEDIA_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// events received from Asterisk over the media websocket
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -94,6 +95,21 @@ pub enum MediaDirection {
     Out,
 }
 
+/// Latest flow-control instruction received from Asterisk.
+///
+/// This state is retained independently of the bounded event queue, so a slow
+/// event consumer can always observe the most recent `MEDIA_XON`/`MEDIA_XOFF`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MediaFlowControl {
+    /// No flow-control event has been received yet.
+    Unknown,
+    /// Asterisk sent `MEDIA_XON`; outbound media may flow.
+    Flowing,
+    /// Asterisk sent `MEDIA_XOFF`; the application should pause outbound media.
+    Paused,
+}
+
 /// commands sent to Asterisk over the media websocket
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "command")]
@@ -150,13 +166,6 @@ pub enum MediaCommand {
     SetMediaDirection { direction: MediaDirection },
 }
 
-/// internal command sent to the background task
-enum InternalCmd {
-    Audio(Vec<u8>),
-    /// pre-serialized JSON text command
-    Command(String),
-}
-
 /// connection to an Asterisk WebSocket media channel
 ///
 /// exchanges raw audio frames and control commands with Asterisk's
@@ -168,7 +177,9 @@ enum InternalCmd {
 pub struct MediaChannel {
     event_rx: mpsc::Receiver<MediaEvent>,
     audio_rx: mpsc::Receiver<Vec<u8>>,
-    command_tx: mpsc::Sender<InternalCmd>,
+    control_tx: mpsc::Sender<String>,
+    outbound_audio_tx: mpsc::Sender<Vec<u8>>,
+    flow_control_rx: watch::Receiver<MediaFlowControl>,
     shutdown_tx: watch::Sender<bool>,
     task: OwnedTask,
 }
@@ -176,7 +187,7 @@ pub struct MediaChannel {
 impl std::fmt::Debug for MediaChannel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MediaChannel")
-            .field("connected", &!self.command_tx.is_closed())
+            .field("connected", &!self.control_tx.is_closed())
             .finish()
     }
 }
@@ -221,21 +232,27 @@ impl MediaChannel {
     pub fn from_accepted(ws_stream: AcceptedWsStream) -> Self {
         let (event_tx, event_rx) = mpsc::channel(64);
         let (audio_tx, audio_rx) = mpsc::channel(256);
-        let (command_tx, command_rx) = mpsc::channel(64);
+        let (control_tx, control_rx) = mpsc::channel(64);
+        let (outbound_audio_tx, outbound_audio_rx) = mpsc::channel(256);
+        let (flow_control_tx, flow_control_rx) = watch::channel(MediaFlowControl::Unknown);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         let task_handle = tokio::spawn(media_loop(
             ws_stream,
             event_tx,
             audio_tx,
-            command_rx,
+            control_rx,
+            outbound_audio_rx,
+            flow_control_tx,
             shutdown_rx,
         ));
 
         Self {
             event_rx,
             audio_rx,
-            command_tx,
+            control_tx,
+            outbound_audio_tx,
+            flow_control_rx,
             shutdown_tx,
             task: OwnedTask::new(task_handle),
         }
@@ -244,21 +261,27 @@ impl MediaChannel {
     fn spawn_outbound(ws_stream: OutboundWsStream) -> Self {
         let (event_tx, event_rx) = mpsc::channel(64);
         let (audio_tx, audio_rx) = mpsc::channel(256);
-        let (command_tx, command_rx) = mpsc::channel(64);
+        let (control_tx, control_rx) = mpsc::channel(64);
+        let (outbound_audio_tx, outbound_audio_rx) = mpsc::channel(256);
+        let (flow_control_tx, flow_control_rx) = watch::channel(MediaFlowControl::Unknown);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         let task_handle = tokio::spawn(media_loop(
             ws_stream,
             event_tx,
             audio_tx,
-            command_rx,
+            control_rx,
+            outbound_audio_rx,
+            flow_control_tx,
             shutdown_rx,
         ));
 
         Self {
             event_rx,
             audio_rx,
-            command_tx,
+            control_tx,
+            outbound_audio_tx,
+            flow_control_rx,
             shutdown_tx,
             task: OwnedTask::new(task_handle),
         }
@@ -278,19 +301,25 @@ impl MediaChannel {
         self.audio_rx.recv().await
     }
 
-    /// send a control command to Asterisk
+    /// enqueue a control command for transmission to Asterisk
+    ///
+    /// Success means the bounded, priority control queue accepted the command;
+    /// it does not acknowledge socket transmission or Asterisk processing.
     pub async fn send_command(&self, cmd: MediaCommand) -> Result<()> {
         let json = serde_json::to_string(&cmd).map_err(AriError::Json)?;
-        self.command_tx
-            .send(InternalCmd::Command(json))
+        self.control_tx
+            .send(json)
             .await
             .map_err(|_| AriError::Disconnected)
     }
 
-    /// send raw audio data to Asterisk
+    /// enqueue raw audio data for transmission to Asterisk
     ///
     /// data should be encoded in the format negotiated during MEDIA_START.
     /// Asterisk will re-frame if buffering mode is active. max 65500 bytes.
+    /// Success means the bounded audio queue accepted the frame; it does not
+    /// acknowledge socket transmission. Control commands use a separate,
+    /// higher-priority queue.
     pub async fn send_audio(&self, data: Vec<u8>) -> Result<()> {
         if data.len() > 65500 {
             return Err(AriError::WebSocket(format!(
@@ -298,10 +327,23 @@ impl MediaChannel {
                 data.len()
             )));
         }
-        self.command_tx
-            .send(InternalCmd::Audio(data))
+        self.outbound_audio_tx
+            .send(data)
             .await
             .map_err(|_| AriError::Disconnected)
+    }
+
+    /// return the latest flow-control state without consuming an event
+    pub fn flow_control(&self) -> MediaFlowControl {
+        *self.flow_control_rx.borrow()
+    }
+
+    /// wait until the retained flow-control state changes
+    ///
+    /// Returns `None` when the media actor has stopped.
+    pub async fn flow_control_changed(&mut self) -> Option<MediaFlowControl> {
+        self.flow_control_rx.changed().await.ok()?;
+        Some(*self.flow_control_rx.borrow_and_update())
     }
 
     /// answer the channel
@@ -381,16 +423,6 @@ impl Drop for MediaChannel {
     }
 }
 
-/// whether an event is a critical control event that must not be dropped
-fn is_critical_event(event: &MediaEvent) -> bool {
-    matches!(
-        event,
-        MediaEvent::MediaStart { .. }
-            | MediaEvent::MediaBufferingCompleted { .. }
-            | MediaEvent::Error { .. }
-    )
-}
-
 /// background task that bridges a websocket stream into typed channels.
 ///
 /// generic over the stream type so it works for both outbound
@@ -399,7 +431,9 @@ async fn media_loop<S>(
     ws_stream: tokio_tungstenite::WebSocketStream<S>,
     event_tx: mpsc::Sender<MediaEvent>,
     audio_tx: mpsc::Sender<Vec<u8>>,
-    mut command_rx: mpsc::Receiver<InternalCmd>,
+    mut control_rx: mpsc::Receiver<String>,
+    mut outbound_audio_rx: mpsc::Receiver<Vec<u8>>,
+    flow_control_tx: watch::Sender<MediaFlowControl>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
@@ -409,26 +443,70 @@ async fn media_loop<S>(
     let (mut write, mut read) = ws_stream.split();
 
     loop {
+        // Shutdown and control traffic take priority over bulk audio whenever
+        // more than one branch is ready.
         tokio::select! {
+            biased;
+            _ = shutdown_rx.changed() => {
+                if *shutdown_rx.borrow() {
+                    tracing::debug!("media channel shutdown requested");
+                    match tokio::time::timeout(
+                        MEDIA_CLOSE_TIMEOUT,
+                        write.send(Message::Close(None)),
+                    )
+                    .await
+                    {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => {
+                            tracing::debug!(error = %error, "failed to send media close frame");
+                        }
+                        Err(_) => tracing::debug!("timed out sending media close frame"),
+                    }
+                    return;
+                }
+            }
+            cmd = control_rx.recv() => {
+                match cmd {
+                    Some(json) => {
+                        match tokio::time::timeout(
+                            MEDIA_WRITE_TIMEOUT,
+                            write.send(Message::Text(json.into())),
+                        ).await {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                tracing::warn!(error = %e, "failed to send media command");
+                                return;
+                            }
+                            Err(_) => {
+                                tracing::warn!("timed out sending media command");
+                                return;
+                            }
+                        }
+                    }
+                    None => return,
+                }
+            }
             msg = read.next() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<MediaEvent>(&text) {
                             Ok(event) => {
-                                if is_critical_event(&event) {
-                                    // critical control events must not be dropped
-                                    if event_tx.send(event).await.is_err() {
-                                        return;
+                                match &event {
+                                    MediaEvent::MediaXoff { .. } => {
+                                        flow_control_tx.send_replace(MediaFlowControl::Paused);
                                     }
-                                } else {
-                                    match event_tx.try_send(event) {
-                                        Ok(()) => {}
-                                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                                            tracing::warn!("media event channel full, dropping event");
-                                        }
-                                        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                            return;
-                                        }
+                                    MediaEvent::MediaXon { .. } => {
+                                        flow_control_tx.send_replace(MediaFlowControl::Flowing);
+                                    }
+                                    _ => {}
+                                }
+                                match event_tx.try_send(event) {
+                                    Ok(()) => {}
+                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                        tracing::warn!("media event channel full, dropping event");
+                                    }
+                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                        return;
                                     }
                                 }
                             }
@@ -465,40 +543,25 @@ async fn media_loop<S>(
                     _ => {}
                 }
             }
-            cmd = command_rx.recv() => {
-                match cmd {
-                    Some(InternalCmd::Audio(data)) => {
-                        if let Err(e) = write.send(Message::Binary(data.into())).await {
-                            tracing::warn!(error = %e, "failed to send audio frame");
-                            return;
+            audio = outbound_audio_rx.recv() => {
+                match audio {
+                    Some(data) => {
+                        match tokio::time::timeout(
+                            MEDIA_WRITE_TIMEOUT,
+                            write.send(Message::Binary(data.into())),
+                        ).await {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                tracing::warn!(error = %e, "failed to send audio frame");
+                                return;
+                            }
+                            Err(_) => {
+                                tracing::warn!("timed out sending audio frame");
+                                return;
+                            }
                         }
                     }
-                    Some(InternalCmd::Command(json)) => {
-                        if let Err(e) = write.send(Message::Text(json.into())).await {
-                            tracing::warn!(error = %e, "failed to send media command");
-                            return;
-                        }
-                    }
-                    // command channel closed — MediaChannel dropped
                     None => return,
-                }
-            }
-            _ = shutdown_rx.changed() => {
-                if *shutdown_rx.borrow() {
-                    tracing::debug!("media channel shutdown requested");
-                    match tokio::time::timeout(
-                        MEDIA_CLOSE_TIMEOUT,
-                        write.send(Message::Close(None)),
-                    )
-                    .await
-                    {
-                        Ok(Ok(())) => {}
-                        Ok(Err(error)) => {
-                            tracing::debug!(error = %error, "failed to send media close frame");
-                        }
-                        Err(_) => tracing::debug!("timed out sending media close frame"),
-                    }
-                    return;
                 }
             }
         }

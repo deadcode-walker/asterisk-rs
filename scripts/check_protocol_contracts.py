@@ -171,15 +171,17 @@ def explicit_wire_fields(source: str, enum_name: str) -> dict[str, list[str]]:
     return contracts
 
 
-def enum_source(source: str, name: str, next_name: str) -> str:
-    match = re.search(
-        rf"pub enum {re.escape(name)} \{{(.*?)(?:pub )?enum {re.escape(next_name)} \{{",
-        source,
-        re.DOTALL,
-    )
+def enum_source(source: str, name: str) -> str:
+    match = re.search(rf"^pub enum {re.escape(name)}\s*\{{", source, re.MULTILINE)
     if match is None:
         raise SystemExit(f"cannot locate {name} in media source")
-    return match.group(1)
+    start = source.find("{", match.start())
+    depth = 0
+    for end in range(start, len(source)):
+        depth += (source[end] == "{") - (source[end] == "}")
+        if depth == 0:
+            return source[start + 1 : end]
+    raise SystemExit(f"unterminated {name} in media source")
 
 
 def canonical_path(path: str) -> str:
@@ -381,10 +383,10 @@ def main() -> None:
     media = (ROOT / "crates/asterisk-rs-ari/src/media.rs").read_text(encoding="utf-8")
     local_names = {
         "media_events": explicit_wire_names(
-            enum_source(media, "MediaEvent", "MediaDirection"), "MediaEvent"
+            enum_source(media, "MediaEvent"), "MediaEvent"
         ),
         "media_commands": explicit_wire_names(
-            enum_source(media, "MediaCommand", "InternalCmd"), "MediaCommand"
+            enum_source(media, "MediaCommand"), "MediaCommand"
         ),
     }
     for category, actual in local_names.items():
@@ -396,10 +398,10 @@ def main() -> None:
 
     local_fields = {
         "media_event_fields": explicit_wire_fields(
-            enum_source(media, "MediaEvent", "MediaDirection"), "MediaEvent"
+            enum_source(media, "MediaEvent"), "MediaEvent"
         ),
         "media_command_fields": explicit_wire_fields(
-            enum_source(media, "MediaCommand", "InternalCmd"), "MediaCommand"
+            enum_source(media, "MediaCommand"), "MediaCommand"
         ),
     }
     for category, actual in local_fields.items():

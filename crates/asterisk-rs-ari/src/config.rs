@@ -283,6 +283,9 @@ impl AriConfigBuilder {
                 "max_websocket_message_bytes must be greater than zero".to_owned(),
             ));
         }
+        if let Err(details) = self.reconnect_policy.validate() {
+            return Err(AriError::InvalidConfig(details.to_owned()));
+        }
 
         let http_scheme = if self.secure { "https" } else { "http" };
         let ws_scheme = if self.secure { "wss" } else { "ws" };

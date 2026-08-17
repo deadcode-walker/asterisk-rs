@@ -2,7 +2,7 @@
 
 use crate::action::{self, AmiAction, LogoffAction, PingAction};
 use crate::connection::{ConnectionCommand, ConnectionManager};
-use crate::error::{AmiError, Result};
+use crate::error::{AmiError, AmiTerminalError, Result};
 use crate::event::AmiEvent;
 use crate::response::{AmiResponse, RequestLifecycle};
 use asterisk_rs_core::auth::Credentials;
@@ -147,6 +147,11 @@ impl AmiClient {
     /// get current connection state
     pub fn connection_state(&self) -> ConnectionState {
         self.connection.state()
+    }
+
+    /// Terminal connection cause retained after startup or reconnect exhaustion.
+    pub fn terminal_error(&self) -> Option<AmiTerminalError> {
+        self.connection.terminal_error()
     }
 
     /// gracefully disconnect
@@ -335,6 +340,11 @@ impl AmiClientBuilder {
         {
             return Err(AmiError::InvalidConfig {
                 details: "ping_interval is too large".to_owned(),
+            });
+        }
+        if let Err(details) = self.reconnect_policy.validate() {
+            return Err(AmiError::InvalidConfig {
+                details: details.to_owned(),
             });
         }
 

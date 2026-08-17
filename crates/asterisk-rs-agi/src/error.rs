@@ -42,6 +42,9 @@ pub enum AgiError {
 
     #[error("invalid configuration: {details}")]
     InvalidConfig { details: String },
+
+    #[error("AGI session task failed: {details}")]
+    SessionTaskFailed { details: String },
 }
 
 pub type Result<T> = std::result::Result<T, AgiError>;

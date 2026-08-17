@@ -71,6 +71,9 @@ pub enum AriError {
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
 
+    #[error("ARI session task failed: {details}")]
+    SessionTaskFailed { details: String },
+
     /// the request expired while still queued and was never written
     #[error("{method} {uri} was not sent")]
     RequestNotSent { method: String, uri: String },
