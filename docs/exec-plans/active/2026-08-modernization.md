@@ -574,6 +574,10 @@ does not reliably send a TLS close alert after client-side certificate rejection
 normalizes ANSI escapes with a colored-diagnostic self-test, while rejected-TLS fixtures are explicitly
 aborted and joined after the client rejection rather than waiting on a peer close alert. The complete
 local `just ci` gate passes these repairs before the next push.
+That run confirmed the ratchet repair and every other lane green, but Windows showed its cold platform
+verifier completing just after the private-CA fixture's two-second client startup deadline. The fixture
+now uses a finite ten-second client deadline inside a thirty-second whole-case bound, separating trust
+verification from scheduler/cache timing while retaining a deterministic failure ceiling.
 
 Accepted bounded tradeoff: AMI outbound frames are prevalidated before actor admission and then
 validated and encoded again at the socket boundary. The duplicate work is bounded by the 64 KiB

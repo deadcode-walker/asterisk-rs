@@ -285,7 +285,10 @@ fn secure_ari_config(
         .secure(true)
         .transport(transport)
         .reconnect(ReconnectPolicy::none())
-        .request_timeout(Duration::from_secs(2));
+        // Windows platform trust evaluation can take slightly more than two
+        // seconds on a cold verifier. Keep the fixture finite without racing
+        // the certificate result against the client startup deadline.
+        .request_timeout(Duration::from_secs(10));
     if let Some(ca_pem) = ca_pem {
         builder = builder.private_ca_pem(ca_pem.as_bytes());
     }
@@ -447,7 +450,7 @@ async fn private_ca_secures_media_websocket_case() {
 }
 
 async fn bounded_private_ca_case(future: impl std::future::Future<Output = ()>) {
-    tokio::time::timeout(Duration::from_secs(15), future)
+    tokio::time::timeout(Duration::from_secs(30), future)
         .await
         .expect("private-CA fixture must terminate within its platform-independent deadline");
 }
