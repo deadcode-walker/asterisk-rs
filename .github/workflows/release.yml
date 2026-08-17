@@ -15,6 +15,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Publish
@@ -38,6 +42,12 @@ jobs:
         run: |
           rustup toolchain install 1.97.1 --profile minimal
           rustup default 1.97.1
+      - name: Reject a stale publish candidate
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          current_sha="$(git ls-remote --exit-code origin refs/heads/main | awk '{ print $1 }')"
+          test "$current_sha" = "$CANDIDATE_SHA"
       - id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:

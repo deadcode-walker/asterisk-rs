@@ -78,6 +78,11 @@ is either a green local harness commit or a concrete authority/external-state bl
   resume with `just ci`: 949 unit tests and 252 mock tests passed together with formatting, strict
   Clippy, workspace/feature gates, supply-chain, generated documentation, harness, workflows, and
   typo checks.
+- [x] 2026-08-17: froze reviewed checkpoint `5fe6e611d27e388a4c0269c054d6a7f2d3863440`
+  (tree `4ac2fad513e2468d931ea4a8e25e86b741fdd2ba`) with a clean worktree. On that exact
+  post-repair tree, `just ci`, `just msrv`, `just semver`, `just live-smoke-ci` (4/4), and
+  `just live-full-ci` (73/73) passed; the Harness reviewer then identified the remaining stale-publish
+  race and this missing checkpoint record, both repaired in the following candidate.
 - [x] 2026-08-17: completed the pinned-contract and unknown-ARI-event portion of Slice 1. Pinned the official
   Asterisk `22.9.0` ARI documents and chan_websocket implementation at peeled commit
   `da123773c723ed1263ff74569544f7ee84626c1a`, recorded their SHA-256 identities and upstream
