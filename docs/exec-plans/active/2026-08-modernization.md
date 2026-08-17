@@ -219,7 +219,10 @@ The digest-pinned `andrius/asterisk:22` image contains `app_voicemail` but omits
 with a valid voicemail user. The fixture now compiles only the missing runtime artifacts from the
 matching Asterisk 22.10.1 release tarball after verifying SHA-256, then copies those modules into the
 same digest-pinned runtime image. Runtime inspection showed all three modules loaded before the
-mailbox smoke path passed.
+mailbox smoke path passed. Fresh review found that the first builder used mutable Debian repositories
+and compiled every resource module. The repaired builder uses the base image's dated Debian snapshot,
+pins every direct package version to the matching runtime-library generation, disables unrelated
+resource modules, and builds only the requested modules plus their build-time dependencies.
 
 ## Decision log
 
@@ -506,11 +509,14 @@ build/dependency owner and just remains its thin command facade.
 
 ## Outcomes and retrospective
 
-The bounded checkpoint contains Slice 0 and the foundational Slice 1/2 work only. Final local proof
-passed with 949 unit tests, 252 mock tests, and 73 serial live-Asterisk tests, plus exact Rust 1.86,
-strict Clippy, generated documentation, cargo-deny, cargo-shear, actionlint, zizmor, and coordinated
-0.8 semver checks. Fresh reviewers approved the remediated exact tree with no remaining in-scope
-findings. Later slices and external repository settings remain open above.
+Local implementation is complete through Slice 6 and the repository-owned live portion of Slice 7.
+The current candidate passes 951 unit tests, 288 mock tests, four smoke tests, and 73 serial
+live-Asterisk tests, plus exact Rust 1.86, strict Clippy, generated documentation, cargo-deny,
+cargo-shear, actionlint, zizmor, and coordinated 0.8 semver checks. Fresh reviews found and drove
+repairs for protocol loss, lifecycle, disclosure, test-observability, documentation-ratchet, live
+cleanup, and fixture reproducibility defects. The remaining work is external: push and monitor the
+exact candidate, verify cross-platform GitHub evidence, configure repository/release protections,
+close superseded records with links, and then finalize this retrospective and move the plan.
 
 Accepted bounded tradeoff: AMI outbound frames are prevalidated before actor admission and then
 validated and encoded again at the socket boundary. The duplicate work is bounded by the 64 KiB
