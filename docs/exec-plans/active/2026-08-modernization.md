@@ -184,8 +184,11 @@ is either a green local harness commit or a concrete authority/external-state bl
   splits, a missing-doc ratchet, and compiled documentation snippets while deleting the broken API
   table generator. `just ci`, `just msrv`, and `just semver` passed with 951 unit and 288 mock tests.
   The required Harness `review-repository-work` pass found a durable global-variable residue in the
-  attach-mode live suite; cleanup now runs before readback assertions. The isolated Asterisk smoke
-  and full runs remain the next acceptance gate before their matrix checkbox can close.
+  attach-mode live suite; cleanup now runs before readback assertions. The isolated Asterisk image
+  initially lacked the three core modules that own mailbox ARI. The fixture now builds those modules
+  from the checksum-verified matching Asterisk 22.10.1 source and installs a deterministic voicemail
+  mailbox. On that exact fixture, `just live-smoke-ci` passed 4/4 and `just live-full-ci` passed
+  73/73, closing the local live matrix.
 
 ## Surprises and discoveries
 
@@ -210,6 +213,13 @@ selective progressive disclosure even though the owner's acceptance boundary exp
 asset and reference. The cache was current; the first causal error was incomplete source loading,
 followed by a checker that still accepted the former ten-section plan contract. The correction uses
 all named sources while retaining only verified repository facts and applicable optional machinery.
+
+The digest-pinned `andrius/asterisk:22` image contains `app_voicemail` but omits
+`res_mwi_external`, `res_stasis_mailbox`, and `res_ari_mailboxes`, so mailbox PUT returned 404 even
+with a valid voicemail user. The fixture now compiles only the missing runtime artifacts from the
+matching Asterisk 22.10.1 release tarball after verifying SHA-256, then copies those modules into the
+same digest-pinned runtime image. Runtime inspection showed all three modules loaded before the
+mailbox smoke path passed.
 
 ## Decision log
 
@@ -362,7 +372,7 @@ the useful-path table in `ARCHITECTURE.md`, then follow it to the smallest repre
   actual codec instead of directly constructing raw messages.
 - [x] Split live smoke from live full. Require explicit endpoints, mutation opt-in, a test-instance
   marker, deterministic fixtures, isolated resource IDs/cleanup, and no warning-based skips.
-- [ ] Live matrix must prove supported Asterisk branches, AMI reconnect after a real transport cut,
+- [x] Live matrix must prove supported Asterisk branches, AMI reconnect after a real transport cut,
   AGI session bounds, ARI HTTP and unified WS, media plaintext/JSON schemas, device/mailbox PUT, and
   cross-protocol behavior.
 
@@ -373,8 +383,10 @@ HTTP/unified ARI, and isolated device/mailbox PUT round trips; full proof includ
 real-AMI transport cut and a one-session live AGI admission bound. Fixed warning-based account-code,
 MOH, custom-channel, and external-media passes now require exact success. Two deterministic outbound
 media WebSocket fixture connections prove the plaintext and JSON `MEDIA_START` schemas, including
-channel identity, format, frame size, and packet time. The matrix remains unchecked until the
-integration owner runs both live suites against the isolated Compose fixture.
+channel identity, format, frame size, and packet time. The digest-pinned runtime image omitted the
+mailbox ARI module chain, so the fixture compiles the three missing modules from the matching
+checksum-verified Asterisk 22.10.1 source. The integration owner then ran both repository-owned
+Compose journeys on 2026-08-17: smoke passed 4/4 and full passed 73/73.
 - [x] Measure tracker/codec/media admission and latency at representative load; keep benchmarks
   informative until stable enough for a regression threshold.
 
