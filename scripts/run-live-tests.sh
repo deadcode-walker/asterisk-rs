@@ -37,18 +37,39 @@ select_repository_fixture() {
     export ASTERISK_ARI_APP=test-app
 }
 
+select_repository_media_fixture() {
+    container_id="$(docker compose -f "$compose_file" ps -q asterisk)"
+    ASTERISK_TEST_MEDIA_PEER="$(
+        docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$container_id" \
+            | awk '{ print $1 }'
+    )"
+    export ASTERISK_TEST_MEDIA_PEER
+    ASTERISK_TEST_MEDIA_BIND="$(
+        docker compose -f "$compose_file" exec -T asterisk \
+            awk '$2 == "host.docker.internal" { print $1; exit }' /etc/hosts
+    )"
+    export ASTERISK_TEST_MEDIA_BIND
+    if [[ -z "$ASTERISK_TEST_MEDIA_PEER" || -z "$ASTERISK_TEST_MEDIA_BIND" ]]; then
+        echo "failed to resolve the repository media fixture addresses" >&2
+        exit 1
+    fi
+}
+
 if [[ "$lifecycle" == compose ]]; then
     owned_compose=1
     select_repository_fixture
     docker compose -f "$compose_file" up --build --detach --wait
+    select_repository_media_fixture
 elif docker compose -f "$compose_file" ps --status running --services 2>/dev/null | grep -qx asterisk; then
     select_repository_fixture
+    select_repository_media_fixture
 else
     required=(
         ASTERISK_TEST_ALLOW_MUTATION ASTERISK_TEST_INSTANCE_MARKER ASTERISK_TEST_BRANCH
         ASTERISK_AMI_HOST ASTERISK_AMI_PORT ASTERISK_AMI_USERNAME ASTERISK_AMI_SECRET
         ASTERISK_ARI_HOST ASTERISK_ARI_PORT ASTERISK_ARI_USERNAME ASTERISK_ARI_PASSWORD
         ASTERISK_ARI_APP
+        ASTERISK_TEST_MEDIA_BIND ASTERISK_TEST_MEDIA_PEER
     )
     for name in "${required[@]}"; do
         if [[ -z "${!name:-}" ]]; then

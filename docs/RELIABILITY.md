@@ -37,7 +37,9 @@ the same Asterisk instance.
 - `just live-smoke-ci` and `just live-full-ci` own the repository Compose lifecycle. Attach-mode
   commands reuse a running repository fixture or require explicit mutation opt-in, expected branch,
   durable instance marker, run ID, AMI/ARI endpoints and credentials, and ARI application. The
-  preflight reads the marker and Asterisk version before test mutation.
+  preflight reads the marker and Asterisk version before test mutation. External fixtures also name
+  the exact host bind address and expected Asterisk peer IP for the media-schema listener; the
+  repository Compose runner derives both from the selected container.
 - Mutable smoke resources use the run ID in their Asterisk names. Exhaustive live tests remain
   serial, use the same typed configuration, and must clean up resources rather than turn missing
   fixture capabilities into warning-based passes.

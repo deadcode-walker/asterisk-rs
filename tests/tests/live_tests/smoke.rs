@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::time::Duration;
 
 use asterisk_rs_ami::client::AmiClient;
@@ -123,14 +124,24 @@ async fn device_and_mailbox_put_round_trip() {
 }
 
 #[allow(clippy::result_large_err)] // tungstenite's handshake callback owns the response error type
-async fn capture_media_start(port: u16, hangup: Message) -> Message {
-    let listener = TcpListener::bind(("0.0.0.0", port))
+async fn capture_media_start(
+    bind: IpAddr,
+    expected_peer: IpAddr,
+    port: u16,
+    hangup: Message,
+) -> Message {
+    let listener = TcpListener::bind((bind, port))
         .await
         .unwrap_or_else(|error| panic!("failed to bind media fixture port {port}: {error}"));
-    let (stream, _) = tokio::time::timeout(Duration::from_secs(10), listener.accept())
+    let (stream, peer) = tokio::time::timeout(Duration::from_secs(10), listener.accept())
         .await
         .expect("Asterisk did not connect to the media WebSocket fixture")
         .expect("media fixture accept failed");
+    assert_eq!(
+        peer.ip(),
+        expected_peer,
+        "media fixture rejected an unexpected peer"
+    );
     let mut websocket =
         tokio_tungstenite::accept_hdr_async(stream, |request: &Request, mut response: Response| {
             assert_eq!(
@@ -172,7 +183,12 @@ async fn chan_websocket_plaintext_and_json_media_start_schemas() {
         .encapsulation("none")
         .transport("websocket")
         .channel_id(&plain_id);
-    let plain_capture = capture_media_start(8787, Message::Text("HANGUP".into()));
+    let plain_capture = capture_media_start(
+        config.media_bind,
+        config.media_peer,
+        8787,
+        Message::Text("HANGUP".into()),
+    );
     let (plain_start, plain_channel) =
         tokio::join!(plain_capture, channel::external_media(&ari, &plain_params));
     let plain_channel = plain_channel.expect("plaintext external-media creation failed");
@@ -201,6 +217,8 @@ async fn chan_websocket_plaintext_and_json_media_start_schemas() {
     let json_params = ExternalMediaParams::websocket_json(&config.ari_app, "media_json", "ulaw")
         .channel_id(&json_id);
     let json_capture = capture_media_start(
+        config.media_bind,
+        config.media_peer,
         8788,
         Message::Text(serde_json::json!({"command": "HANGUP"}).to_string().into()),
     );

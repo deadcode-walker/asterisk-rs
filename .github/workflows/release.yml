@@ -42,12 +42,6 @@ jobs:
         run: |
           rustup toolchain install 1.97.1 --profile minimal
           rustup default 1.97.1
-      - name: Reject a stale publish candidate
-        env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-        run: |
-          current_sha="$(git ls-remote --exit-code origin refs/heads/main | awk '{ print $1 }')"
-          test "$current_sha" = "$CANDIDATE_SHA"
       - id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -83,25 +77,11 @@ jobs:
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
-      - name: Check release PR candidate freshness
-        id: freshness
-        env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-        run: |
-          current_sha="$(git ls-remote --exit-code origin refs/heads/main | awk '{ print $1 }')"
-          if [[ "$current_sha" = "$CANDIDATE_SHA" ]]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "current=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping stale release PR candidate $CANDIDATE_SHA; main is $current_sha"
-          fi
       - name: Install exact Rust toolchain
-        if: steps.freshness.outputs.current == 'true'
         run: |
           rustup toolchain install 1.97.1 --profile minimal
           rustup default 1.97.1
       - id: app-token
-        if: steps.freshness.outputs.current == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
@@ -111,7 +91,6 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
       - name: Create or update the release PR
-        if: steps.freshness.outputs.current == 'true'
         uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
         with:
           command: release-pr

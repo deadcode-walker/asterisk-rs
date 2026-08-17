@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::sync::OnceLock;
 
 /// initialize tracing for test output (idempotent)
@@ -30,6 +31,8 @@ pub struct LiveConfig {
     pub ari_app: String,
     pub instance_marker: String,
     pub run_id: String,
+    pub media_bind: IpAddr,
+    pub media_peer: IpAddr,
 }
 
 impl LiveConfig {
@@ -52,6 +55,8 @@ impl LiveConfig {
             ari_app: required_env("ASTERISK_ARI_APP"),
             instance_marker: required_env("ASTERISK_TEST_INSTANCE_MARKER"),
             run_id: required_env("ASTERISK_TEST_RUN_ID"),
+            media_bind: required_ip("ASTERISK_TEST_MEDIA_BIND"),
+            media_peer: required_ip("ASTERISK_TEST_MEDIA_PEER"),
         };
         assert_safe_component("ASTERISK_TEST_RUN_ID", &config.run_id);
         config
@@ -110,6 +115,12 @@ fn required_port(name: &str) -> u16 {
     required_env(name)
         .parse()
         .unwrap_or_else(|_| panic!("{name} must be a valid u16"))
+}
+
+fn required_ip(name: &str) -> IpAddr {
+    required_env(name)
+        .parse()
+        .unwrap_or_else(|_| panic!("{name} must be a valid IP address"))
 }
 
 fn assert_safe_component(name: &str, value: &str) {

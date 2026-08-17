@@ -82,7 +82,9 @@ is either a green local harness commit or a concrete authority/external-state bl
   (tree `4ac2fad513e2468d931ea4a8e25e86b741fdd2ba`) with a clean worktree. On that exact
   post-repair tree, `just ci`, `just msrv`, `just semver`, `just live-smoke-ci` (4/4), and
   `just live-full-ci` (73/73) passed; the Harness reviewer then identified the remaining stale-publish
-  race and this missing checkpoint record, both repaired in the following candidate.
+  race claim and this missing checkpoint record. The following candidate removed the impossible
+  remote-branch atomicity claim: release calls are serialized and act only on their immutable,
+  aggregate-CI-proven SHA, even if a later main commit arrives while publication is running.
 - [x] 2026-08-17: completed the pinned-contract and unknown-ARI-event portion of Slice 1. Pinned the official
   Asterisk `22.9.0` ARI documents and chan_websocket implementation at peeled commit
   `da123773c723ed1263ff74569544f7ee84626c1a`, recorded their SHA-256 identities and upstream
@@ -443,8 +445,8 @@ Compose journeys on 2026-08-17: smoke passed 4/4 and full passed 73/73.
   only to deploy.
 - [x] Release code runs only after successful exact-SHA main CI, checks out that immutable candidate,
   targets the release environment, uses short-lived GitHub App tokens and crates.io trusted
-  publishing, and
-  separate publish/release-PR jobs so release-PR concurrency cannot skip a publish candidate. Retain
+  publishing, serializes release workflow calls, and uses separate publish/release-PR jobs so a later
+  main push cannot cancel an already CI-proven candidate. Retain
   release-plz with corrected commit filters and independent package versions.
 - [ ] Configure and verify the external protected release environment and `v*` tag ruleset before
   enabling release automation.
@@ -526,6 +528,10 @@ close superseded records with links, and then finalize this retrospective and mo
 The final fresh review found that the live-runner signal traps converted cancellation into success
 and invoked Compose cleanup twice. The runner now maps SIGINT/SIGTERM to 130/143, reserves cleanup
 for the EXIT trap, and `just harness` executes a subprocess proof that cleanup occurs exactly once.
+The next review challenged non-atomic remote-branch freshness checks and the media-schema listener's
+wildcard bind. Release calls now serialize immutable aggregate-CI-proven SHAs instead of claiming an
+impossible atomic relationship to a moving branch. The Compose runner derives a host-gateway bind
+and exact container peer; attach mode requires both explicitly, and the listener rejects other peers.
 
 Accepted bounded tradeoff: AMI outbound frames are prevalidated before actor admission and then
 validated and encoded again at the socket boundary. The duplicate work is bounded by the 64 KiB

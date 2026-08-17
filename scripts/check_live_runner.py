@@ -27,7 +27,9 @@ def check_signal(signum: signal.Signals, expected_status: int) -> None:
         write_executable(
             temp / "docker",
             "#!/usr/bin/env bash\n"
-            "printf '%s\\n' \"$*\" >> \"$LIVE_RUNNER_COMMANDS\"\n",
+            "printf '%s\\n' \"$*\" >> \"$LIVE_RUNNER_COMMANDS\"\n"
+            "if [[ ${1:-} == inspect ]]; then echo 172.18.0.2; fi\n"
+            "if [[ $* == *' exec -T asterisk '* ]]; then echo 172.17.0.1; fi\n",
         )
         write_executable(temp / "python3", "#!/usr/bin/env bash\nexit 0\n")
         write_executable(
@@ -60,6 +62,12 @@ def check_signal(signum: signal.Signals, expected_status: int) -> None:
                 if time.monotonic() >= deadline:
                     raise AssertionError("live runner did not reach the test command")
                 time.sleep(0.01)
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                raise AssertionError(
+                    f"live runner exited before the test command: {process.returncode}; "
+                    f"stdout={stdout!r}, stderr={stderr!r}"
+                )
             os.killpg(process.pid, signum)
             stdout, stderr = process.communicate(timeout=5)
         finally:
