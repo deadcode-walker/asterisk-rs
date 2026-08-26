@@ -31,7 +31,7 @@ jobs:
         run: |
           rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt
           rustup default 1.97.1
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
         with:
           tool: just,cargo-deny,cargo-shear,typos-cli,mdbook,zizmor
           fallback: none
@@ -73,7 +73,7 @@ jobs:
         run: |
           rustup toolchain install 1.97.1 --profile minimal
           rustup default 1.97.1
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
         with:
           tool: just
           fallback: none
@@ -95,7 +95,7 @@ jobs:
         run: |
           rustup toolchain install 1.86.0 --profile minimal
           rustup default 1.86.0
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
         with:
           tool: just
           fallback: none
@@ -118,7 +118,7 @@ jobs:
         run: |
           rustup toolchain install 1.97.1 --profile minimal
           rustup default 1.97.1
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
         with:
           tool: just,cargo-semver-checks
           fallback: none
@@ -140,7 +140,7 @@ jobs:
         run: |
           rustup toolchain install 1.97.1 --profile minimal --component llvm-tools-preview
           rustup default 1.97.1
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
         with:
           tool: cargo-llvm-cov
           fallback: none
@@ -174,7 +174,7 @@ jobs:
         run: |
           rustup toolchain install 1.97.1 --profile minimal
           rustup default 1.97.1
-      - uses: taiki-e/install-action@288e746965032cfcc232e09af2daf5f23c14d780 # v2.86.1
+      - uses: taiki-e/install-action@6cd13508893c0e7eab5f273c2575d3859bd7229a # v2.86.6
         with:
           tool: just
           fallback: none
