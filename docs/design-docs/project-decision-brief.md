@@ -1,7 +1,8 @@
 # asterisk-rs harness decision brief
 
-Status: approved by repository owner direction and refreshed against the repository plus the complete
-owner-supplied Harness Engineering source set on 2026-08-17.
+Status: approved by repository owner direction and refreshed against the current repository, the
+pinned 48-document Harness Engineering corpus, and the Codex proportional-change overlay on
+2026-09-01.
 
 ## Outcome
 
@@ -115,6 +116,11 @@ exchange, and ARI REST/WebSocket resource lifecycle.
     recoverable execution-plan contract. Complex cycles persist exact state and explicit resource
     ceilings. Optional browser, plugin, telemetry, evaluator, orchestration, or controller surfaces
     are added only after the corresponding application boundary or observed failure exists.
+15. Keep one primary implementation trajectory during checked-in plan execution. Each independently
+    landable task freezes an exact candidate for fresh read-only review; the primary repairs material
+    findings and the same reviewer rechecks the repaired candidate until approval. A final review owns
+    cumulative proof, cross-task seams, and lifecycle closure rather than repeating approved task
+    reviews. Unplanned work keeps its existing single frozen-candidate review boundary.
 
 ## Alternatives rejected
 
