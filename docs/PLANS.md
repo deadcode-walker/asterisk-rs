@@ -49,6 +49,17 @@ candidate complete, run one such fresh review when honest isolation is available
 fallback otherwise. Do not continue coherent work in nested Codex, launch duplicate reviewers,
 bypass authority, or overlap writers.
 
+For a plan executed through the Harness plugin, each independently landable task is an exact-candidate
+review checkpoint. The primary trajectory implements and repairs the task. A fresh reviewer stays
+read-only; after a material repair, that same reviewer re-reviews the new exact candidate until the
+unchanged candidate is approved. Approval makes an effectful task ready for its protected delivery
+path; it does not prove the external effect. After delivery, freeze and review the resulting proof and
+bookkeeping before marking that task complete.
+
+The final landing review covers cumulative proof, cross-task seams, and plan lifecycle. It does not
+repeat every approved task review. Unplanned work retains the repository's ordinary single
+frozen-candidate review boundary.
+
 ## Required living sections
 
 Every active plan uses these exact H2 sections:
