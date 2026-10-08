@@ -232,7 +232,6 @@ async fn initial_websocket_failure_is_reported_in_both_transport_modes() {
         .await
         .expect("temporary listener should bind");
     let port = listener.local_addr().expect("listener address").port();
-    drop(listener);
 
     for mode in [TransportMode::Http, TransportMode::WebSocket] {
         let config = AriConfigBuilder::new("test-app")
@@ -245,7 +244,14 @@ async fn initial_websocket_failure_is_reported_in_both_transport_modes() {
             .request_timeout(Duration::from_secs(1))
             .build()
             .expect("config should build");
-        let result = AriClient::connect(config).await;
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::join!(AriClient::connect(config), async {
+                let (stream, _) = listener.accept().await.expect("TCP accept");
+                drop(stream);
+            })
+        })
+        .await
+        .expect("initial connection failure deadline");
         assert!(
             matches!(result, Err(AriError::WebSocket(_))),
             "connect must surface terminal websocket failure for {mode:?}: {result:?}"
