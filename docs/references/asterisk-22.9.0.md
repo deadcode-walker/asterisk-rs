@@ -14,7 +14,7 @@ and model symbol. `scripts/check_protocol_contracts.py` validates both inventori
 declared counts and exactly compares the deliberately supported local surface to the Rust source.
 `just protocol-contracts-upstream` independently downloads the files at the pinned commit, verifies
 every digest, regenerates the route and model inventory in memory, and requires an exact match with
-the checked-in inventory. The ordinary `just harness` gate remains deterministic and offline.
+the checked-in inventory. The ordinary `just protocol-checks` gate remains deterministic and offline.
 
 This crate does not claim the complete ARI surface. The upstream fixture contains 102 REST
 operations and 82 models. Implemented response models include every field in their pinned upstream

@@ -47,13 +47,13 @@ tests  --->  every publishable crate
 ```
 
 Protocol crates never depend on peers. Shared protocol-neutral facts move down to core;
-cross-protocol behavior moves up to the umbrella crate or an application. `scripts/check_harness.py`
-enforces peer-dependency, unsafe-lint, instruction, plan, link, and external-test boundaries.
+cross-protocol behavior moves up to the umbrella crate or an application. Workspace lints forbid
+unsafe Rust, and behavior tests live in the external `tests` crate.
 
 Untrusted wire data is parsed at codec/request/serde boundaries before effects. Protocol APIs own
 their errors. Credentials remain redacted and zeroized where stored. Existing bounded lifecycle
-controls are owned by their protocol actors; unresolved cross-protocol gaps remain explicit in the
-completed modernization plan. Rustdoc owns the exhaustive public API inventory. The mdBook explains
+controls are owned by their protocol actors. Rustdoc owns the exhaustive public API inventory.
+The mdBook explains
 behavior and links to rustdoc; do not create a competing handwritten or regex-generated table.
 
 ## Toolchain and evidence authority
@@ -68,8 +68,12 @@ behavior and links to rustdoc; do not create a competing handwritten or regex-ge
 | release identity/changelogs | `release-plz.toml`, conventional commits | blocking CI and release PR review | protected GitHub/crates.io environments |
 | workflow policy | `.github/workflows/` | `just workflows` and aggregate CI | GitHub repository settings |
 
-The decision brief owns why these tools were chosen. Each added layer needs a measured gap, owner,
-rollback/removal path, and recheck trigger; configuration does not duplicate implementation policy.
+Each added layer needs a measured gap and a removal path; configuration does not duplicate
+implementation policy.
+
+Linux, macOS, and Windows are supported release targets. Android is unsupported: the TLS platform
+verifier requires Kotlin/Gradle integration and application initialization that this crate does not
+provide.
 
 ## Deliberate absences and freshness
 
