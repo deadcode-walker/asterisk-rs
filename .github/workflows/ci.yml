@@ -211,7 +211,8 @@ jobs:
     name: Documentation
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: gate
-    uses: ./.github/workflows/docs.yml
+    # ponytail: actionlint 1.7.12 rejects $/ references; remove ignores when it supports them.
+    uses: ./.github/workflows/docs.yml # zizmor: ignore[self-repository]
     permissions:
       contents: read
       pages: write # deploy the generated documentation site
@@ -224,7 +225,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       vars.RELEASE_AUTOMATION_ENABLED == 'true'
     needs: gate
-    uses: ./.github/workflows/release.yml
+    uses: ./.github/workflows/release.yml # zizmor: ignore[self-repository]
     with:
       candidate_sha: ${{ github.sha }}
     permissions:
