@@ -1,4 +1,4 @@
-FROM andrius/asterisk:22@sha256:5687ca08cbba55ddb88d6f2b73503154f1cd98174b96f6ef9f54a4b49211c7e3 AS mailbox-builder
+FROM andrius/asterisk:22@sha256:ba6895827f7e7894232562bea3a5e0e80e77fb86bb5165b237c8a2940f49685d AS mailbox-builder
 
 USER root
 RUN sed -i \
@@ -29,7 +29,7 @@ RUN curl -fsSL -o /tmp/asterisk.tar.gz \
     && menuselect/menuselect --enable res_ari_mailboxes menuselect.makeopts \
     && make -j4 res
 
-FROM andrius/asterisk:22@sha256:5687ca08cbba55ddb88d6f2b73503154f1cd98174b96f6ef9f54a4b49211c7e3
+FROM andrius/asterisk:22@sha256:ba6895827f7e7894232562bea3a5e0e80e77fb86bb5165b237c8a2940f49685d
 COPY --from=mailbox-builder /usr/src/asterisk/res/res_mwi_external.so /usr/lib/asterisk/modules/
 COPY --from=mailbox-builder /usr/src/asterisk/res/res_stasis_mailbox.so /usr/lib/asterisk/modules/
 COPY --from=mailbox-builder /usr/src/asterisk/res/res_ari_mailboxes.so /usr/lib/asterisk/modules/
