@@ -86,9 +86,8 @@ docs:
     cargo doc --locked --workspace --all-features --no-deps
     mdbook build docs/
 
-# validate repository knowledge and dependency boundaries
-harness:
-    python3 scripts/check_harness.py
+# verify protocol artifacts and the isolated live-test runner
+protocol-checks:
     python3 scripts/check_protocol_contracts.py
     python3 scripts/check_live_runner.py
 
@@ -102,7 +101,7 @@ workflows:
     zizmor --persona=pedantic .github/workflows
 
 # frozen-candidate local gate
-ci: check test-workspace test-minimal test-features downstream supply-chain docs-check harness workflows
+ci: check test-workspace test-minimal test-features downstream supply-chain docs-check protocol-checks workflows
     typos
 
 # run the representative live boundary against an explicitly selected owned instance

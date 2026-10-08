@@ -1,38 +1,14 @@
 # Repository guidelines
 
-This is asterisk-rs's routing contract; durable detail belongs in its canonical owner. The repository
-declares Harness Engineering. Before nontrivial work, invoke
-`$harness-engineering:load-harness-context`; do not mutate until it selects context, execution
-surface, and authority.
-
-Interpret workflow verbs literally. Creating or saving a plan uses
-`$harness-engineering:write-exec-plan`; resuming or finishing one uses
-`$harness-engineering:execute-repository-work`. Fresh review uses
-`$harness-engineering:review-repository-work` read-only. Explicit no-write requests stay read-only.
-
-## Start here
-
-1. Read [the decision brief](docs/design-docs/project-decision-brief.md) for outcomes and authority.
-2. Read [ARCHITECTURE.md](ARCHITECTURE.md) for paths, ownership, and dependency direction.
-3. Use [docs/README.md](docs/README.md) to find canonical knowledge.
-4. Before checked-in plan work, read [docs/PLANS.md](docs/PLANS.md) and the selected active plan.
+Read [ARCHITECTURE.md](ARCHITECTURE.md) for code paths and dependency direction, and
+[docs/README.md](docs/README.md) for project documentation.
 
 Run `just --list` for commands. Use `just test <filter>` for focused evidence, `just check` while
 iterating, `just ci` when frozen, `just msrv` for Rust 1.86, `just semver` for public API changes,
 `just docs` for documentation, and `just live` only against a selected isolated Asterisk.
 
-## Execute to the outcome
-
-Inspect Git and preserve unrelated work. Trace one useful path, change its smallest causal owner,
-and delete the replaced path. Keep the current context as integration owner and default sole writer.
-Iterate cheaply; then freeze one candidate, inspect its diff, run the complete gate, and use one
-bounded read-only `codex exec` review when available. Record a fallback otherwise; never overlap
-writers or duplicate reviewers.
-
-Continue diagnosis, re-planning, repair, and review response while authority holds. If evidence
-stagnates, record the contradicted assumption and change tactics. Budgets end a cycle, not the goal.
-
-Before context loss or handoff, persist the exact tree, decisions, evidence, risks, and next action.
+Inspect Git and preserve unrelated work. Make the smallest complete change, test observable
+behavior, and review the diff before committing.
 
 ## Boundaries
 
